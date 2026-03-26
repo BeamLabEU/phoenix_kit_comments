@@ -12,9 +12,9 @@ defmodule PhoenixKitComments.Web.Index do
 
   use PhoenixKitWeb, :live_view
 
-  alias PhoenixKitComments
   alias PhoenixKit.Settings
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitComments
 
   @impl true
   def mount(_params, _session, socket) do

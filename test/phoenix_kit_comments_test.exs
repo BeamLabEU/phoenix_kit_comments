@@ -68,7 +68,7 @@ defmodule PhoenixKitCommentsTest do
     test "returns a list of Tab structs" do
       tabs = PhoenixKitComments.admin_tabs()
       assert is_list(tabs)
-      assert length(tabs) >= 1
+      assert tabs != []
     end
 
     test "main tab has required fields" do
@@ -121,7 +121,7 @@ defmodule PhoenixKitCommentsTest do
     end
 
     test "css_sources/0 returns list with app name" do
-      assert PhoenixKitComments.css_sources() == [:phoenix_kit_comments]
+      assert PhoenixKitComments.css_sources() == ["phoenix_kit_comments"]
     end
   end
 end

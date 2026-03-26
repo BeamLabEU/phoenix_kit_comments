@@ -56,12 +56,12 @@ defmodule PhoenixKitComments do
   require Logger
 
   alias PhoenixKit.Dashboard.Tab
-  alias PhoenixKitComments.Comment
-  alias PhoenixKitComments.CommentDislike
-  alias PhoenixKitComments.CommentLike
   alias PhoenixKit.Settings
   alias PhoenixKit.Utils.Date, as: UtilsDate
   alias PhoenixKit.Utils.UUID, as: UUIDUtils
+  alias PhoenixKitComments.Comment
+  alias PhoenixKitComments.CommentDislike
+  alias PhoenixKitComments.CommentLike
 
   # ============================================================================
   # Module Status
@@ -168,7 +168,7 @@ defmodule PhoenixKitComments do
   end
 
   @impl PhoenixKit.Module
-  def css_sources, do: [:phoenix_kit_comments]
+  def css_sources, do: ["phoenix_kit_comments"]
 
   # ============================================================================
   # Comment CRUD

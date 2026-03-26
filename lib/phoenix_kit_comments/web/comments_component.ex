@@ -36,8 +36,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   import PhoenixKitWeb.Components.Core.Icon
 
-  alias PhoenixKitComments
   alias PhoenixKit.Users.Roles
+  alias PhoenixKitComments
 
   @impl true
   def mount(socket) do
@@ -126,31 +126,34 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         {:noreply, socket |> put_flash(:error, "Comment not found")}
 
       comment ->
-        if can_delete_comment?(socket.assigns.current_user, comment) do
-          case PhoenixKitComments.delete_comment(comment) do
-            {:ok, _} ->
-              send(
-                self(),
-                {:comments_updated,
-                 %{
-                   resource_type: socket.assigns.resource_type,
-                   resource_uuid: socket.assigns.resource_uuid,
-                   action: :deleted
-                 }}
-              )
+        do_delete_comment(socket, comment)
+    end
+  end
 
-              {:noreply,
-               socket
-               |> load_comments()
-               |> put_flash(:info, "Comment deleted")}
+  defp do_delete_comment(socket, comment) do
+    if can_delete_comment?(socket.assigns.current_user, comment) do
+      case PhoenixKitComments.delete_comment(comment) do
+        {:ok, _} ->
+          send(
+            self(),
+            {:comments_updated,
+             %{
+               resource_type: socket.assigns.resource_type,
+               resource_uuid: socket.assigns.resource_uuid,
+               action: :deleted
+             }}
+          )
 
-            {:error, _} ->
-              {:noreply, socket |> put_flash(:error, "Failed to delete comment")}
-          end
-        else
           {:noreply,
-           socket |> put_flash(:error, "You don't have permission to delete this comment")}
-        end
+           socket
+           |> load_comments()
+           |> put_flash(:info, "Comment deleted")}
+
+        {:error, _} ->
+          {:noreply, socket |> put_flash(:error, "Failed to delete comment")}
+      end
+    else
+      {:noreply, socket |> put_flash(:error, "You don't have permission to delete this comment")}
     end
   end
 
