@@ -2,7 +2,7 @@ defmodule PhoenixKitComments.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/mdon/phoenix_kit_comments"
+  @source_url "https://github.com/BeamLabEU/phoenix_kit_comments"
 
   def project do
     [
