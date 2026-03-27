@@ -45,6 +45,34 @@ defmodule PhoenixKitComments.Web.Settings do
   end
 
   @impl true
+  def handle_event("add_resource_path", %{"resource_path" => params}, socket) do
+    case check_authorization(socket) do
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Not authorized")}
+
+      :ok ->
+        do_add_resource_path(socket, params)
+    end
+  end
+
+  @impl true
+  def handle_event("remove_resource_path", %{"type" => resource_type}, socket) do
+    case check_authorization(socket) do
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Not authorized")}
+
+      :ok ->
+        templates = Map.delete(socket.assigns.resource_paths, resource_type)
+        PhoenixKitComments.update_resource_path_templates(templates)
+
+        {:noreply,
+         socket
+         |> assign(:resource_paths, templates)
+         |> put_flash(:info, "Removed path for \"#{resource_type}\"")}
+    end
+  end
+
+  @impl true
   def handle_event("reset_defaults", _params, socket) do
     case check_authorization(socket) do
       {:error, :unauthorized} ->
@@ -105,12 +133,55 @@ defmodule PhoenixKitComments.Web.Settings do
     end
   end
 
+  defp do_add_resource_path(socket, params) do
+    resource_type = String.trim(params["resource_type"] || "")
+    path_template = String.trim(params["path_template"] || "")
+
+    cond do
+      resource_type == "" ->
+        {:noreply, put_flash(socket, :error, "Resource type is required")}
+
+      path_template == "" ->
+        {:noreply, put_flash(socket, :error, "Path template is required")}
+
+      not (String.contains?(path_template, ":uuid") or
+               String.contains?(path_template, ":metadata.")) ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Path template must contain :uuid or :metadata.KEY placeholders"
+         )}
+
+      true ->
+        templates = Map.put(socket.assigns.resource_paths, resource_type, path_template)
+        PhoenixKitComments.update_resource_path_templates(templates)
+
+        {:noreply,
+         socket
+         |> assign(:resource_paths, templates)
+         |> put_flash(:info, "Added path for \"#{resource_type}\"")}
+    end
+  end
+
   defp load_settings(socket) do
+    resource_paths = PhoenixKitComments.get_resource_path_templates()
+    counts_by_type = PhoenixKitComments.count_comments_by_type()
+
+    unconfigured_types =
+      counts_by_type
+      |> Map.keys()
+      |> Enum.reject(&Map.has_key?(resource_paths, &1))
+      |> Enum.sort()
+
     socket
     |> assign(:comments_enabled, Settings.get_setting("comments_enabled", "false"))
     |> assign(:comments_moderation, Settings.get_setting("comments_moderation", "false"))
     |> assign(:comments_max_depth, Settings.get_setting("comments_max_depth", "10"))
     |> assign(:comments_max_length, Settings.get_setting("comments_max_length", "10000"))
+    |> assign(:resource_paths, resource_paths)
+    |> assign(:counts_by_type, counts_by_type)
+    |> assign(:unconfigured_types, unconfigured_types)
   end
 
   defp check_authorization(socket) do

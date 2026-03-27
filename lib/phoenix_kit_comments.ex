@@ -428,6 +428,18 @@ defmodule PhoenixKitComments do
     _ -> []
   end
 
+  @doc "Returns comment counts grouped by resource type."
+  def count_comments_by_type do
+    from(c in Comment,
+      group_by: c.resource_type,
+      select: {c.resource_type, count(c.uuid)}
+    )
+    |> repo().all()
+    |> Map.new()
+  rescue
+    _ -> %{}
+  end
+
   @doc "Returns aggregate statistics for all comments."
   def comment_stats do
     %{
@@ -437,6 +449,40 @@ defmodule PhoenixKitComments do
       hidden: count_all_comments(status: "hidden"),
       deleted: count_all_comments(status: "deleted")
     }
+  end
+
+  # ============================================================================
+  # Resource Path Templates
+  # ============================================================================
+
+  @doc """
+  Gets configured URL path templates for resource types.
+
+  Returns a map of `resource_type => path_template`, e.g.:
+
+      %{"shoes" => "/order/shoes/:uuid", "ticket" => "/support/:uuid"}
+
+  Templates use `:uuid` as a placeholder that gets replaced with the actual
+  resource UUID when building links in the admin UI.
+  """
+  def get_resource_path_templates do
+    Settings.get_json_setting("comment_resource_paths", %{})
+  rescue
+    _ -> %{}
+  end
+
+  @doc """
+  Updates URL path templates for resource types.
+
+  ## Example
+
+      PhoenixKitComments.update_resource_path_templates(%{
+        "shoes" => "/order/shoes/:uuid",
+        "ticket" => "/support/tickets/:uuid"
+      })
+  """
+  def update_resource_path_templates(templates) when is_map(templates) do
+    Settings.update_json_setting("comment_resource_paths", templates)
   end
 
   # ============================================================================
@@ -452,9 +498,9 @@ defmodule PhoenixKitComments do
   """
   def resolve_resource_context(comments) do
     comments
-    |> Enum.group_by(& &1.resource_type, & &1.resource_uuid)
-    |> Enum.reduce(%{}, fn {resource_type, ids}, acc ->
-      resolved = resolve_for_type(resource_type, Enum.uniq(ids))
+    |> Enum.group_by(& &1.resource_type)
+    |> Enum.reduce(%{}, fn {resource_type, type_comments}, acc ->
+      resolved = resolve_for_type(resource_type, type_comments)
 
       Enum.reduce(resolved, acc, fn {id, info}, inner ->
         Map.put(inner, {resource_type, id}, info)
@@ -478,7 +524,23 @@ defmodule PhoenixKitComments do
     handlers
   end
 
-  defp resolve_for_type(resource_type, resource_uuids) do
+  defp resolve_for_type(resource_type, comments) do
+    resource_uuids = comments |> Enum.map(& &1.resource_uuid) |> Enum.uniq()
+
+    case resolve_via_handler(resource_type, resource_uuids) do
+      result when map_size(result) > 0 ->
+        result
+
+      _ ->
+        resolve_via_path_template(resource_type, comments)
+    end
+  rescue
+    e ->
+      Logger.warning("Comment resource resolver error: #{inspect(e)}")
+      %{}
+  end
+
+  defp resolve_via_handler(resource_type, resource_uuids) do
     handlers = resource_handlers()
 
     case Map.get(handlers, resource_type) do
@@ -492,10 +554,35 @@ defmodule PhoenixKitComments do
           %{}
         end
     end
-  rescue
-    e ->
-      Logger.warning("Comment resource resolver error: #{inspect(e)}")
-      %{}
+  end
+
+  defp resolve_via_path_template(resource_type, comments) do
+    templates = get_resource_path_templates()
+
+    case Map.get(templates, resource_type) do
+      nil ->
+        %{}
+
+      template ->
+        Map.new(comments, fn comment ->
+          metadata = comment.metadata || %{}
+          path = apply_path_template(template, comment.resource_uuid, metadata)
+          short_id = comment.resource_uuid |> to_string() |> String.slice(0..7)
+          {comment.resource_uuid, %{title: "#{resource_type} #{short_id}...", path: path}}
+        end)
+    end
+  end
+
+  defp apply_path_template(template, resource_uuid, metadata) do
+    template
+    |> String.replace(":uuid", to_string(resource_uuid))
+    |> replace_metadata_placeholders(metadata)
+  end
+
+  defp replace_metadata_placeholders(template, metadata) do
+    Regex.replace(~r/:metadata\.(\w+)/, template, fn _match, key ->
+      metadata |> Map.get(key, "") |> to_string()
+    end)
   end
 
   # ============================================================================

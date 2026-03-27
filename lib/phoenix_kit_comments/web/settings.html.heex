@@ -113,6 +113,135 @@
         </div>
       </div>
 
+      <%!-- Resource Link Patterns --%>
+      <div class="card bg-base-100 shadow-xl mb-6">
+        <div class="card-body">
+          <h2 class="card-title text-2xl mb-2">
+            <.icon name="hero-link" class="w-6 h-6" /> Resource Link Patterns
+          </h2>
+          <p class="text-sm text-base-content/60 mb-4">
+            Configure URL patterns for resource types so comments link to their source in the admin page.
+            Use <code class="kbd kbd-sm">:uuid</code> for resource ID and
+            <code class="kbd kbd-sm">:metadata.KEY</code> for values from comment metadata.
+          </p>
+          <p class="text-xs text-base-content/40 mb-4">
+            Example: <code>/products/:uuid</code> or <code>/shop/:metadata.category/:uuid</code>
+          </p>
+
+          <%!-- Existing patterns --%>
+          <%= if map_size(@resource_paths) > 0 do %>
+            <div class="overflow-x-auto mb-4">
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>Resource Type</th>
+                    <th>Path Template</th>
+                    <th class="w-20"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <%= for {resource_type, path_template} <- Enum.sort(@resource_paths) do %>
+                    <tr>
+                      <td>
+                        <span class="badge badge-ghost badge-sm">{resource_type}</span>
+                      </td>
+                      <td>
+                        <code class="text-sm">{path_template}</code>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          phx-click="remove_resource_path"
+                          phx-value-type={resource_type}
+                          class="btn btn-ghost btn-xs text-error"
+                          data-confirm={"Remove path pattern for \"#{resource_type}\"?"}
+                        >
+                          <.icon name="hero-trash" class="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          <% else %>
+            <div class="text-center py-4 text-base-content/50 text-sm mb-4">
+              No resource link patterns configured yet.
+            </div>
+          <% end %>
+
+          <%!-- Unconfigured types from DB --%>
+          <%= if @unconfigured_types != [] do %>
+            <div class="mb-4">
+              <h3 class="text-sm font-semibold text-warning mb-2">
+                <.icon name="hero-exclamation-triangle" class="w-4 h-4 inline" />
+                Resource types without link patterns
+              </h3>
+              <div class="space-y-2">
+                <%= for resource_type <- @unconfigured_types do %>
+                  <.form
+                    for={%{}}
+                    phx-submit="add_resource_path"
+                    class="flex flex-wrap gap-3 items-center"
+                  >
+                    <input type="hidden" name="resource_path[resource_type]" value={resource_type} />
+                    <span class="badge badge-warning badge-sm">{resource_type}</span>
+                    <span class="text-xs text-base-content/50">
+                      {Map.get(@counts_by_type, resource_type, 0)} comments
+                    </span>
+                    <div class="form-control flex-1 min-w-48">
+                      <input
+                        type="text"
+                        name="resource_path[path_template]"
+                        placeholder={"e.g. /#{resource_type}/:uuid"}
+                        class="input input-bordered input-sm"
+                        required
+                      />
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-outline btn-warning">
+                      <.icon name="hero-plus" class="w-4 h-4" /> Add
+                    </button>
+                  </.form>
+                <% end %>
+              </div>
+            </div>
+
+            <div class="divider text-xs text-base-content/40">or add manually</div>
+          <% end %>
+
+          <%!-- Add new pattern manually --%>
+          <.form for={%{}} phx-submit="add_resource_path" class="flex flex-wrap gap-3 items-end">
+            <div class="form-control flex-1 min-w-32">
+              <label class="label">
+                <span class="label-text text-sm">Resource Type</span>
+              </label>
+              <input
+                type="text"
+                name="resource_path[resource_type]"
+                placeholder="e.g. shoes"
+                class="input input-bordered input-sm"
+                required
+              />
+            </div>
+            <div class="form-control flex-[2] min-w-48">
+              <label class="label">
+                <span class="label-text text-sm">Path Template</span>
+              </label>
+              <input
+                type="text"
+                name="resource_path[path_template]"
+                placeholder="e.g. /order/shoes/:uuid"
+                class="input input-bordered input-sm"
+                required
+              />
+            </div>
+            <button type="submit" class="btn btn-sm btn-outline btn-primary">
+              <.icon name="hero-plus" class="w-4 h-4" /> Add
+            </button>
+          </.form>
+        </div>
+      </div>
+
       <%!-- Action Buttons --%>
       <div class="flex gap-4 justify-end">
         <button
