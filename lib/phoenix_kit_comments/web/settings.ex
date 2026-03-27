@@ -79,6 +79,8 @@ defmodule PhoenixKitComments.Web.Settings do
         {:noreply, put_flash(socket, :error, "Not authorized")}
 
       :ok ->
+        # Resource path templates are intentionally NOT reset here —
+        # they are user-configured data, not settings with defaults.
         defaults = %{
           "comments_enabled" => "false",
           "comments_moderation" => "false",
