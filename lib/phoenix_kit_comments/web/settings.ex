@@ -137,29 +137,8 @@ defmodule PhoenixKitComments.Web.Settings do
     resource_type = String.trim(params["resource_type"] || "")
     path_template = String.trim(params["path_template"] || "")
 
-    cond do
-      resource_type == "" ->
-        {:noreply, put_flash(socket, :error, "Resource type is required")}
-
-      path_template == "" ->
-        {:noreply, put_flash(socket, :error, "Path template is required")}
-
-      not String.starts_with?(path_template, "/") ->
-        {:noreply, put_flash(socket, :error, "Path template must start with /")}
-
-      String.contains?(path_template, "://") ->
-        {:noreply, put_flash(socket, :error, "Path template must be a relative path")}
-
-      not (String.contains?(path_template, ":uuid") or
-               String.contains?(path_template, ":metadata.")) ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Path template must contain :uuid or :metadata.KEY placeholders"
-         )}
-
-      true ->
+    case validate_resource_path(resource_type, path_template) do
+      :ok ->
         templates = Map.put(socket.assigns.resource_paths, resource_type, path_template)
         PhoenixKitComments.update_resource_path_templates(templates)
 
@@ -167,6 +146,29 @@ defmodule PhoenixKitComments.Web.Settings do
          socket
          |> put_flash(:info, "Added path for \"#{resource_type}\"")
          |> load_settings()}
+
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
+    end
+  end
+
+  defp validate_resource_path("", _), do: {:error, "Resource type is required"}
+  defp validate_resource_path(_, ""), do: {:error, "Path template is required"}
+
+  defp validate_resource_path(_resource_type, path_template) do
+    cond do
+      not String.starts_with?(path_template, "/") ->
+        {:error, "Path template must start with /"}
+
+      String.contains?(path_template, "://") ->
+        {:error, "Path template must be a relative path"}
+
+      not (String.contains?(path_template, ":uuid") or
+               String.contains?(path_template, ":metadata.")) ->
+        {:error, "Path template must contain :uuid or :metadata.KEY placeholders"}
+
+      true ->
+        :ok
     end
   end
 
