@@ -628,8 +628,8 @@ defmodule PhoenixKitComments do
 
   defp apply_title_template(template, resource_uuid, metadata) do
     template
-    |> replace_metadata_placeholders(metadata)
-    |> String.replace(":uuid", to_string(resource_uuid))
+    |> replace_metadata_truncated(metadata)
+    |> String.replace(":uuid", truncate_value(to_string(resource_uuid)))
   end
 
   defp prefix_value do
@@ -641,6 +641,20 @@ defmodule PhoenixKitComments do
     Regex.replace(~r/:metadata\.(\w+)/, template, fn _match, key ->
       metadata |> Map.get(key, "") |> to_string()
     end)
+  end
+
+  defp replace_metadata_truncated(template, metadata) do
+    Regex.replace(~r/:metadata\.(\w+)/, template, fn _match, key ->
+      metadata |> Map.get(key, "") |> to_string() |> truncate_value()
+    end)
+  end
+
+  @metadata_max_display_length 15
+
+  defp truncate_value(value) when byte_size(value) <= @metadata_max_display_length, do: value
+
+  defp truncate_value(value) do
+    String.slice(value, 0, @metadata_max_display_length) <> "..."
   end
 
   # ============================================================================

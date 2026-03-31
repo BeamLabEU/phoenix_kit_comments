@@ -115,18 +115,31 @@
       card_title={fn comment -> String.slice(comment.content, 0..99) end}
       card_fields={
         fn comment ->
-          [
+          fields = [
             %{
               label: gettext("Author"),
               value: if(comment.user, do: comment.user.email, else: "Deleted user")
             },
-            %{label: gettext("Resource"), value: comment.resource_type},
-            %{label: gettext("Status"), value: comment.status},
-            %{
-              label: gettext("Date"),
-              value: Calendar.strftime(comment.inserted_at, "%b %d, %Y")
-            }
+            %{label: gettext("Resource"), value: comment.resource_type}
           ]
+
+          fields =
+            case resource_info(@resource_context, comment) do
+              %{title: title} ->
+                fields ++ [%{label: gettext("Display"), value: title}]
+
+              _ ->
+                fields
+            end
+
+          fields ++
+            [
+              %{label: gettext("Status"), value: comment.status},
+              %{
+                label: gettext("Date"),
+                value: Calendar.strftime(comment.inserted_at, "%b %d, %Y")
+              }
+            ]
         end
       }
     >
