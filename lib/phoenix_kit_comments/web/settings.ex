@@ -28,6 +28,8 @@ defmodule PhoenixKitComments.Web.Settings do
       |> assign(:project_title, project_title)
       |> assign(:saving, false)
       |> assign(:editing_resource_type, nil)
+      |> assign(:editing_path_value, "")
+      |> assign(:draft_paths, %{})
       |> load_settings()
 
     {:ok, socket}
@@ -75,12 +77,33 @@ defmodule PhoenixKitComments.Web.Settings do
 
   @impl true
   def handle_event("edit_resource_path", %{"type" => resource_type}, socket) do
-    {:noreply, assign(socket, :editing_resource_type, resource_type)}
+    current_value = Map.get(socket.assigns.resource_paths, resource_type, "")
+
+    {:noreply,
+     socket
+     |> assign(:editing_resource_type, resource_type)
+     |> assign(:editing_path_value, current_value)}
   end
 
   @impl true
   def handle_event("cancel_edit_resource_path", _params, socket) do
-    {:noreply, assign(socket, :editing_resource_type, nil)}
+    {:noreply,
+     socket
+     |> assign(:editing_resource_type, nil)
+     |> assign(:editing_path_value, "")}
+  end
+
+  @impl true
+  def handle_event("live_edit_path", %{"resource_path" => %{"path_template" => value}}, socket) do
+    {:noreply, assign(socket, :editing_path_value, value)}
+  end
+
+  @impl true
+  def handle_event("live_draft_path", %{"resource_path" => params}, socket) do
+    resource_type = params["resource_type"] || ""
+    value = params["path_template"] || ""
+    draft_paths = Map.put(socket.assigns.draft_paths, resource_type, value)
+    {:noreply, assign(socket, :draft_paths, draft_paths)}
   end
 
   @impl true
