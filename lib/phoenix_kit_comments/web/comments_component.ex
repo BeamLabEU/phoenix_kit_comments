@@ -45,7 +45,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:comments, [])
      |> assign(:comment_count, 0)
      |> assign(:reply_to, nil)
-     |> assign(:new_comment, "")}
+     |> assign(:new_comment, "")
+     |> assign(:editing_uuid, nil)
+     |> assign(:editing_content, "")}
   end
 
   @impl true
@@ -120,6 +122,50 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   @impl true
+  def handle_event("edit_comment", %{"id" => comment_uuid}, socket) do
+    case PhoenixKitComments.get_comment(comment_uuid) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Comment not found")}
+
+      comment ->
+        if can_edit_comment?(socket.assigns.current_user, comment) do
+          {:noreply,
+           socket
+           |> assign(:editing_uuid, comment_uuid)
+           |> assign(:editing_content, comment.content)}
+        else
+          {:noreply, put_flash(socket, :error, "You don't have permission to edit this comment")}
+        end
+    end
+  end
+
+  @impl true
+  def handle_event("cancel_edit", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:editing_uuid, nil)
+     |> assign(:editing_content, "")}
+  end
+
+  @impl true
+  def handle_event("save_edit", %{"content" => content}, socket) do
+    comment_uuid = socket.assigns.editing_uuid
+
+    case PhoenixKitComments.get_comment(comment_uuid) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Comment not found")}
+
+      comment ->
+        if comment.resource_type != socket.assigns.resource_type or
+             comment.resource_uuid != socket.assigns.resource_uuid do
+          {:noreply, put_flash(socket, :error, "Invalid comment for this resource")}
+        else
+          do_save_edit(socket, comment, content)
+        end
+    end
+  end
+
+  @impl true
   def handle_event("delete_comment", %{"id" => comment_uuid}, socket) do
     case PhoenixKitComments.get_comment(comment_uuid) do
       nil ->
@@ -143,6 +189,25 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
       true ->
         execute_delete(socket, comment)
+    end
+  end
+
+  defp do_save_edit(socket, comment, content) do
+    if can_edit_comment?(socket.assigns.current_user, comment) do
+      case PhoenixKitComments.update_comment(comment, %{content: content}) do
+        {:ok, _} ->
+          {:noreply,
+           socket
+           |> assign(:editing_uuid, nil)
+           |> assign(:editing_content, "")
+           |> load_comments()
+           |> put_flash(:info, "Comment updated")}
+
+        {:error, _} ->
+          {:noreply, put_flash(socket, :error, "Failed to update comment")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You don't have permission to edit this comment")}
     end
   end
 
@@ -191,6 +256,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   attr(:comment, :map, required: true)
   attr(:current_user, :map, required: true)
   attr(:myself, :any, required: true)
+  attr(:editing_uuid, :string, default: nil)
+  attr(:editing_content, :string, default: "")
 
   def render_comment(assigns) do
     ~H"""
@@ -226,6 +293,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               <.icon name="hero-arrow-uturn-left" class="w-4 h-4" /> Reply
             </button>
 
+            <%= if can_edit_comment?(@current_user, @comment) do %>
+              <button
+                phx-click="edit_comment"
+                phx-value-id={@comment.uuid}
+                phx-target={@myself}
+                class="btn btn-ghost btn-xs"
+              >
+                <.icon name="hero-pencil-square" class="w-4 h-4" />
+              </button>
+            <% end %>
+
             <%= if can_delete_comment?(@current_user, @comment) do %>
               <button
                 phx-click="delete_comment"
@@ -240,10 +318,34 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           </div>
         </div>
 
-        <%!-- Comment Content --%>
-        <div class="text-base-content">
-          {@comment.content}
-        </div>
+        <%!-- Comment Content (or Edit Form) --%>
+        <%= if @editing_uuid == @comment.uuid do %>
+          <.form for={%{}} phx-submit="save_edit" phx-target={@myself} class="space-y-2">
+            <textarea
+              name="content"
+              class="textarea textarea-bordered w-full"
+              rows="3"
+              required
+            ><%= @editing_content %></textarea>
+            <div class="flex justify-end gap-2">
+              <button
+                type="button"
+                phx-click="cancel_edit"
+                phx-target={@myself}
+                class="btn btn-ghost btn-sm"
+              >
+                Cancel
+              </button>
+              <button type="submit" class="btn btn-primary btn-sm">
+                <.icon name="hero-check" class="w-4 h-4 mr-1" /> Save
+              </button>
+            </div>
+          </.form>
+        <% else %>
+          <div class="text-base-content">
+            {@comment.content}
+          </div>
+        <% end %>
 
         <%!-- Nested Comments (Replies) --%>
         <%= if @comment.children && length(@comment.children) > 0 do %>
@@ -253,6 +355,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 comment={child}
                 current_user={@current_user}
                 myself={@myself}
+                editing_uuid={@editing_uuid}
+                editing_content={@editing_content}
               />
             <% end %>
           </div>
@@ -260,6 +364,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       </div>
     </div>
     """
+  end
+
+  defp can_edit_comment?(user, comment) do
+    user.uuid == comment.user_uuid or user_is_admin?(user)
   end
 
   defp can_delete_comment?(user, comment) do

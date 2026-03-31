@@ -209,9 +209,17 @@
                 {comment.resource_type}
               </span>
               <%= case resource_info(@resource_context, comment) do %>
-                <% %{title: title, path: path} -> %>
+                <% %{title: title, path: path, prefixed: true} -> %>
                   <.link
                     navigate={Routes.path(path)}
+                    class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
+                    title={title}
+                  >
+                    {String.slice(title, 0..49)}
+                  </.link>
+                <% %{title: title, path: path} -> %>
+                  <.link
+                    navigate={path}
                     class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
                     title={title}
                   >
