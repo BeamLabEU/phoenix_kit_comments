@@ -533,7 +533,7 @@ defmodule PhoenixKitComments do
 
     case resolve_via_handler(resource_type, resource_uuids) do
       result when map_size(result) > 0 ->
-        result
+        Map.new(result, fn {id, info} -> {id, Map.put(info, :prefixed, true)} end)
 
       _ ->
         resolve_via_path_template(resource_type, comments)
@@ -572,15 +572,23 @@ defmodule PhoenixKitComments do
           metadata = comment.metadata || %{}
           path = apply_path_template(template, comment.resource_uuid, metadata)
           short_id = comment.resource_uuid |> to_string() |> String.slice(0..7)
-          {comment.resource_uuid, %{title: "#{resource_type} #{short_id}...", path: path}}
+
+          {comment.resource_uuid,
+           %{title: "#{resource_type} #{short_id}...", path: path, prefixed: false}}
         end)
     end
   end
 
   defp apply_path_template(template, resource_uuid, metadata) do
     template
+    |> String.replace(":prefix", prefix_value())
     |> String.replace(":uuid", to_string(resource_uuid))
     |> replace_metadata_placeholders(metadata)
+  end
+
+  defp prefix_value do
+    prefix = PhoenixKit.Utils.Routes.url_prefix()
+    if prefix == "/", do: "", else: prefix
   end
 
   defp replace_metadata_placeholders(template, metadata) do

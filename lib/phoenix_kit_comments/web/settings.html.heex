@@ -140,11 +140,12 @@
         </h2>
         <p class="text-sm text-base-content/60 mb-4">
           Configure URL patterns for resource types so comments link to their source in the admin page.
-          Use <code class="kbd kbd-sm">:uuid</code> for resource ID and
-          <code class="kbd kbd-sm">:metadata.KEY</code> for values from comment metadata.
+          Use <code class="kbd kbd-sm">:uuid</code> for resource ID,
+          <code class="kbd kbd-sm">:metadata.KEY</code> for values from comment metadata,
+          and <code class="kbd kbd-sm">:prefix</code> to include the site URL prefix.
         </p>
         <p class="text-xs text-base-content/40 mb-4">
-          Example: <code>/products/:uuid</code> or <code>/shop/:metadata.category/:uuid</code>
+          Example: <code>/products/:uuid</code> or <code>:prefix/admin/shop/:uuid</code>
         </p>
 
         <%!-- Existing patterns --%>
@@ -160,25 +161,68 @@
               </thead>
               <tbody>
                 <%= for {resource_type, path_template} <- Enum.sort(@resource_paths) do %>
-                  <tr>
-                    <td>
-                      <span class="badge badge-ghost badge-sm">{resource_type}</span>
-                    </td>
-                    <td>
-                      <code class="text-sm">{path_template}</code>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        phx-click="remove_resource_path"
-                        phx-value-type={resource_type}
-                        class="btn btn-ghost btn-xs text-error"
-                        data-confirm={"Remove path pattern for \"#{resource_type}\"?"}
-                      >
-                        <.icon name="hero-trash" class="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
+                  <%= if @editing_resource_type == resource_type do %>
+                    <tr>
+                      <td>
+                        <span class="badge badge-ghost badge-sm">{resource_type}</span>
+                      </td>
+                      <td colspan="2">
+                        <.form
+                          for={%{}}
+                          phx-submit="save_resource_path"
+                          class="flex items-center gap-2"
+                        >
+                          <input
+                            type="text"
+                            name="resource_path[path_template]"
+                            value={path_template}
+                            class="input input-bordered input-sm flex-1"
+                            required
+                          />
+                          <button type="submit" class="btn btn-primary btn-xs">
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            phx-click="cancel_edit_resource_path"
+                            class="btn btn-ghost btn-xs"
+                          >
+                            Cancel
+                          </button>
+                        </.form>
+                      </td>
+                    </tr>
+                  <% else %>
+                    <tr>
+                      <td>
+                        <span class="badge badge-ghost badge-sm">{resource_type}</span>
+                      </td>
+                      <td>
+                        <code class="text-sm">{path_template}</code>
+                      </td>
+                      <td>
+                        <div class="flex gap-1">
+                          <button
+                            type="button"
+                            phx-click="edit_resource_path"
+                            phx-value-type={resource_type}
+                            class="btn btn-ghost btn-xs"
+                          >
+                            <.icon name="hero-pencil-square" class="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            phx-click="remove_resource_path"
+                            phx-value-type={resource_type}
+                            class="btn btn-ghost btn-xs text-error"
+                            data-confirm={"Remove path pattern for \"#{resource_type}\"?"}
+                          >
+                            <.icon name="hero-trash" class="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  <% end %>
                 <% end %>
               </tbody>
             </table>

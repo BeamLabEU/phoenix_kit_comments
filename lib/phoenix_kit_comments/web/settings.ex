@@ -27,6 +27,7 @@ defmodule PhoenixKitComments.Web.Settings do
       |> assign(:page_title, "Comments Settings")
       |> assign(:project_title, project_title)
       |> assign(:saving, false)
+      |> assign(:editing_resource_type, nil)
       |> load_settings()
 
     {:ok, socket}
@@ -69,6 +70,27 @@ defmodule PhoenixKitComments.Web.Settings do
          socket
          |> put_flash(:info, "Removed path for \"#{resource_type}\"")
          |> load_settings()}
+    end
+  end
+
+  @impl true
+  def handle_event("edit_resource_path", %{"type" => resource_type}, socket) do
+    {:noreply, assign(socket, :editing_resource_type, resource_type)}
+  end
+
+  @impl true
+  def handle_event("cancel_edit_resource_path", _params, socket) do
+    {:noreply, assign(socket, :editing_resource_type, nil)}
+  end
+
+  @impl true
+  def handle_event("save_resource_path", %{"resource_path" => params}, socket) do
+    case check_authorization(socket) do
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Not authorized")}
+
+      :ok ->
+        do_save_resource_path(socket, params)
     end
   end
 
@@ -154,13 +176,34 @@ defmodule PhoenixKitComments.Web.Settings do
     end
   end
 
+  defp do_save_resource_path(socket, params) do
+    resource_type = socket.assigns.editing_resource_type
+    path_template = String.trim(params["path_template"] || "")
+
+    case validate_resource_path(resource_type, path_template) do
+      :ok ->
+        templates = Map.put(socket.assigns.resource_paths, resource_type, path_template)
+        PhoenixKitComments.update_resource_path_templates(templates)
+
+        {:noreply,
+         socket
+         |> assign(:editing_resource_type, nil)
+         |> put_flash(:info, "Updated path for \"#{resource_type}\"")
+         |> load_settings()}
+
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
+    end
+  end
+
   defp validate_resource_path("", _), do: {:error, "Resource type is required"}
   defp validate_resource_path(_, ""), do: {:error, "Path template is required"}
 
   defp validate_resource_path(_resource_type, path_template) do
     cond do
-      not String.starts_with?(path_template, "/") ->
-        {:error, "Path template must start with /"}
+      not (String.starts_with?(path_template, "/") or
+               String.starts_with?(path_template, ":prefix")) ->
+        {:error, "Path template must start with / or :prefix"}
 
       String.contains?(path_template, "://") ->
         {:error, "Path template must be a relative path"}
