@@ -144,20 +144,38 @@
             this.setup();
           },
           updated() { this.setup(); },
+          colorBadges() {
+            var container = this.el;
+            var input = this._lastInputName
+              ? container.querySelector("[name='" + this._lastInputName + "']")
+              : null;
+            var val = input ? input.value : "";
+            container.querySelectorAll("[data-field]").forEach(function(badge) {
+              var used = val && val.indexOf(badge.dataset.field) !== -1;
+              badge.classList.remove("badge-success", "badge-ghost");
+              badge.classList.add(used ? "badge-success" : "badge-ghost");
+            });
+          },
           setup() {
             var self = this;
             var container = this.el;
             container.querySelectorAll("textarea, input[type='text']").forEach(function(input) {
               input.addEventListener("focus", function() {
                 self._lastInputName = input.name;
+                self.colorBadges();
               });
               input.addEventListener("keyup", function() {
                 self._lastCursorPos = input.selectionStart;
+                self.colorBadges();
               });
               input.addEventListener("click", function() {
                 self._lastCursorPos = input.selectionStart;
               });
+              input.addEventListener("input", function() {
+                self.colorBadges();
+              });
             });
+            self.colorBadges();
             container.querySelectorAll("[data-field]").forEach(function(badge) {
               badge.style.cursor = "pointer";
               badge.onclick = function(e) {
@@ -255,25 +273,15 @@
                               />
                             </div>
                             <%= if keys = Map.get(@metadata_keys_by_type, resource_type) do %>
-                              <% combined = @editing_path_value <> @editing_title_value %>
                               <div class="text-xs text-base-content/60 flex flex-wrap items-center gap-1">
                                 <span class="font-semibold">Available fields:</span>
                                 <%= for key <- keys do %>
-                                  <%= if String.contains?(combined, ":metadata.#{key}") do %>
-                                    <span
-                                      class="badge badge-success badge-xs font-mono gap-0.5"
-                                      data-field={":metadata.#{key}"}
-                                    >
-                                      :metadata.{key}
-                                    </span>
-                                  <% else %>
-                                    <span
-                                      class="badge badge-ghost badge-xs font-mono gap-0.5"
-                                      data-field={":metadata.#{key}"}
-                                    >
-                                      :metadata.{key}
-                                    </span>
-                                  <% end %>
+                                  <span
+                                    class="badge badge-ghost badge-xs font-mono gap-0.5"
+                                    data-field={":metadata.#{key}"}
+                                  >
+                                    :metadata.{key}
+                                  </span>
                                 <% end %>
                               </div>
                             <% end %>
@@ -386,25 +394,15 @@
                       />
                     </div>
                     <%= if keys = Map.get(@metadata_keys_by_type, resource_type) do %>
-                      <% combined = Map.get(@draft_paths, resource_type, "") <> Map.get(@draft_titles, resource_type, "") %>
                       <div class="text-xs text-base-content/60 mt-1 flex flex-wrap items-center gap-1">
                         <span class="font-semibold">Available fields:</span>
                         <%= for key <- keys do %>
-                          <%= if String.contains?(combined, ":metadata.#{key}") do %>
-                            <span
-                              class="badge badge-success badge-xs font-mono gap-0.5"
-                              data-field={":metadata.#{key}"}
-                            >
-                              :metadata.{key}
-                            </span>
-                          <% else %>
-                            <span
-                              class="badge badge-ghost badge-xs font-mono gap-0.5"
-                              data-field={":metadata.#{key}"}
-                            >
-                              :metadata.{key}
-                            </span>
-                          <% end %>
+                          <span
+                            class="badge badge-ghost badge-xs font-mono gap-0.5"
+                            data-field={":metadata.#{key}"}
+                          >
+                            :metadata.{key}
+                          </span>
                         <% end %>
                       </div>
                     <% end %>
