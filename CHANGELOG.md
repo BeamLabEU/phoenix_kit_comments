@@ -4,6 +4,19 @@ All notable changes to PhoenixKitComments will be documented in this file.
 
 ## Unreleased
 
+## 0.1.2 — 2026-03-31
+
+### Features
+
+- Truncate long metadata values in display titles — individual values capped at 15 characters
+  with `...` suffix to keep titles compact.
+- Mobile-responsive settings page — table switches to stacked card view on small screens, toggles
+  and buttons stack vertically, overflow prevention throughout.
+- Client-side badge coloring — metadata field badges now highlight based on the currently focused
+  input via the JS hook instead of server-side rendering.
+- Display title shown in mobile card view on comments admin page when a display template is
+  configured for the resource type.
+
 ## 0.1.1 — 2026-03-31
 
 ### Features
