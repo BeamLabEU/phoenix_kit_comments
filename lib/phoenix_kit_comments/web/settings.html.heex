@@ -172,13 +172,12 @@
                           phx-submit="save_resource_path"
                           class="flex items-center gap-2"
                         >
-                          <input
-                            type="text"
+                          <textarea
                             name="resource_path[path_template]"
-                            value={path_template}
-                            class="input input-bordered input-sm flex-1"
+                            class="textarea textarea-bordered textarea-sm flex-1 min-h-[4rem]"
+                            rows="2"
                             required
-                          />
+                          ><%= path_template %></textarea>
                           <button type="submit" class="btn btn-primary btn-xs">
                             Save
                           </button>
