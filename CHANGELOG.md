@@ -1,21 +1,11 @@
 # Changelog
 
-## 0.1.6 - 2026-04-17
+All notable changes to PhoenixKitComments will be documented in this file.
 
-### Fixed
-
-- Drop `Application.put_env(:giphy_api, :api_key, ...)` in
-  `PhoenixKitComments.search_giphy/2`. The key is now passed per-call via
-  `giphy_api` 0.1.1's new `:api_key` option — no more global write on each
-  search. Also guards against empty API keys at the wrapper level.
-
-### Dependencies
-
-- Bump `giphy_api` from `~> 0.1` to `~> 0.1.1`.
-
-## 0.1.5 - 2026-04-16
+## 0.1.5 — 2026-04-17
 
 ### Features
+
 - Optional Giphy integration for the comment form. Users can post text-only,
   GIF-only, or text + GIF comments via a floating Giphy picker; the selected GIF
   is stored on `comment.metadata["giphy"]` and rendered inline with the comment.
@@ -25,6 +15,9 @@
   own inputs into the new-comment form and any `name="metadata[<key>]"` values
   are merged into `comment.metadata` on submit (the `"giphy"` key is reserved).
 - Character counter and Cancel button added to the top-level comment form.
+- Responsive mobile overhaul of the entire comments component (down to ~320px):
+  card `overflow-hidden`, wrapping header, `break-words` content,
+  container-scaled GIFs, and a mobile bottom-sheet variant of the picker.
 
 ### Breaking
 
@@ -33,15 +26,17 @@
   their own changeset relying on the `content can't be blank` error should check
   the new validation path.
 
-## 0.1.4 - 2026-04-12
+### Dependencies
+
+- Add `giphy_api ~> 0.1.1`. The API key is passed per-call via the library's
+  `:api_key` option, so no global `Application.put_env/3` write happens on each
+  search. Empty keys short-circuit before any HTTP call.
+
+## 0.1.4 — 2026-04-12
 
 ### Fixed
-- Add routing anti-pattern warning to AGENTS.md
 
-
-All notable changes to PhoenixKitComments will be documented in this file.
-
-## Unreleased
+- Add routing anti-pattern warning to AGENTS.md.
 
 ## 0.1.3 — 2026-04-02
 
