@@ -146,7 +146,10 @@ defmodule PhoenixKitComments.Web.Settings do
           "comments_enabled" => "false",
           "comments_moderation" => "false",
           "comments_max_depth" => "10",
-          "comments_max_length" => "10000"
+          "comments_max_length" => "10000",
+          "comments_giphy_enabled" => "false",
+          "comments_giphy_api_key" => "",
+          "comments_giphy_rating" => "g"
         }
 
         Enum.each(defaults, fn {key, value} ->
@@ -283,6 +286,9 @@ defmodule PhoenixKitComments.Web.Settings do
     |> assign(:comments_moderation, Settings.get_setting("comments_moderation", "false"))
     |> assign(:comments_max_depth, Settings.get_setting("comments_max_depth", "10"))
     |> assign(:comments_max_length, Settings.get_setting("comments_max_length", "10000"))
+    |> assign(:comments_giphy_enabled, Settings.get_setting("comments_giphy_enabled", "false"))
+    |> assign(:comments_giphy_api_key, Settings.get_setting("comments_giphy_api_key", ""))
+    |> assign(:comments_giphy_rating, Settings.get_setting("comments_giphy_rating", "g"))
     |> assign(:resource_paths, resource_paths)
     |> assign(:counts_by_type, counts_by_type)
     |> assign(:unconfigured_types, unconfigured_types)

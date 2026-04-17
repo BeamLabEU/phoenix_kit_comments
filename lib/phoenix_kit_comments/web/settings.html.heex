@@ -113,6 +113,75 @@
         </div>
       </div>
 
+      <%!-- Giphy Integration --%>
+      <div class="card bg-base-100 shadow-xl mb-6">
+        <div class="card-body overflow-hidden">
+          <h2 class="card-title text-xl sm:text-2xl mb-4 flex-wrap">
+            <.icon name="hero-film" class="w-6 h-6" /> Giphy Integration
+          </h2>
+
+          <div class="form-control mb-4">
+            <label class="cursor-pointer flex flex-col sm:flex-row sm:items-center gap-3 p-2">
+              <span class="flex-1 min-w-0">
+                <span class="font-semibold text-lg">Enable Giphy Picker</span>
+                <div class="text-sm text-base-content/70 mt-1">
+                  Show a GIF picker in the comment form. Requires a valid API key below.
+                </div>
+              </span>
+              <input type="hidden" name="settings[comments_giphy_enabled]" value="false" />
+              <input
+                type="checkbox"
+                name="settings[comments_giphy_enabled]"
+                value="true"
+                class="toggle toggle-primary shrink-0"
+                checked={@comments_giphy_enabled == "true"}
+              />
+            </label>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-semibold">Giphy API Key</span>
+              </label>
+              <input
+                type="password"
+                name="settings[comments_giphy_api_key]"
+                value={@comments_giphy_api_key}
+                autocomplete="off"
+                placeholder="Paste your Giphy API key"
+                class="input input-bordered"
+              />
+              <label class="label">
+                <span class="label-text-alt text-base-content/60">
+                  Stored in the database. Leave blank to disable.
+                </span>
+              </label>
+            </div>
+
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-semibold">Content Rating</span>
+              </label>
+              <select
+                name="settings[comments_giphy_rating]"
+                class="select select-bordered"
+              >
+                <option value="g" selected={@comments_giphy_rating == "g"}>G</option>
+                <option value="pg" selected={@comments_giphy_rating == "pg"}>PG</option>
+                <option value="pg-13" selected={@comments_giphy_rating == "pg-13"}>PG-13</option>
+                <option value="r" selected={@comments_giphy_rating == "r"}>R</option>
+              </select>
+              <label class="label">
+                <span class="label-text-alt text-base-content/60">
+                  Maximum rating returned by Giphy search (default: G)
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <%!-- Action Buttons --%>
       <div class="flex flex-col-reverse sm:flex-row gap-3 sm:gap-4 sm:justify-end">
         <button

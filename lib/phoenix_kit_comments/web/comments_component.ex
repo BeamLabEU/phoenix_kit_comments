@@ -25,6 +25,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   - `show_likes` - Show like/dislike buttons (default: false)
   - `title` - Section title (default: "Comments")
 
+  ## Slots
+
+  - `:form_extras` - Custom markup rendered inside the new-comment form. Use it to
+    inject parent-project inputs whose names are `metadata[<key>]`; their values are
+    merged into `comment.metadata` on submit. The `"giphy"` key is reserved for the
+    built-in Giphy picker.
+
+        <:form_extras>
+          <input type="color" name="metadata[box_color]" value="#ff5555" />
+        </:form_extras>
+
   ## Parent Notifications
 
   After create/delete, sends to the parent LiveView:
@@ -47,7 +58,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:reply_to, nil)
      |> assign(:new_comment, "")
      |> assign(:editing_uuid, nil)
-     |> assign(:editing_content, "")}
+     |> assign(:editing_content, "")
+     |> assign(:giphy_open?, false)
+     |> assign(:giphy_query, "")
+     |> assign(:giphy_results, [])
+     |> assign(:giphy_selected, nil)}
   end
 
   @impl true
@@ -58,6 +73,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> assign_new(:enabled, fn -> true end)
       |> assign_new(:show_likes, fn -> false end)
       |> assign_new(:title, fn -> "Comments" end)
+      |> assign_new(:form_extras, fn -> [] end)
+      |> assign(:giphy_enabled?, PhoenixKitComments.giphy_enabled?())
+      |> assign(:max_length, PhoenixKitComments.get_max_length())
 
     socket =
       if changed?(socket, :resource_uuid) or socket.assigns.comments == [] do
@@ -70,45 +88,126 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   @impl true
-  def handle_event("add_comment", %{"comment" => comment_text}, socket) do
-    if comment_text != "" do
-      parent_uuid = socket.assigns.reply_to
+  def handle_event("add_comment", params, socket) do
+    comment_text = Map.get(params, "comment", "")
+    metadata_params = Map.get(params, "metadata", %{})
 
-      attrs = %{
-        content: comment_text,
-        parent_uuid: parent_uuid
-      }
-
-      case PhoenixKitComments.create_comment(
-             socket.assigns.resource_type,
-             socket.assigns.resource_uuid,
-             socket.assigns.current_user.uuid,
-             attrs
-           ) do
-        {:ok, _comment} ->
-          send(
-            self(),
-            {:comments_updated,
-             %{
-               resource_type: socket.assigns.resource_type,
-               resource_uuid: socket.assigns.resource_uuid,
-               action: :created
-             }}
-          )
-
-          {:noreply,
-           socket
-           |> assign(:new_comment, "")
-           |> assign(:reply_to, nil)
-           |> load_comments()
-           |> put_flash(:info, "Comment added")}
-
-        {:error, _changeset} ->
-          {:noreply, socket |> put_flash(:error, "Failed to add comment")}
+    metadata =
+      case socket.assigns.giphy_selected do
+        nil -> metadata_params
+        gif -> Map.put(metadata_params, "giphy", gif)
       end
-    else
-      {:noreply, socket}
+
+    attrs = %{
+      content: comment_text,
+      parent_uuid: socket.assigns.reply_to,
+      metadata: metadata
+    }
+
+    case PhoenixKitComments.create_comment(
+           socket.assigns.resource_type,
+           socket.assigns.resource_uuid,
+           socket.assigns.current_user.uuid,
+           attrs
+         ) do
+      {:ok, _comment} ->
+        send(
+          self(),
+          {:comments_updated,
+           %{
+             resource_type: socket.assigns.resource_type,
+             resource_uuid: socket.assigns.resource_uuid,
+             action: :created
+           }}
+        )
+
+        {:noreply,
+         socket
+         |> assign(:new_comment, "")
+         |> assign(:reply_to, nil)
+         |> assign(:giphy_selected, nil)
+         |> assign(:giphy_open?, false)
+         |> assign(:giphy_results, [])
+         |> assign(:giphy_query, "")
+         |> load_comments()
+         |> put_flash(:info, "Comment added")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        message = first_error_message(changeset) || "Failed to add comment"
+        {:noreply, put_flash(socket, :error, message)}
+
+      {:error, _other} ->
+        {:noreply, put_flash(socket, :error, "Failed to add comment")}
     end
+  end
+
+  @impl true
+  def handle_event("update_comment_draft", %{"comment" => text}, socket) do
+    {:noreply, assign(socket, :new_comment, text)}
+  end
+
+  def handle_event("update_comment_draft", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("cancel_new_comment", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:new_comment, "")
+     |> assign(:giphy_selected, nil)
+     |> assign(:giphy_open?, false)
+     |> assign(:giphy_results, [])
+     |> assign(:giphy_query, "")}
+  end
+
+  @impl true
+  def handle_event("toggle_giphy_picker", _params, socket) do
+    {:noreply, assign(socket, :giphy_open?, not socket.assigns.giphy_open?)}
+  end
+
+  @impl true
+  def handle_event("close_giphy_picker", _params, socket) do
+    {:noreply, assign(socket, :giphy_open?, false)}
+  end
+
+  def handle_event("noop", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("giphy_search", %{"value" => query}, socket) do
+    case PhoenixKitComments.search_giphy(query) do
+      {:ok, results} ->
+        {:noreply,
+         socket
+         |> assign(:giphy_query, query)
+         |> assign(:giphy_results, results)}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> assign(:giphy_query, query)
+         |> assign(:giphy_results, [])
+         |> put_flash(:error, "Giphy search failed. Check the API key in settings.")}
+    end
+  end
+
+  def handle_event("giphy_search", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("select_giphy", %{"id" => gif_id}, socket) do
+    case Enum.find(socket.assigns.giphy_results, &(&1["id"] == gif_id)) do
+      nil ->
+        {:noreply, socket}
+
+      gif ->
+        {:noreply,
+         socket
+         |> assign(:giphy_selected, gif)
+         |> assign(:giphy_open?, false)}
+    end
+  end
+
+  @impl true
+  def handle_event("remove_giphy", _params, socket) do
+    {:noreply, assign(socket, :giphy_selected, nil)}
   end
 
   @impl true
@@ -283,28 +382,28 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   def render_comment(assigns) do
     ~H"""
     <div class={[
-      if(@comment.depth > 0, do: "ml-4 border-l-2 border-base-300", else: "")
+      if(@comment.depth > 0, do: "ml-2 sm:ml-4 border-l-2 border-base-300", else: "")
     ]}>
-      <div class="bg-base-200 rounded-lg p-4">
+      <div class="bg-base-200 rounded-lg p-3 sm:p-4">
         <%!-- Comment Header --%>
-        <div class="flex items-center justify-between mb-2">
-          <div class="flex items-center gap-2 text-sm">
-            <.icon name="hero-user-circle" class="w-5 h-5 text-base-content/60" />
-            <span class="font-semibold">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
+          <div class="flex items-center gap-2 text-sm min-w-0 flex-wrap">
+            <.icon name="hero-user-circle" class="w-5 h-5 text-base-content/60 shrink-0" />
+            <span class="font-semibold truncate min-w-0 max-w-full">
               <%= if @comment.user do %>
                 {@comment.user.email}
               <% else %>
                 Unknown
               <% end %>
             </span>
-            <span class="text-base-content/60">&bull;</span>
-            <span class="text-base-content/60">
+            <span class="text-base-content/60 hidden sm:inline">&bull;</span>
+            <span class="text-base-content/60 text-xs sm:text-sm whitespace-nowrap">
               {Calendar.strftime(@comment.inserted_at, "%b %d, %Y %I:%M %p")}
             </span>
           </div>
 
           <%!-- Comment Actions --%>
-          <div class="flex gap-2">
+          <div class="flex gap-2 flex-wrap shrink-0">
             <button
               phx-click="reply_to"
               phx-value-id={@comment.uuid}
@@ -348,7 +447,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               rows="3"
               required
             ><%= @editing_content %></textarea>
-            <div class="flex justify-end gap-2">
+            <div class="flex flex-wrap justify-end gap-2">
               <button
                 type="button"
                 phx-click="cancel_edit"
@@ -363,9 +462,21 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             </div>
           </.form>
         <% else %>
-          <div class="text-base-content">
-            {@comment.content}
-          </div>
+          <%= if @comment.content && @comment.content != "" do %>
+            <div class="text-base-content break-words">
+              {@comment.content}
+            </div>
+          <% end %>
+          <%= if gif = comment_gif(@comment) do %>
+            <div class="mt-2">
+              <img
+                src={gif["url"]}
+                loading="lazy"
+                alt="GIF"
+                class="rounded-lg w-full max-w-xs h-auto"
+              />
+            </div>
+          <% end %>
         <% end %>
 
         <%!-- Nested Comments (Replies) --%>
@@ -397,5 +508,21 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp user_is_admin?(user) do
     Roles.user_has_role_owner?(user) or Roles.user_has_role_admin?(user)
+  end
+
+  defp comment_gif(%{metadata: metadata}) when is_map(metadata) do
+    case Map.get(metadata, "giphy") do
+      %{"url" => url} = gif when is_binary(url) and url != "" -> gif
+      _ -> nil
+    end
+  end
+
+  defp comment_gif(_), do: nil
+
+  defp first_error_message(%Ecto.Changeset{errors: errors}) do
+    case errors do
+      [{field, {msg, _opts}} | _] -> "#{field} #{msg}"
+      _ -> nil
+    end
   end
 end

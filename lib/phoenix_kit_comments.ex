@@ -117,6 +117,75 @@ defmodule PhoenixKitComments do
   end
 
   # ============================================================================
+  # Giphy Integration
+  # ============================================================================
+
+  @doc """
+  Returns `true` when the Giphy picker should be shown in the comment form.
+
+  Requires both the `comments_giphy_enabled` toggle and a non-empty API key.
+  """
+  def giphy_enabled? do
+    Settings.get_boolean_setting("comments_giphy_enabled", false) and
+      get_giphy_api_key() != ""
+  end
+
+  @doc "Returns the configured Giphy API key (empty string when unset)."
+  def get_giphy_api_key, do: Settings.get_setting("comments_giphy_api_key", "")
+
+  @doc "Returns the configured Giphy content rating (g/pg/pg-13/r)."
+  def get_giphy_rating, do: Settings.get_setting("comments_giphy_rating", "g")
+
+  @doc """
+  Searches Giphy for GIFs matching the query, using the configured API key and rating.
+
+  Returns `{:ok, [gif_map]}` on success or `{:error, reason}` on failure. Each `gif_map`
+  has string keys: `"id"`, `"url"` (original image), `"preview_url"` (thumbnail),
+  `"width"`, `"height"`.
+  """
+  def search_giphy(query, opts \\ []) when is_binary(query) do
+    case String.trim(query) do
+      "" ->
+        {:ok, []}
+
+      trimmed ->
+        case get_giphy_api_key() do
+          "" ->
+            {:error, :missing_api_key}
+
+          api_key ->
+            rating = get_giphy_rating()
+            limit = Keyword.get(opts, :limit, 24)
+
+            try do
+              case GiphyApi.search(trimmed,
+                     api_key: api_key,
+                     rating: rating,
+                     limit: limit
+                   ) do
+                {:ok, results} -> {:ok, Enum.map(results, &normalize_giphy_gif/1)}
+                {:error, _} = err -> err
+              end
+            rescue
+              e ->
+                Logger.warning("Giphy search failed: #{inspect(e)}")
+                {:error, :giphy_error}
+            end
+        end
+    end
+  end
+
+  defp normalize_giphy_gif(%GiphyApi.Gif{} = gif) do
+    %{
+      "id" => gif.id,
+      "url" => gif.original_url,
+      "preview_url" => gif.preview_url,
+      "width" => gif.original_width,
+      "height" => gif.original_height
+    }
+  end
+
+  # ============================================================================
   # Module Behaviour Callbacks
   # ============================================================================
 
@@ -127,7 +196,7 @@ defmodule PhoenixKitComments do
   def module_name, do: "Comments"
 
   @impl PhoenixKit.Module
-  def version, do: "0.1.4"
+  def version, do: "0.1.6"
 
   @impl PhoenixKit.Module
   def permission_metadata do

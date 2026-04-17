@@ -1,10 +1,53 @@
 <div>
+  <style>
+    /* Mobile: centered modal with backdrop */
+    .pk-giphy-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pk-giphy-picker {
+      width: min(24rem, calc(100vw - 2rem));
+      max-height: 70vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .pk-giphy-picker-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+    }
+    /* Desktop: inline dropdown, no backdrop */
+    @media (min-width: 640px) {
+      .pk-giphy-backdrop {
+        position: absolute;
+        inset: auto;
+        top: 100%;
+        left: 0;
+        background: none;
+        display: block;
+        z-index: 50;
+        margin-top: 0.5rem;
+      }
+      .pk-giphy-picker {
+        width: 24rem;
+        max-height: none;
+      }
+      .pk-giphy-picker-scroll {
+        max-height: 28rem;
+      }
+    }
+  </style>
   <%= if @enabled do %>
     <div class="card bg-base-100 shadow-xl">
-      <div class="card-body">
-        <h2 class="card-title text-2xl mb-4">
-          <.icon name="hero-chat-bubble-left-right" class="w-6 h-6" />
-          {@title} ({@comment_count})
+      <div class="card-body overflow-hidden">
+        <h2 class="card-title text-xl sm:text-2xl mb-4 flex-wrap">
+          <.icon name="hero-chat-bubble-left-right" class="w-6 h-6 shrink-0" />
+          <span class="break-words">{@title} ({@comment_count})</span>
         </h2>
 
         <%!-- New Comment Form --%>
@@ -20,19 +63,146 @@
             </div>
           <% end %>
 
-          <.form for={%{}} phx-submit="add_comment" phx-target={@myself} class="space-y-2">
+          <.form
+            for={%{}}
+            phx-submit="add_comment"
+            phx-change="update_comment_draft"
+            phx-target={@myself}
+            class="space-y-2"
+          >
             <textarea
               name="comment"
               placeholder="Write a comment..."
               class="textarea textarea-bordered w-full"
               rows="3"
-              required
+              phx-debounce="150"
             ><%= @new_comment %></textarea>
 
-            <div class="flex justify-end">
-              <button type="submit" class="btn btn-primary btn-sm">
-                <.icon name="hero-paper-airplane" class="w-4 h-4 mr-2" /> Post Comment
-              </button>
+            <div class={[
+              "text-xs text-right",
+              if(String.length(@new_comment) > @max_length,
+                do: "text-error font-semibold",
+                else: "text-base-content/60"
+              )
+            ]}>
+              {String.length(@new_comment)} / {@max_length}
+            </div>
+
+            <%= if @form_extras != [], do: render_slot(@form_extras) %>
+
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <%= if @giphy_enabled? do %>
+                  <div class="relative inline-block">
+                    <button
+                      type="button"
+                      phx-click="toggle_giphy_picker"
+                      phx-target={@myself}
+                      class={["btn btn-sm", if(@giphy_open?, do: "btn-primary", else: "btn-outline")]}
+                    >
+                      <.icon name="hero-film" class="w-4 h-4 mr-1" /> Add GIF
+                    </button>
+                    <%= if @giphy_open? do %>
+                      <div
+                        class="pk-giphy-backdrop"
+                        phx-click="close_giphy_picker"
+                        phx-target={@myself}
+                      >
+                        <div
+                          phx-click="noop"
+                          phx-target={@myself}
+                          class="pk-giphy-picker p-3 shadow-lg bg-base-100 rounded-box border border-base-300"
+                        >
+                        <input
+                          type="text"
+                          name="q"
+                          value={@giphy_query}
+                          placeholder="Search GIFs..."
+                          class="input input-bordered input-sm w-full"
+                          phx-keyup="giphy_search"
+                          phx-target={@myself}
+                          phx-debounce="300"
+                          onkeydown="if(event.key === 'Enter') event.preventDefault()"
+                          autocomplete="off"
+                        />
+
+                        <div class="pk-giphy-picker-scroll mt-2">
+                          <%= cond do %>
+                            <% @giphy_results != [] -> %>
+                              <div
+                                class="grid gap-2"
+                                style="grid-template-columns: repeat(3, minmax(0, 1fr));"
+                              >
+                                <%= for gif <- @giphy_results do %>
+                                  <button
+                                    type="button"
+                                    phx-click="select_giphy"
+                                    phx-value-id={gif["id"]}
+                                    phx-target={@myself}
+                                    class="border border-base-300 rounded hover:border-primary overflow-hidden bg-base-200"
+                                  >
+                                    <img
+                                      src={gif["preview_url"]}
+                                      loading="lazy"
+                                      alt=""
+                                      class="w-full object-cover"
+                                      style="height: 6rem;"
+                                    />
+                                  </button>
+                                <% end %>
+                              </div>
+                            <% String.trim(@giphy_query) == "" -> %>
+                              <p class="text-xs text-base-content/60 text-center py-4">
+                                Type a search term to find GIFs.
+                              </p>
+                            <% true -> %>
+                              <p class="text-xs text-base-content/60 text-center py-4">
+                                No results.
+                              </p>
+                          <% end %>
+                        </div>
+                      </div>
+                    </div>
+                    <% end %>
+                  </div>
+
+                  <%= if @giphy_selected do %>
+                    <div class="flex items-center gap-1 bg-base-200 rounded px-2 py-1">
+                      <img
+                        src={@giphy_selected["preview_url"]}
+                        class="w-10 h-10 object-cover rounded"
+                        alt=""
+                      />
+                      <button
+                        type="button"
+                        phx-click="remove_giphy"
+                        phx-target={@myself}
+                        class="btn btn-ghost btn-xs"
+                        title="Remove GIF"
+                      >
+                        <.icon name="hero-x-mark" class="w-4 h-4" />
+                      </button>
+                    </div>
+                  <% end %>
+                <% end %>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <%= if @reply_to == nil do %>
+                  <button
+                    type="button"
+                    phx-click="cancel_new_comment"
+                    phx-target={@myself}
+                    class="btn btn-ghost btn-sm"
+                    disabled={@new_comment == "" and @giphy_selected == nil}
+                  >
+                    Cancel
+                  </button>
+                <% end %>
+                <button type="submit" class="btn btn-primary btn-sm">
+                  <.icon name="hero-paper-airplane" class="w-4 h-4 mr-2" /> Post Comment
+                </button>
+              </div>
             </div>
           </.form>
         </div>

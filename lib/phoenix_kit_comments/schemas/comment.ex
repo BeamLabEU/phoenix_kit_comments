@@ -84,7 +84,7 @@ defmodule PhoenixKitComments.Comment do
   - `resource_type` - Type of resource being commented on
   - `resource_uuid` - UUID of the resource
   - `user_uuid` - Reference to commenter
-  - `content` - Comment text
+  - Either `content` OR a Giphy attachment in `metadata["giphy"]`
   """
   def changeset(comment, attrs) do
     comment
@@ -98,12 +98,34 @@ defmodule PhoenixKitComments.Comment do
       :depth,
       :metadata
     ])
-    |> validate_required([:resource_type, :resource_uuid, :user_uuid, :content])
+    |> validate_required([:resource_type, :resource_uuid, :user_uuid])
     |> validate_inclusion(:status, ["published", "hidden", "deleted", "pending"])
-    |> validate_length(:content, min: 1, max: 10_000)
+    |> validate_length(:content, max: 10_000)
     |> validate_length(:resource_type, max: 50)
+    |> ensure_content_not_nil()
+    |> validate_content_or_giphy()
     |> foreign_key_constraint(:user_uuid)
     |> foreign_key_constraint(:parent_uuid)
+  end
+
+  defp ensure_content_not_nil(changeset) do
+    if get_field(changeset, :content) == nil do
+      put_change(changeset, :content, "")
+    else
+      changeset
+    end
+  end
+
+  defp validate_content_or_giphy(changeset) do
+    content = changeset |> get_field(:content) |> to_string() |> String.trim()
+    metadata = get_field(changeset, :metadata) || %{}
+    has_gif? = is_map(metadata) and Map.has_key?(metadata, "giphy")
+
+    cond do
+      content != "" -> changeset
+      has_gif? -> changeset
+      true -> add_error(changeset, :content, "can't be blank without a GIF")
+    end
   end
 
   @doc "Check if comment is a reply (has parent)."
