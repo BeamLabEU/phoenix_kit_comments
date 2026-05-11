@@ -348,36 +348,71 @@ defmodule PhoenixKitComments do
     end
   end
 
+  @doc """
+  Validates a prospective comment before any uploads are consumed.
+
+  Use this in form handlers ahead of `Phoenix.LiveView.consume_uploaded_entries/3`
+  so that depth / length / attachment-cap failures don't leak files into
+  the storage backend. Accepts the same attrs as `create_comment/4`
+  except `:attachment_file_uuids` — pass `entry_count` instead, which is
+  how many uploads are currently staged on the LiveView.
+
+  Returns `:ok` or `{:error, reason}` with the same reasons
+  `create_comment/4` would surface (`:invalid_user_uuid`,
+  `:max_depth_exceeded`, `:content_too_long`, `:attachments_disabled`,
+  `:too_many_attachments`, `:empty_comment`).
+  """
+  @spec precheck_create(String.t(), term(), String.t(), map(), non_neg_integer()) ::
+          :ok | {:error, atom()}
+  def precheck_create(resource_type, resource_uuid, user_uuid, attrs, entry_count \\ 0)
+      when is_binary(user_uuid) and is_integer(entry_count) and entry_count >= 0 do
+    if UUIDUtils.valid?(user_uuid) do
+      prepared = prepare_create_attrs(resource_type, resource_uuid, user_uuid, attrs)
+      run_cheap_validators(prepared, entry_count)
+    else
+      {:error, :invalid_user_uuid}
+    end
+  end
+
   defp do_create_comment(resource_type, resource_uuid, user_uuid, attrs) do
     {file_uuids, attrs} = Map.pop(attrs, :attachment_file_uuids, [])
     file_uuids = List.wrap(file_uuids)
+    attrs = prepare_create_attrs(resource_type, resource_uuid, user_uuid, attrs)
 
-    attrs =
-      attrs
-      |> Map.put(:resource_type, resource_type)
-      |> Map.put(:resource_uuid, resource_uuid)
-      |> Map.put(:user_uuid, user_uuid)
-      |> Map.put(:has_attachments?, file_uuids != [])
-      |> maybe_calculate_depth()
-      |> maybe_set_initial_status()
-
-    with :ok <- validate_depth(attrs),
-         :ok <- validate_content_length(attrs),
-         :ok <- validate_attachments(file_uuids),
-         :ok <- validate_has_body(attrs, file_uuids),
+    with :ok <- run_cheap_validators(attrs, length(file_uuids)),
+         :ok <- validate_file_uuid_format(file_uuids),
          {:ok, comment} <- insert_comment_with_attachments(attrs, file_uuids) do
       notify_resource_handler(:on_comment_created, resource_type, resource_uuid, comment)
       {:ok, comment}
     end
   end
 
+  defp prepare_create_attrs(resource_type, resource_uuid, user_uuid, attrs) do
+    attrs
+    |> Map.put(:resource_type, resource_type)
+    |> Map.put(:resource_uuid, resource_uuid)
+    |> Map.put(:user_uuid, user_uuid)
+    |> maybe_calculate_depth()
+    |> maybe_set_initial_status()
+  end
+
+  defp run_cheap_validators(attrs, file_count) do
+    with :ok <- validate_depth(attrs),
+         :ok <- validate_content_length(attrs),
+         :ok <- validate_attachment_count(file_count),
+         :ok <- validate_has_body(attrs, file_count) do
+      :ok
+    end
+  end
+
   defp insert_comment_with_attachments(attrs, []) do
-    %Comment{} |> Comment.changeset(attrs) |> repo().insert()
+    %Comment{} |> Comment.changeset(attrs, has_media: false) |> repo().insert()
   end
 
   defp insert_comment_with_attachments(attrs, file_uuids) do
     repo().transaction(fn ->
-      with {:ok, comment} <- %Comment{} |> Comment.changeset(attrs) |> repo().insert(),
+      with {:ok, comment} <-
+             %Comment{} |> Comment.changeset(attrs, has_media: true) |> repo().insert(),
            :ok <- attach_files(comment.uuid, file_uuids) do
         repo().preload(comment, media: :file)
       else
@@ -397,26 +432,30 @@ defmodule PhoenixKitComments do
     end)
   end
 
-  defp validate_attachments(file_uuids) do
+  # Cap + feature-flag checks that don't need the file UUIDs themselves.
+  # Run by `precheck_create/5` before the LiveView consumes uploads, and
+  # again inside `create_comment/4` so non-LiveView callers stay covered.
+  defp validate_attachment_count(0), do: :ok
+
+  defp validate_attachment_count(count) when is_integer(count) and count > 0 do
     cond do
-      file_uuids == [] ->
-        :ok
-
-      not attachments_enabled?() ->
-        {:error, :attachments_disabled}
-
-      length(file_uuids) > get_max_attachments() ->
-        {:error, :too_many_attachments}
-
-      Enum.any?(file_uuids, &(not UUIDUtils.valid?(to_string(&1)))) ->
-        {:error, :invalid_file_uuid}
-
-      true ->
-        :ok
+      not attachments_enabled?() -> {:error, :attachments_disabled}
+      count > get_max_attachments() -> {:error, :too_many_attachments}
+      true -> :ok
     end
   end
 
-  defp validate_has_body(attrs, file_uuids) do
+  defp validate_file_uuid_format([]), do: :ok
+
+  defp validate_file_uuid_format(file_uuids) when is_list(file_uuids) do
+    if Enum.any?(file_uuids, &(not UUIDUtils.valid?(to_string(&1)))) do
+      {:error, :invalid_file_uuid}
+    else
+      :ok
+    end
+  end
+
+  defp validate_has_body(attrs, file_count) do
     content = attrs[:content] || attrs["content"] || ""
     metadata = attrs[:metadata] || attrs["metadata"] || %{}
 
@@ -426,7 +465,7 @@ defmodule PhoenixKitComments do
       is_map(metadata) and
         match?(%{"url" => u} when is_binary(u) and u != "", metadata["giphy"])
 
-    if has_content? or has_giphy? or file_uuids != [] do
+    if has_content? or has_giphy? or file_count > 0 do
       :ok
     else
       {:error, :empty_comment}
@@ -442,10 +481,23 @@ defmodule PhoenixKitComments do
   - `attrs` - Attributes to update (content, status)
   """
   def update_comment(%Comment{} = comment, attrs) do
+    # Preload :media so the changeset can infer "has media" when content
+    # is being changed. Status-only updates skip the content-or-media
+    # check entirely (see `Comment.changeset/3`), so this is a no-op on
+    # moderation paths if `:media` is already loaded; but we ensure it
+    # for content edits because the caller may pass a bare struct from
+    # `get_comment/1`.
     comment
+    |> ensure_media_loaded()
     |> Comment.changeset(attrs)
     |> repo().update()
   end
+
+  defp ensure_media_loaded(%Comment{media: %Ecto.Association.NotLoaded{}} = comment) do
+    repo().preload(comment, :media)
+  end
+
+  defp ensure_media_loaded(%Comment{} = comment), do: comment
 
   @doc """
   Soft-deletes a comment by setting its status to "deleted".

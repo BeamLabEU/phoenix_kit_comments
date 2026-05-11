@@ -128,64 +128,29 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         gif -> Map.put(metadata_params, "giphy", gif)
       end
 
-    case consume_attachments(socket) do
-      {:error, message} ->
-        {:noreply, put_flash(socket, :error, message)}
+    base_attrs = %{
+      content: comment_text,
+      parent_uuid: socket.assigns.reply_to,
+      metadata: metadata
+    }
 
-      {:ok, file_uuids} ->
-        attrs = %{
-          content: comment_text,
-          parent_uuid: socket.assigns.reply_to,
-          metadata: metadata,
-          attachment_file_uuids: file_uuids
-        }
+    entry_count = length(socket.assigns.uploads.attachment.entries)
 
-        case PhoenixKitComments.create_comment(
-               socket.assigns.resource_type,
-               socket.assigns.resource_uuid,
-               socket.assigns.current_user.uuid,
-               attrs
-             ) do
-          {:ok, _comment} ->
-            send(
-              self(),
-              {:comments_updated,
-               %{
-                 resource_type: socket.assigns.resource_type,
-                 resource_uuid: socket.assigns.resource_uuid,
-                 action: :created
-               }}
-            )
+    # Precheck before `consume_uploaded_entries` so depth / length /
+    # cap / feature-flag failures don't burn the upload — the entries
+    # stay staged and the user can fix the input and resubmit.
+    case PhoenixKitComments.precheck_create(
+           socket.assigns.resource_type,
+           socket.assigns.resource_uuid,
+           socket.assigns.current_user.uuid,
+           base_attrs,
+           entry_count
+         ) do
+      :ok ->
+        do_create_comment(socket, base_attrs)
 
-            {:noreply,
-             socket
-             |> assign(:new_comment, "")
-             |> assign(:reply_to, nil)
-             |> assign(:giphy_selected, nil)
-             |> assign(:giphy_open?, false)
-             |> assign(:giphy_results, [])
-             |> assign(:giphy_query, "")
-             |> assign(:recording_audio?, false)
-             |> load_comments()
-             |> put_flash(:info, "Comment added")}
-
-          {:error, %Ecto.Changeset{} = changeset} ->
-            message = first_error_message(changeset) || "Failed to add comment"
-            {:noreply, put_flash(socket, :error, message)}
-
-          {:error, :empty_comment} ->
-            {:noreply, put_flash(socket, :error, "Comment can't be empty")}
-
-          {:error, :attachments_disabled} ->
-            {:noreply, put_flash(socket, :error, "Attachments are disabled")}
-
-          {:error, :too_many_attachments} ->
-            max = PhoenixKitComments.get_max_attachments()
-            {:noreply, put_flash(socket, :error, "Up to #{max} attachments per comment")}
-
-          {:error, _other} ->
-            {:noreply, put_flash(socket, :error, "Failed to add comment")}
-        end
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, create_error_message(reason))}
     end
   end
 
@@ -361,6 +326,65 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         do_delete_comment(socket, comment)
     end
   end
+
+  defp do_create_comment(socket, base_attrs) do
+    case consume_attachments(socket) do
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
+
+      {:ok, file_uuids} ->
+        attrs = Map.put(base_attrs, :attachment_file_uuids, file_uuids)
+
+        case PhoenixKitComments.create_comment(
+               socket.assigns.resource_type,
+               socket.assigns.resource_uuid,
+               socket.assigns.current_user.uuid,
+               attrs
+             ) do
+          {:ok, _comment} ->
+            send(
+              self(),
+              {:comments_updated,
+               %{
+                 resource_type: socket.assigns.resource_type,
+                 resource_uuid: socket.assigns.resource_uuid,
+                 action: :created
+               }}
+            )
+
+            {:noreply,
+             socket
+             |> assign(:new_comment, "")
+             |> assign(:reply_to, nil)
+             |> assign(:giphy_selected, nil)
+             |> assign(:giphy_open?, false)
+             |> assign(:giphy_results, [])
+             |> assign(:giphy_query, "")
+             |> assign(:recording_audio?, false)
+             |> load_comments()
+             |> put_flash(:info, "Comment added")}
+
+          {:error, %Ecto.Changeset{} = changeset} ->
+            message = first_error_message(changeset) || "Failed to add comment"
+            {:noreply, put_flash(socket, :error, message)}
+
+          {:error, reason} when is_atom(reason) ->
+            {:noreply, put_flash(socket, :error, create_error_message(reason))}
+        end
+    end
+  end
+
+  defp create_error_message(:empty_comment), do: "Comment can't be empty"
+  defp create_error_message(:attachments_disabled), do: "Attachments are disabled"
+
+  defp create_error_message(:too_many_attachments),
+    do: "Up to #{PhoenixKitComments.get_max_attachments()} attachments per comment"
+
+  defp create_error_message(:max_depth_exceeded), do: "Reply nesting is too deep"
+  defp create_error_message(:content_too_long), do: "Comment exceeds maximum length"
+  defp create_error_message(:invalid_user_uuid), do: "Invalid user"
+  defp create_error_message(:invalid_file_uuid), do: "Invalid file attachment"
+  defp create_error_message(_), do: "Failed to add comment"
 
   defp do_delete_comment(socket, comment) do
     cond do
