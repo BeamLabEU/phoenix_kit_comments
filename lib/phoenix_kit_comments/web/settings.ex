@@ -20,19 +20,26 @@ defmodule PhoenixKitComments.Web.Settings do
 
   @impl true
   def mount(_params, _session, socket) do
-    project_title = Settings.get_project_title()
-
     socket =
       socket
       |> assign(:page_title, "Comments Settings")
-      |> assign(:project_title, project_title)
+      |> assign(:project_title, "")
       |> assign(:saving, false)
       |> assign(:editing_resource_type, nil)
       |> assign(:editing_path_value, "")
       |> assign(:editing_title_value, "")
       |> assign(:draft_paths, %{})
       |> assign(:draft_titles, %{})
-      |> load_settings()
+      |> assign_settings_defaults()
+
+    socket =
+      if connected?(socket) do
+        socket
+        |> assign(:project_title, Settings.get_project_title())
+        |> load_settings()
+      else
+        socket
+      end
 
     {:ok, socket}
   end
@@ -165,9 +172,24 @@ defmodule PhoenixKitComments.Web.Settings do
 
   ## --- Private ---
 
+  @allowed_settings ~w(
+    comments_enabled
+    comments_moderation
+    comments_max_depth
+    comments_max_length
+    comments_giphy_enabled
+    comments_giphy_api_key
+    comments_giphy_rating
+  )
+
+  @numeric_settings %{
+    "comments_max_depth" => {1, 50, "10"},
+    "comments_max_length" => {100, 100_000, "10000"}
+  }
+
   defp do_save_settings(params, socket) do
     socket = assign(socket, :saving, true)
-    settings = Map.get(params, "settings", %{})
+    settings = params |> Map.get("settings", %{}) |> sanitize_settings()
 
     try do
       results =
@@ -196,6 +218,28 @@ defmodule PhoenixKitComments.Web.Settings do
         {:noreply,
          assign(socket, :saving, false)
          |> put_flash(:error, "Something went wrong. Please try again.")}
+    end
+  end
+
+  defp sanitize_settings(settings) when is_map(settings) do
+    settings
+    |> Map.take(@allowed_settings)
+    |> Enum.map(fn {key, value} -> {key, clamp_numeric(key, value)} end)
+    |> Map.new()
+  end
+
+  defp sanitize_settings(_), do: %{}
+
+  defp clamp_numeric(key, value) do
+    case Map.get(@numeric_settings, key) do
+      nil ->
+        value
+
+      {min, max, default} ->
+        case Integer.parse(to_string(value)) do
+          {n, _} -> n |> Kernel.max(min) |> Kernel.min(max) |> to_string()
+          :error -> default
+        end
     end
   end
 
@@ -267,6 +311,21 @@ defmodule PhoenixKitComments.Web.Settings do
       true ->
         :ok
     end
+  end
+
+  defp assign_settings_defaults(socket) do
+    socket
+    |> assign(:comments_enabled, "false")
+    |> assign(:comments_moderation, "false")
+    |> assign(:comments_max_depth, "10")
+    |> assign(:comments_max_length, "10000")
+    |> assign(:comments_giphy_enabled, "false")
+    |> assign(:comments_giphy_api_key, "")
+    |> assign(:comments_giphy_rating, "g")
+    |> assign(:resource_paths, %{})
+    |> assign(:counts_by_type, %{})
+    |> assign(:unconfigured_types, [])
+    |> assign(:metadata_keys_by_type, %{})
   end
 
   defp load_settings(socket) do

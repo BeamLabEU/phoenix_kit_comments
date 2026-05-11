@@ -51,6 +51,7 @@
         </h2>
 
         <%!-- New Comment Form --%>
+        <%= if @can_post? do %>
         <div class="mb-6">
           <%= if @reply_to do %>
             <div class="alert alert-info mb-2">
@@ -111,13 +112,23 @@
                         <div
                           phx-click="noop"
                           phx-target={@myself}
+                          phx-window-keydown="close_giphy_picker"
+                          phx-key="escape"
+                          role="dialog"
+                          aria-modal="true"
+                          aria-label="Giphy picker"
                           class="pk-giphy-picker p-3 shadow-lg bg-base-100 rounded-box border border-base-300"
                         >
+                        <label for={"giphy-search-#{@myself}"} class="sr-only">
+                          Search GIFs
+                        </label>
                         <input
+                          id={"giphy-search-#{@myself}"}
                           type="text"
                           name="q"
                           value={@giphy_query}
                           placeholder="Search GIFs..."
+                          aria-label="Search GIFs"
                           class="input input-bordered input-sm w-full"
                           phx-keyup="giphy_search"
                           phx-target={@myself}
@@ -131,11 +142,15 @@
                             <% @giphy_results != [] -> %>
                               <div
                                 class="grid gap-2"
+                                role="listbox"
+                                aria-label="GIF results"
                                 style="grid-template-columns: repeat(3, minmax(0, 1fr));"
                               >
                                 <%= for gif <- @giphy_results do %>
                                   <button
                                     type="button"
+                                    role="option"
+                                    aria-label={"Select GIF #{gif["id"]}"}
                                     phx-click="select_giphy"
                                     phx-value-id={gif["id"]}
                                     phx-target={@myself}
@@ -206,6 +221,11 @@
             </div>
           </.form>
         </div>
+        <% else %>
+          <div class="mb-6 text-sm text-base-content/60">
+            Sign in to post a comment.
+          </div>
+        <% end %>
 
         <%!-- Comments List --%>
         <%= if length(@comments) > 0 do %>

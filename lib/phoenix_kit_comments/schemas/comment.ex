@@ -119,7 +119,10 @@ defmodule PhoenixKitComments.Comment do
   defp validate_content_or_giphy(changeset) do
     content = changeset |> get_field(:content) |> to_string() |> String.trim()
     metadata = get_field(changeset, :metadata) || %{}
-    has_gif? = is_map(metadata) and Map.has_key?(metadata, "giphy")
+
+    has_gif? =
+      is_map(metadata) and
+        match?(%{"url" => u} when is_binary(u) and u != "", metadata["giphy"])
 
     cond do
       content != "" -> changeset

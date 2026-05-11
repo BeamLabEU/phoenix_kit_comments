@@ -57,7 +57,6 @@ defmodule PhoenixKitComments do
 
   alias PhoenixKit.Dashboard.Tab
   alias PhoenixKit.Settings
-  alias PhoenixKit.Utils.Date, as: UtilsDate
   alias PhoenixKit.Utils.Routes
   alias PhoenixKit.Utils.UUID, as: UUIDUtils
   alias PhoenixKitComments.Comment
@@ -72,6 +71,8 @@ defmodule PhoenixKitComments do
   @doc "Checks if the Comments module is enabled."
   def enabled? do
     Settings.get_boolean_setting("comments_enabled", false)
+  rescue
+    _ -> false
   end
 
   @impl PhoenixKit.Module
@@ -120,20 +121,27 @@ defmodule PhoenixKitComments do
   # Giphy Integration
   # ============================================================================
 
+  @type gif_map :: %{
+          required(String.t()) => String.t() | integer() | nil
+        }
+
   @doc """
   Returns `true` when the Giphy picker should be shown in the comment form.
 
   Requires both the `comments_giphy_enabled` toggle and a non-empty API key.
   """
+  @spec giphy_enabled?() :: boolean()
   def giphy_enabled? do
     Settings.get_boolean_setting("comments_giphy_enabled", false) and
       get_giphy_api_key() != ""
   end
 
   @doc "Returns the configured Giphy API key (empty string when unset)."
+  @spec get_giphy_api_key() :: String.t()
   def get_giphy_api_key, do: Settings.get_setting("comments_giphy_api_key", "")
 
   @doc "Returns the configured Giphy content rating (g/pg/pg-13/r)."
+  @spec get_giphy_rating() :: String.t()
   def get_giphy_rating, do: Settings.get_setting("comments_giphy_rating", "g")
 
   @doc """
@@ -143,6 +151,8 @@ defmodule PhoenixKitComments do
   has string keys: `"id"`, `"url"` (original image), `"preview_url"` (thumbnail),
   `"width"`, `"height"`.
   """
+  @spec search_giphy(String.t(), keyword()) ::
+          {:ok, [gif_map()]} | {:error, atom()}
   def search_giphy(query, opts \\ []) when is_binary(query) do
     case String.trim(query) do
       "" ->
@@ -163,8 +173,11 @@ defmodule PhoenixKitComments do
                      rating: rating,
                      limit: limit
                    ) do
-                {:ok, results} -> {:ok, Enum.map(results, &normalize_giphy_gif/1)}
-                {:error, _} = err -> err
+                {:ok, results} ->
+                  {:ok, results |> Enum.map(&normalize_giphy_gif/1) |> Enum.reject(&is_nil/1)}
+
+                {:error, _} = err ->
+                  err
               end
             rescue
               e ->
@@ -176,14 +189,28 @@ defmodule PhoenixKitComments do
   end
 
   defp normalize_giphy_gif(%GiphyApi.Gif{} = gif) do
-    %{
-      "id" => gif.id,
-      "url" => gif.original_url,
-      "preview_url" => gif.preview_url,
-      "width" => gif.original_width,
-      "height" => gif.original_height
-    }
+    if giphy_host?(gif.original_url) and giphy_host?(gif.preview_url) do
+      %{
+        "id" => gif.id,
+        "url" => gif.original_url,
+        "preview_url" => gif.preview_url,
+        "width" => gif.original_width,
+        "height" => gif.original_height
+      }
+    end
   end
+
+  defp giphy_host?(url) when is_binary(url) do
+    case URI.parse(url) do
+      %URI{host: host} when is_binary(host) ->
+        String.ends_with?(host, ".giphy.com") or host == "giphy.com"
+
+      _ ->
+        false
+    end
+  end
+
+  defp giphy_host?(_), do: false
 
   # ============================================================================
   # Module Behaviour Callbacks
@@ -196,7 +223,7 @@ defmodule PhoenixKitComments do
   def module_name, do: "Comments"
 
   @impl PhoenixKit.Module
-  def version, do: "0.1.6"
+  def version, do: "0.1.5"
 
   @impl PhoenixKit.Module
   def permission_metadata do
@@ -354,7 +381,9 @@ defmodule PhoenixKitComments do
   @doc """
   Gets nested comment tree for a resource.
 
-  Returns all published comments organized in a tree structure.
+  Returns all published comments organized in a tree structure. Deleted
+  comments with published descendants are preserved as `[removed]`
+  placeholders so reply chains stay attached; deleted leaves are pruned.
   """
   def get_comment_tree(resource_type, resource_uuid) do
     comments =
@@ -362,7 +391,7 @@ defmodule PhoenixKitComments do
         where:
           c.resource_type == ^resource_type and
             c.resource_uuid == ^resource_uuid and
-            c.status == "published",
+            c.status in ["published", "deleted"],
         order_by: [asc: c.inserted_at],
         preload: [:user]
       )
@@ -374,14 +403,19 @@ defmodule PhoenixKitComments do
   @doc """
   Lists comments for a resource (flat list).
 
+  Soft-deleted comments are excluded by default. Pass `include_deleted: true`
+  (or an explicit `status:`) for admin callers that need them.
+
   ## Options
 
   - `:preload` - Associations to preload
   - `:status` - Filter by status
+  - `:include_deleted` - Include `status == "deleted"` rows (default: false)
   """
   def list_comments(resource_type, resource_uuid, opts \\ []) do
     preloads = Keyword.get(opts, :preload, [])
     status = Keyword.get(opts, :status)
+    include_deleted = Keyword.get(opts, :include_deleted, false)
 
     query =
       from(c in Comment,
@@ -389,28 +423,38 @@ defmodule PhoenixKitComments do
         order_by: [asc: c.inserted_at]
       )
 
-    query = if status, do: where(query, [c], c.status == ^status), else: query
+    query = apply_status_filter(query, status, include_deleted)
 
     query
     |> repo().all()
     |> repo().preload(preloads)
   end
 
-  @doc "Counts comments for a resource."
+  @doc """
+  Counts comments for a resource.
+
+  Mirrors `list_comments/3`: deleted rows are excluded unless `:status` is
+  set explicitly or `include_deleted: true` is passed.
+  """
   def count_comments(resource_type, resource_uuid, opts \\ []) do
     status = Keyword.get(opts, :status)
+    include_deleted = Keyword.get(opts, :include_deleted, false)
 
     query =
       from(c in Comment,
         where: c.resource_type == ^resource_type and c.resource_uuid == ^resource_uuid
       )
 
-    query = if status, do: where(query, [c], c.status == ^status), else: query
+    query = apply_status_filter(query, status, include_deleted)
 
     repo().aggregate(query, :count)
   rescue
     _ -> 0
   end
+
+  defp apply_status_filter(query, nil, false), do: where(query, [c], c.status != "deleted")
+  defp apply_status_filter(query, nil, true), do: query
+  defp apply_status_filter(query, status, _), do: where(query, [c], c.status == ^status)
 
   # ============================================================================
   # Moderation
@@ -426,11 +470,31 @@ defmodule PhoenixKitComments do
     update_comment(comment, %{status: "hidden"})
   end
 
-  @doc "Bulk-updates status for multiple comment UUIDs."
+  @doc """
+  Bulk-updates status for multiple comment UUIDs.
+
+  Routes through `update_comment/2` (and `delete_comment/1` for the
+  `"deleted"` case) so resource-handler callbacks fire per row. Returns
+  `{ok_count, error_count}`.
+  """
   def bulk_update_status(comment_uuids, status)
       when is_list(comment_uuids) and status in ["published", "hidden", "deleted", "pending"] do
-    from(c in Comment, where: c.uuid in ^comment_uuids)
-    |> repo().update_all(set: [status: status, updated_at: UtilsDate.utc_now()])
+    comments =
+      from(c in Comment, where: c.uuid in ^comment_uuids)
+      |> repo().all()
+
+    Enum.reduce(comments, {0, 0}, fn comment, {ok, err} ->
+      result =
+        case status do
+          "deleted" -> delete_comment(comment)
+          _ -> update_comment(comment, %{status: status})
+        end
+
+      case result do
+        {:ok, _} -> {ok + 1, err}
+        _ -> {ok, err + 1}
+      end
+    end)
   end
 
   @doc """
@@ -703,9 +767,9 @@ defmodule PhoenixKitComments do
 
   defp apply_path_template(template, resource_uuid, metadata) do
     template
-    |> replace_metadata_placeholders(metadata)
+    |> replace_metadata_url_placeholders(metadata)
     |> String.replace(":prefix", prefix_value())
-    |> String.replace(":uuid", to_string(resource_uuid))
+    |> String.replace(":uuid", url_encode(to_string(resource_uuid)))
   end
 
   defp apply_title_template(template, resource_uuid, metadata) do
@@ -725,70 +789,62 @@ defmodule PhoenixKitComments do
     end)
   end
 
+  defp replace_metadata_url_placeholders(template, metadata) do
+    Regex.replace(~r/:metadata\.(\w+)/, template, fn _match, key ->
+      metadata |> Map.get(key, "") |> to_string() |> url_encode()
+    end)
+  end
+
   defp replace_metadata_truncated(template, metadata) do
     Regex.replace(~r/:metadata\.(\w+)/, template, fn _match, key ->
       metadata |> Map.get(key, "") |> to_string() |> truncate_value()
     end)
   end
 
+  defp url_encode(value), do: URI.encode(value, &URI.char_unreserved?/1)
+
   @metadata_max_display_length 15
 
-  defp truncate_value(value) when byte_size(value) <= @metadata_max_display_length, do: value
-
   defp truncate_value(value) do
-    String.slice(value, 0, @metadata_max_display_length) <> "..."
+    if String.length(value) <= @metadata_max_display_length do
+      value
+    else
+      String.slice(value, 0, @metadata_max_display_length) <> "..."
+    end
   end
 
   # ============================================================================
   # Like Operations
   # ============================================================================
 
-  @doc "User likes a comment. Removes any existing dislike first."
+  @doc """
+  User likes a comment. Removes any existing dislike first.
+
+  Returns `{:ok, :liked}` when a new like row was created, or
+  `{:ok, :already_liked}` when the user had already liked the comment.
+  """
   def like_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
     repo().transaction(fn ->
-      maybe_remove_dislike(comment_uuid, user_uuid)
-      do_insert_like(comment_uuid, user_uuid)
-    end)
-  end
+      maybe_remove_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count)
 
-  defp do_insert_like(comment_uuid, user_uuid) do
-    # Check if like already exists (handles race condition)
-    case repo().get_by(CommentLike, comment_uuid: comment_uuid, user_uuid: user_uuid) do
-      nil ->
-        insert_new_like(comment_uuid, user_uuid)
-
-      existing_like ->
-        # Already liked, return existing record gracefully
-        existing_like
-    end
-  end
-
-  defp insert_new_like(comment_uuid, user_uuid) do
-    case %CommentLike{}
-         |> CommentLike.changeset(%{comment_uuid: comment_uuid, user_uuid: user_uuid})
-         |> repo().insert() do
-      {:ok, like} ->
-        increment_comment_like_count(comment_uuid)
-        like
-
-      {:error, changeset} ->
-        repo().rollback(changeset)
-    end
-  end
-
-  @doc "User unlikes a comment. Deletes like record and decrements counter."
-  def unlike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
-    repo().transaction(fn ->
-      case repo().get_by(CommentLike, comment_uuid: comment_uuid, user_uuid: user_uuid) do
-        nil ->
-          repo().rollback(:not_found)
-
-        like ->
-          {:ok, _} = repo().delete(like)
-          decrement_comment_like_count(comment_uuid)
-          like
+      if insert_reaction(CommentLike, comment_uuid, user_uuid, :like_count) do
+        :liked
+      else
+        :already_liked
       end
     end)
+  end
+
+  @doc """
+  User unlikes a comment. Deletes the like row and decrements the counter
+  atomically. Returns `{:ok, :unliked}` or `{:error, :not_found}`.
+  """
+  def unlike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
+    if maybe_remove_reaction(CommentLike, comment_uuid, user_uuid, :like_count) do
+      {:ok, :unliked}
+    else
+      {:error, :not_found}
+    end
   end
 
   @doc "Checks if a user has liked a comment."
@@ -814,52 +870,35 @@ defmodule PhoenixKitComments do
   # Dislike Operations
   # ============================================================================
 
-  @doc "User dislikes a comment. Removes any existing like first."
+  @doc """
+  User dislikes a comment. Removes any existing like first.
+
+  Returns `{:ok, :disliked}` when a new dislike row was created, or
+  `{:ok, :already_disliked}` when the user had already disliked the comment.
+  """
   def dislike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
     repo().transaction(fn ->
-      maybe_remove_like(comment_uuid, user_uuid)
-      do_insert_dislike(comment_uuid, user_uuid)
-    end)
-  end
+      maybe_remove_reaction(CommentLike, comment_uuid, user_uuid, :like_count)
 
-  defp do_insert_dislike(comment_uuid, user_uuid) do
-    # Check if dislike already exists (handles race condition)
-    case repo().get_by(CommentDislike, comment_uuid: comment_uuid, user_uuid: user_uuid) do
-      nil ->
-        insert_new_dislike(comment_uuid, user_uuid)
-
-      existing_dislike ->
-        # Already disliked, return existing record gracefully
-        existing_dislike
-    end
-  end
-
-  defp insert_new_dislike(comment_uuid, user_uuid) do
-    case %CommentDislike{}
-         |> CommentDislike.changeset(%{comment_uuid: comment_uuid, user_uuid: user_uuid})
-         |> repo().insert() do
-      {:ok, dislike} ->
-        increment_comment_dislike_count(comment_uuid)
-        dislike
-
-      {:error, changeset} ->
-        repo().rollback(changeset)
-    end
-  end
-
-  @doc "User removes dislike from a comment. Deletes dislike record and decrements counter."
-  def undislike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
-    repo().transaction(fn ->
-      case repo().get_by(CommentDislike, comment_uuid: comment_uuid, user_uuid: user_uuid) do
-        nil ->
-          repo().rollback(:not_found)
-
-        dislike ->
-          {:ok, _} = repo().delete(dislike)
-          decrement_comment_dislike_count(comment_uuid)
-          dislike
+      if insert_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count) do
+        :disliked
+      else
+        :already_disliked
       end
     end)
+  end
+
+  @doc """
+  User removes dislike from a comment. Deletes the dislike row and
+  decrements the counter atomically. Returns `{:ok, :undisliked}` or
+  `{:error, :not_found}`.
+  """
+  def undislike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
+    if maybe_remove_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count) do
+      {:ok, :undisliked}
+    else
+      {:error, :not_found}
+    end
   end
 
   @doc "Checks if a user has disliked a comment."
@@ -906,6 +945,7 @@ defmodule PhoenixKitComments do
     children_by_parent
     |> Map.get(nil, [])
     |> Enum.map(&add_children(&1, children_by_parent))
+    |> Enum.reject(&empty_deleted?/1)
   end
 
   defp add_children(comment, children_by_parent) do
@@ -913,26 +953,72 @@ defmodule PhoenixKitComments do
       children_by_parent
       |> Map.get(comment.uuid, [])
       |> Enum.map(&add_children(&1, children_by_parent))
+      |> Enum.reject(&empty_deleted?/1)
 
     Map.put(comment, :children, children)
   end
 
-  defp increment_comment_like_count(comment_uuid) do
+  defp empty_deleted?(%{status: "deleted", children: []}), do: true
+  defp empty_deleted?(_), do: false
+
+  defp insert_reaction(schema, comment_uuid, user_uuid, counter_field) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    {count, _} =
+      repo().insert_all(
+        schema,
+        [
+          %{
+            uuid: UUIDv7.generate(),
+            comment_uuid: comment_uuid,
+            user_uuid: user_uuid,
+            inserted_at: now,
+            updated_at: now
+          }
+        ],
+        on_conflict: :nothing,
+        conflict_target: [:comment_uuid, :user_uuid]
+      )
+
+    if count > 0 do
+      increment_comment_counter(comment_uuid, counter_field)
+      true
+    else
+      false
+    end
+  end
+
+  defp maybe_remove_reaction(schema, comment_uuid, user_uuid, counter_field) do
+    {count, _} =
+      from(r in schema,
+        where: r.comment_uuid == ^comment_uuid and r.user_uuid == ^user_uuid
+      )
+      |> repo().delete_all()
+
+    if count > 0 do
+      decrement_comment_counter(comment_uuid, counter_field)
+      true
+    else
+      false
+    end
+  end
+
+  defp increment_comment_counter(comment_uuid, :like_count) do
     from(c in Comment, where: c.uuid == ^comment_uuid)
     |> repo().update_all(inc: [like_count: 1])
   end
 
-  defp decrement_comment_like_count(comment_uuid) do
-    from(c in Comment, where: c.uuid == ^comment_uuid and c.like_count > 0)
-    |> repo().update_all(inc: [like_count: -1])
-  end
-
-  defp increment_comment_dislike_count(comment_uuid) do
+  defp increment_comment_counter(comment_uuid, :dislike_count) do
     from(c in Comment, where: c.uuid == ^comment_uuid)
     |> repo().update_all(inc: [dislike_count: 1])
   end
 
-  defp decrement_comment_dislike_count(comment_uuid) do
+  defp decrement_comment_counter(comment_uuid, :like_count) do
+    from(c in Comment, where: c.uuid == ^comment_uuid and c.like_count > 0)
+    |> repo().update_all(inc: [like_count: -1])
+  end
+
+  defp decrement_comment_counter(comment_uuid, :dislike_count) do
     from(c in Comment, where: c.uuid == ^comment_uuid and c.dislike_count > 0)
     |> repo().update_all(inc: [dislike_count: -1])
   end
@@ -994,28 +1080,6 @@ defmodule PhoenixKitComments do
     |> String.replace("\\", "\\\\")
     |> String.replace("%", "\\%")
     |> String.replace("_", "\\_")
-  end
-
-  defp maybe_remove_like(comment_uuid, user_uuid) do
-    case repo().get_by(CommentLike, comment_uuid: comment_uuid, user_uuid: user_uuid) do
-      nil ->
-        :ok
-
-      like ->
-        {:ok, _} = repo().delete(like)
-        decrement_comment_like_count(comment_uuid)
-    end
-  end
-
-  defp maybe_remove_dislike(comment_uuid, user_uuid) do
-    case repo().get_by(CommentDislike, comment_uuid: comment_uuid, user_uuid: user_uuid) do
-      nil ->
-        :ok
-
-      dislike ->
-        {:ok, _} = repo().delete(dislike)
-        decrement_comment_dislike_count(comment_uuid)
-    end
   end
 
   defp notify_resource_handler(callback, resource_type, resource_uuid, comment) do

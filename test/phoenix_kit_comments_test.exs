@@ -111,7 +111,12 @@ defmodule PhoenixKitCommentsTest do
     test "returns a version string" do
       version = PhoenixKitComments.version()
       assert is_binary(version)
-      assert version == "0.1.4"
+      assert version == "0.1.5"
+    end
+
+    test "stays in sync with mix.exs @version" do
+      assert PhoenixKitComments.version() ==
+               Mix.Project.config()[:version]
     end
   end
 
@@ -121,7 +126,7 @@ defmodule PhoenixKitCommentsTest do
     end
 
     test "css_sources/0 returns list with app name" do
-      assert PhoenixKitComments.css_sources() == ["phoenix_kit_comments"]
+      assert PhoenixKitComments.css_sources() == [:phoenix_kit_comments]
     end
   end
 end

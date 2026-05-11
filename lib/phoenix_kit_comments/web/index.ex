@@ -21,20 +21,19 @@ defmodule PhoenixKitComments.Web.Index do
   @impl true
   def mount(_params, _session, socket) do
     if PhoenixKitComments.enabled?() do
-      project_title = Settings.get_project_title()
-
       socket =
         socket
         |> assign(:page_title, "Comments")
-        |> assign(:project_title, project_title)
+        |> assign(:project_title, "")
         |> assign(:comments, [])
         |> assign(:total, 0)
         |> assign(:total_pages, 1)
         |> assign(:resource_context, %{})
-        |> assign(:stats, PhoenixKitComments.comment_stats())
+        |> assign(:stats, empty_stats())
         |> assign(:selected_uuids, [])
-        |> assign(:resource_types, PhoenixKitComments.list_resource_types())
+        |> assign(:resource_types, [])
         |> assign_filter_defaults()
+        |> maybe_load_dashboard_data()
 
       {:ok, socket}
     else
@@ -47,11 +46,8 @@ defmodule PhoenixKitComments.Web.Index do
 
   @impl true
   def handle_params(params, _url, socket) do
-    socket =
-      socket
-      |> apply_params(params)
-      |> load_comments()
-
+    socket = apply_params(socket, params)
+    socket = if connected?(socket), do: load_comments(socket), else: socket
     {:noreply, socket}
   end
 
@@ -229,6 +225,20 @@ defmodule PhoenixKitComments.Web.Index do
   defp reload_stats(socket) do
     assign(socket, :stats, PhoenixKitComments.comment_stats())
   end
+
+  defp maybe_load_dashboard_data(socket) do
+    if connected?(socket) do
+      socket
+      |> assign(:project_title, Settings.get_project_title())
+      |> assign(:stats, PhoenixKitComments.comment_stats())
+      |> assign(:resource_types, PhoenixKitComments.list_resource_types())
+    else
+      socket
+    end
+  end
+
+  defp empty_stats,
+    do: %{total: 0, published: 0, pending: 0, hidden: 0, deleted: 0}
 
   defp build_url_params(assigns, overrides) do
     params =

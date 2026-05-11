@@ -55,6 +55,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      socket
      |> assign(:comments, [])
      |> assign(:comment_count, 0)
+     |> assign(:loaded?, false)
      |> assign(:reply_to, nil)
      |> assign(:new_comment, "")
      |> assign(:editing_uuid, nil)
@@ -74,12 +75,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> assign_new(:show_likes, fn -> false end)
       |> assign_new(:title, fn -> "Comments" end)
       |> assign_new(:form_extras, fn -> [] end)
+      |> assign_new(:current_user, fn -> nil end)
+      |> assign(:can_post?, assigns[:current_user] != nil)
       |> assign(:giphy_enabled?, PhoenixKitComments.giphy_enabled?())
       |> assign(:max_length, PhoenixKitComments.get_max_length())
 
     socket =
-      if changed?(socket, :resource_uuid) or socket.assigns.comments == [] do
-        load_comments(socket)
+      if changed?(socket, :resource_uuid) or not socket.assigns.loaded? do
+        socket |> load_comments() |> assign(:loaded?, true)
       else
         socket
       end
@@ -88,9 +91,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   @impl true
+  def handle_event("add_comment", _params, %{assigns: %{can_post?: false}} = socket) do
+    {:noreply, put_flash(socket, :error, "Sign in to post a comment")}
+  end
+
   def handle_event("add_comment", params, socket) do
     comment_text = Map.get(params, "comment", "")
-    metadata_params = Map.get(params, "metadata", %{})
+
+    metadata_params =
+      params
+      |> Map.get("metadata", %{})
+      |> Map.delete("giphy")
 
     metadata =
       case socket.assigns.giphy_selected do
@@ -385,6 +396,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       if(@comment.depth > 0, do: "ml-2 sm:ml-4 border-l-2 border-base-300", else: "")
     ]}>
       <div class="bg-base-200 rounded-lg p-3 sm:p-4">
+        <%= if @comment.status == "deleted" do %>
+          <div class="text-sm text-base-content/50 italic">[removed]</div>
+        <% else %>
         <%!-- Comment Header --%>
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
           <div class="flex items-center gap-2 text-sm min-w-0 flex-wrap">
@@ -478,6 +492,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             </div>
           <% end %>
         <% end %>
+        <% end %>
 
         <%!-- Nested Comments (Replies) --%>
         <%= if @comment.children && length(@comment.children) > 0 do %>
@@ -498,13 +513,19 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     """
   end
 
+  defp can_edit_comment?(nil, _comment), do: false
+
   defp can_edit_comment?(user, comment) do
     user.uuid == comment.user_uuid or user_is_admin?(user)
   end
 
+  defp can_delete_comment?(nil, _comment), do: false
+
   defp can_delete_comment?(user, comment) do
     user.uuid == comment.user_uuid or user_is_admin?(user)
   end
+
+  defp user_is_admin?(nil), do: false
 
   defp user_is_admin?(user) do
     Roles.user_has_role_owner?(user) or Roles.user_has_role_admin?(user)
@@ -521,7 +542,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp first_error_message(%Ecto.Changeset{errors: errors}) do
     case errors do
-      [{field, {msg, _opts}} | _] -> "#{field} #{msg}"
+      [{field, {msg, _opts}} | _] -> "#{Phoenix.Naming.humanize(field)} #{msg}"
       _ -> nil
     end
   end
