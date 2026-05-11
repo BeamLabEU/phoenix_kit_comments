@@ -47,6 +47,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   import PhoenixKitWeb.Components.Core.Icon
 
+  alias PhoenixKit.Modules.Storage
+  alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Users.Roles
 
   @impl true
@@ -460,34 +462,38 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     end
   end
 
+  defp consume_attachments(%{assigns: %{uploads: %{attachment: %{entries: []}}}}),
+    do: {:ok, []}
+
   defp consume_attachments(socket) do
-    if Enum.empty?(socket.assigns.uploads.attachment.entries) do
-      {:ok, []}
-    else
-      user_uuid = socket.assigns.current_user.uuid
+    user_uuid = socket.assigns.current_user.uuid
 
-      results =
-        consume_uploaded_entries(socket, :attachment, fn meta, entry ->
-          opts = [
-            filename: entry.client_name,
-            content_type: entry.client_type,
-            size_bytes: entry.client_size,
-            user_uuid: user_uuid
-          ]
+    socket
+    |> consume_uploaded_entries(:attachment, &store_entry(&1, &2, user_uuid))
+    |> partition_upload_results()
+  end
 
-          case PhoenixKit.Modules.Storage.store_file(meta.path, opts) do
-            {:ok, %{uuid: uuid}} -> {:ok, {:ok, uuid}}
-            {:error, reason} -> {:ok, {:error, reason}}
-          end
-        end)
+  defp store_entry(meta, entry, user_uuid) do
+    opts = [
+      filename: entry.client_name,
+      content_type: entry.client_type,
+      size_bytes: entry.client_size,
+      user_uuid: user_uuid
+    ]
 
-      case Enum.split_with(results, &match?({:ok, _}, &1)) do
-        {oks, []} ->
-          {:ok, Enum.map(oks, fn {:ok, uuid} -> uuid end)}
+    case Storage.store_file(meta.path, opts) do
+      {:ok, %{uuid: uuid}} -> {:ok, {:ok, uuid}}
+      {:error, reason} -> {:ok, {:error, reason}}
+    end
+  end
 
-        {_, [{:error, reason} | _]} ->
-          {:error, "Upload failed: #{inspect(reason)}"}
-      end
+  defp partition_upload_results(results) do
+    case Enum.split_with(results, &match?({:ok, _}, &1)) do
+      {oks, []} ->
+        {:ok, Enum.map(oks, fn {:ok, uuid} -> uuid end)}
+
+      {_, [{:error, reason} | _]} ->
+        {:error, "Upload failed: #{inspect(reason)}"}
     end
   end
 
@@ -711,7 +717,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   defp signed_url(%{uuid: uuid}, variant),
-    do: PhoenixKit.Modules.Storage.URLSigner.signed_url(to_string(uuid), variant)
+    do: URLSigner.signed_url(to_string(uuid), variant)
 
   defp comment_media(%{media: media}) when is_list(media), do: media
   defp comment_media(_), do: []

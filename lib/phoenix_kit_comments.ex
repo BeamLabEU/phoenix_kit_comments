@@ -399,9 +399,8 @@ defmodule PhoenixKitComments do
   defp run_cheap_validators(attrs, file_count) do
     with :ok <- validate_depth(attrs),
          :ok <- validate_content_length(attrs),
-         :ok <- validate_attachment_count(file_count),
-         :ok <- validate_has_body(attrs, file_count) do
-      :ok
+         :ok <- validate_attachment_count(file_count) do
+      validate_has_body(attrs, file_count)
     end
   end
 
@@ -456,20 +455,24 @@ defmodule PhoenixKitComments do
   end
 
   defp validate_has_body(attrs, file_count) do
+    cond do
+      has_content?(attrs) -> :ok
+      has_giphy?(attrs) -> :ok
+      file_count > 0 -> :ok
+      true -> {:error, :empty_comment}
+    end
+  end
+
+  defp has_content?(attrs) do
     content = attrs[:content] || attrs["content"] || ""
+    String.trim(to_string(content)) != ""
+  end
+
+  defp has_giphy?(attrs) do
     metadata = attrs[:metadata] || attrs["metadata"] || %{}
 
-    has_content? = String.trim(to_string(content)) != ""
-
-    has_giphy? =
-      is_map(metadata) and
-        match?(%{"url" => u} when is_binary(u) and u != "", metadata["giphy"])
-
-    if has_content? or has_giphy? or file_count > 0 do
-      :ok
-    else
-      {:error, :empty_comment}
-    end
+    is_map(metadata) and
+      match?(%{"url" => u} when is_binary(u) and u != "", metadata["giphy"])
   end
 
   @doc """
