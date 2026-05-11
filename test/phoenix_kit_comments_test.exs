@@ -111,7 +111,12 @@ defmodule PhoenixKitCommentsTest do
     test "returns a version string" do
       version = PhoenixKitComments.version()
       assert is_binary(version)
-      assert version == "0.1.4"
+      assert version == "0.1.5"
+    end
+
+    test "stays in sync with mix.exs @version" do
+      assert PhoenixKitComments.version() ==
+               Mix.Project.config()[:version]
     end
   end
 
@@ -121,7 +126,97 @@ defmodule PhoenixKitCommentsTest do
     end
 
     test "css_sources/0 returns list with app name" do
-      assert PhoenixKitComments.css_sources() == ["phoenix_kit_comments"]
+      assert PhoenixKitComments.css_sources() == [:phoenix_kit_comments]
+    end
+  end
+
+  describe "attachment configuration" do
+    test "attachments_enabled?/0 returns a boolean" do
+      assert is_boolean(PhoenixKitComments.attachments_enabled?())
+    end
+
+    test "get_max_attachments/0 returns a positive integer" do
+      n = PhoenixKitComments.get_max_attachments()
+      assert is_integer(n)
+      assert n > 0
+    end
+
+    test "get_max_attachment_size_mb/0 returns a positive integer" do
+      n = PhoenixKitComments.get_max_attachment_size_mb()
+      assert is_integer(n)
+      assert n > 0
+    end
+  end
+
+  describe "Comment.changeset content/media validation" do
+    alias PhoenixKitComments.Comment
+
+    @base_attrs %{
+      resource_type: "post",
+      resource_uuid: "018e3c4a-9f6b-7890-abcd-ef1234567890",
+      user_uuid: "018e3c4a-1234-5678-abcd-ef1234567890"
+    }
+
+    test "rejects fully blank comment (no content, no giphy, no attachments)" do
+      cs = Comment.changeset(%Comment{}, @base_attrs)
+      refute cs.valid?
+      assert {"can't be blank without a GIF or attachment", _} = cs.errors[:content]
+    end
+
+    test "accepts comment with non-empty content" do
+      cs = Comment.changeset(%Comment{}, Map.put(@base_attrs, :content, "hi"))
+      assert cs.valid?
+    end
+
+    test "accepts comment with a giphy attachment in metadata" do
+      attrs =
+        Map.put(@base_attrs, :metadata, %{
+          "giphy" => %{"url" => "https://media.giphy.com/foo.gif"}
+        })
+
+      cs = Comment.changeset(%Comment{}, attrs)
+      assert cs.valid?
+    end
+
+    test "accepts blank content when has_attachments? virtual is true" do
+      cs = Comment.changeset(%Comment{}, Map.put(@base_attrs, :has_attachments?, true))
+      assert cs.valid?
+    end
+
+    test "rejects when giphy value is a non-renderable shape" do
+      attrs = Map.put(@base_attrs, :metadata, %{"giphy" => %{"id" => "no-url"}})
+      cs = Comment.changeset(%Comment{}, attrs)
+      refute cs.valid?
+    end
+  end
+
+  describe "CommentMedia.changeset" do
+    alias PhoenixKitComments.CommentMedia
+
+    @attrs %{
+      comment_uuid: "018e3c4a-9f6b-7890-abcd-ef1234567890",
+      file_uuid: "018e3c4a-1234-5678-abcd-ef1234567890",
+      position: 1
+    }
+
+    test "requires comment_uuid, file_uuid, position" do
+      cs = CommentMedia.changeset(%CommentMedia{}, %{})
+      refute cs.valid?
+      assert Keyword.has_key?(cs.errors, :comment_uuid)
+      assert Keyword.has_key?(cs.errors, :file_uuid)
+      assert Keyword.has_key?(cs.errors, :position)
+    end
+
+    test "rejects position <= 0" do
+      cs = CommentMedia.changeset(%CommentMedia{}, Map.put(@attrs, :position, 0))
+      refute cs.valid?
+      {msg, _opts} = cs.errors[:position]
+      assert msg =~ "must be greater than"
+    end
+
+    test "accepts valid attrs" do
+      cs = CommentMedia.changeset(%CommentMedia{}, @attrs)
+      assert cs.valid?
     end
   end
 end

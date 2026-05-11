@@ -1,4 +1,89 @@
 <div>
+  <script>
+    (function() {
+      window.PhoenixKitHooks = window.PhoenixKitHooks || {};
+      if (window.PhoenixKitHooks.PhoenixKitCommentsAudioRecorder) return;
+      window.PhoenixKitHooks.PhoenixKitCommentsAudioRecorder = {
+        mounted() {
+          this.recording = false;
+          this.recorder = null;
+          this.stream = null;
+          this.chunks = [];
+          this._onToggle = () => {
+            if (this.recording) this.stop(); else this.start();
+          };
+          window.addEventListener("phx-kit-comments-audio-toggle", this._onToggle);
+        },
+        destroyed() {
+          window.removeEventListener("phx-kit-comments-audio-toggle", this._onToggle);
+          this.cleanup();
+        },
+        async start() {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            this.pushError("Microphone access is not supported by this browser.");
+            return;
+          }
+          try {
+            this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          } catch (err) {
+            this.pushError("Microphone permission denied.");
+            return;
+          }
+          const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+            ? "audio/webm;codecs=opus"
+            : "audio/webm";
+          try {
+            this.recorder = new MediaRecorder(this.stream, { mimeType });
+          } catch (err) {
+            this.cleanup();
+            this.pushError("Could not start recording: " + err.message);
+            return;
+          }
+          this.chunks = [];
+          this.recorder.addEventListener("dataavailable", (ev) => {
+            if (ev.data && ev.data.size > 0) this.chunks.push(ev.data);
+          });
+          this.recorder.addEventListener("stop", () => this.finalize(mimeType));
+          this.recorder.start();
+          this.recording = true;
+          this.pushEventTo(this.el, "audio_recording_started", {});
+        },
+        stop() {
+          if (this.recorder && this.recorder.state !== "inactive") {
+            this.recorder.stop();
+          }
+        },
+        finalize(mimeType) {
+          const blob = new Blob(this.chunks, { type: mimeType });
+          const ext = mimeType.indexOf("webm") >= 0 ? "webm" : "ogg";
+          const name = "voice-" + new Date().toISOString().replace(/[:.]/g, "-") + "." + ext;
+          const file = new File([blob], name, { type: mimeType });
+          const uploadName = this.el.dataset.uploadName || "attachment";
+          try {
+            this.upload(uploadName, [file]);
+          } catch (err) {
+            this.pushError("Failed to attach recording: " + err.message);
+          }
+          this.recording = false;
+          this.cleanup();
+          this.pushEventTo(this.el, "audio_recording_stopped", {});
+        },
+        cleanup() {
+          if (this.stream) {
+            this.stream.getTracks().forEach((t) => t.stop());
+            this.stream = null;
+          }
+          this.recorder = null;
+          this.chunks = [];
+        },
+        pushError(msg) {
+          this.pushEventTo(this.el, "audio_recording_error", { message: msg });
+          this.cleanup();
+          this.recording = false;
+        }
+      };
+    })();
+  </script>
   <style>
     /* Mobile: centered modal with backdrop */
     .pk-giphy-backdrop {
@@ -51,6 +136,7 @@
         </h2>
 
         <%!-- New Comment Form --%>
+        <%= if @can_post? do %>
         <div class="mb-6">
           <%= if @reply_to do %>
             <div class="alert alert-info mb-2">
@@ -90,100 +176,248 @@
 
             <%= if @form_extras != [], do: render_slot(@form_extras) %>
 
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="flex items-center gap-2">
-                <%= if @giphy_enabled? do %>
-                  <div class="relative inline-block">
+            <%!-- Persistent: recorder hook + live file input. Both must
+                 stay in the DOM across menu open/close so the upload
+                 state and MediaRecorder lifecycle survive. --%>
+            <%= if @attachments_enabled? do %>
+              <div
+                id={"audio-recorder-#{@myself}"}
+                phx-hook="PhoenixKitCommentsAudioRecorder"
+                phx-target={@myself}
+                data-upload-name="attachment"
+                class="hidden"
+              />
+              <.live_file_input upload={@uploads.attachment} class="sr-only" />
+            <% end %>
+
+            <%!-- Staged media (uploads + selected GIF) --%>
+            <%= if (@attachments_enabled? and (@uploads.attachment.entries != [] or @uploads.attachment.errors != [])) or @giphy_selected do %>
+              <div class="space-y-2">
+                <%= if @giphy_selected do %>
+                  <div class="flex items-center gap-3 bg-base-200 rounded p-2">
+                    <img
+                      src={@giphy_selected["preview_url"]}
+                      class="w-10 h-10 object-cover rounded shrink-0"
+                      alt=""
+                    />
+                    <div class="flex-1 min-w-0 text-sm font-medium truncate">GIF</div>
                     <button
                       type="button"
-                      phx-click="toggle_giphy_picker"
+                      phx-click="remove_giphy"
                       phx-target={@myself}
-                      class={["btn btn-sm", if(@giphy_open?, do: "btn-primary", else: "btn-outline")]}
+                      class="btn btn-ghost btn-xs"
+                      aria-label="Remove GIF"
                     >
-                      <.icon name="hero-film" class="w-4 h-4 mr-1" /> Add GIF
+                      <.icon name="hero-x-mark" class="w-4 h-4" />
                     </button>
-                    <%= if @giphy_open? do %>
-                      <div
-                        class="pk-giphy-backdrop"
-                        phx-click="close_giphy_picker"
-                        phx-target={@myself}
-                      >
-                        <div
-                          phx-click="noop"
-                          phx-target={@myself}
-                          class="pk-giphy-picker p-3 shadow-lg bg-base-100 rounded-box border border-base-300"
-                        >
-                        <input
-                          type="text"
-                          name="q"
-                          value={@giphy_query}
-                          placeholder="Search GIFs..."
-                          class="input input-bordered input-sm w-full"
-                          phx-keyup="giphy_search"
-                          phx-target={@myself}
-                          phx-debounce="300"
-                          onkeydown="if(event.key === 'Enter') event.preventDefault()"
-                          autocomplete="off"
-                        />
-
-                        <div class="pk-giphy-picker-scroll mt-2">
-                          <%= cond do %>
-                            <% @giphy_results != [] -> %>
-                              <div
-                                class="grid gap-2"
-                                style="grid-template-columns: repeat(3, minmax(0, 1fr));"
-                              >
-                                <%= for gif <- @giphy_results do %>
-                                  <button
-                                    type="button"
-                                    phx-click="select_giphy"
-                                    phx-value-id={gif["id"]}
-                                    phx-target={@myself}
-                                    class="border border-base-300 rounded hover:border-primary overflow-hidden bg-base-200"
-                                  >
-                                    <img
-                                      src={gif["preview_url"]}
-                                      loading="lazy"
-                                      alt=""
-                                      class="w-full object-cover"
-                                      style="height: 6rem;"
-                                    />
-                                  </button>
-                                <% end %>
-                              </div>
-                            <% String.trim(@giphy_query) == "" -> %>
-                              <p class="text-xs text-base-content/60 text-center py-4">
-                                Type a search term to find GIFs.
-                              </p>
-                            <% true -> %>
-                              <p class="text-xs text-base-content/60 text-center py-4">
-                                No results.
-                              </p>
-                          <% end %>
-                        </div>
-                      </div>
-                    </div>
-                    <% end %>
                   </div>
+                <% end %>
 
-                  <%= if @giphy_selected do %>
-                    <div class="flex items-center gap-1 bg-base-200 rounded px-2 py-1">
-                      <img
-                        src={@giphy_selected["preview_url"]}
-                        class="w-10 h-10 object-cover rounded"
-                        alt=""
-                      />
+                <%= for entry <- @uploads.attachment.entries do %>
+                  <div class="flex items-center gap-3 bg-base-200 rounded p-2">
+                    <.icon
+                      name={attachment_icon(entry.client_type)}
+                      class="w-5 h-5 shrink-0 text-base-content/60"
+                    />
+                    <div class="flex-1 min-w-0">
+                      <div class="text-sm font-medium truncate">{entry.client_name}</div>
+                      <%= if entry.progress > 0 and entry.progress < 100 do %>
+                        <progress
+                          class="progress progress-primary w-full h-1"
+                          value={entry.progress}
+                          max="100"
+                        ></progress>
+                      <% end %>
+                    </div>
+                    <button
+                      type="button"
+                      phx-click="cancel_upload"
+                      phx-value-ref={entry.ref}
+                      phx-target={@myself}
+                      aria-label={"Remove #{entry.client_name}"}
+                      class="btn btn-ghost btn-xs"
+                    >
+                      <.icon name="hero-x-mark" class="w-4 h-4" />
+                    </button>
+                  </div>
+                <% end %>
+
+                <%= for err <- upload_errors(@uploads.attachment) do %>
+                  <p class="text-xs text-error">{upload_error_label(err)}</p>
+                <% end %>
+                <%= for entry <- @uploads.attachment.entries, err <- upload_errors(@uploads.attachment, entry) do %>
+                  <p class="text-xs text-error">
+                    {entry.client_name}: {upload_error_label(err)}
+                  </p>
+                <% end %>
+              </div>
+            <% end %>
+
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <%= cond do %>
+                  <% @recording_audio? -> %>
+                    <button
+                      type="button"
+                      onclick="window.dispatchEvent(new CustomEvent('phx-kit-comments-audio-toggle'))"
+                      aria-label="Stop recording"
+                      class="btn btn-sm btn-error gap-1"
+                    >
+                      <span class="inline-block w-2 h-2 rounded-full bg-base-100 animate-pulse"></span>
+                      <.icon name="hero-stop-circle" class="w-4 h-4" /> Stop recording
+                    </button>
+
+                  <% @attachments_enabled? or @giphy_enabled? -> %>
+                    <div class="relative inline-block">
                       <button
                         type="button"
-                        phx-click="remove_giphy"
+                        phx-click="toggle_attach_menu"
                         phx-target={@myself}
-                        class="btn btn-ghost btn-xs"
-                        title="Remove GIF"
+                        aria-haspopup="menu"
+                        aria-expanded={to_string(@attach_menu_open?)}
+                        aria-label="Attach media"
+                        title="Attach media"
+                        class={[
+                          "btn btn-sm",
+                          if(@attach_menu_open?, do: "btn-primary", else: "btn-ghost")
+                        ]}
                       >
-                        <.icon name="hero-x-mark" class="w-4 h-4" />
+                        <.icon name="hero-paper-clip" class="w-5 h-5" />
                       </button>
+
+                      <%= if @attach_menu_open? do %>
+                        <ul
+                          phx-click-away="close_attach_menu"
+                          phx-window-keydown="close_attach_menu"
+                          phx-key="escape"
+                          phx-target={@myself}
+                          role="menu"
+                          aria-label="Attach media options"
+                          class="absolute top-full left-0 mt-1 z-50 menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-1"
+                        >
+                          <%= if @giphy_enabled? do %>
+                            <li role="none">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                phx-click="open_giphy_from_menu"
+                                phx-target={@myself}
+                                class="flex items-center gap-2"
+                              >
+                                <.icon name="hero-film" class="w-4 h-4" /> GIF
+                              </button>
+                            </li>
+                          <% end %>
+
+                          <%= if @attachments_enabled? do %>
+                            <li role="none">
+                              <label
+                                for={@uploads.attachment.ref}
+                                role="menuitem"
+                                phx-click="close_attach_menu"
+                                phx-target={@myself}
+                                class="flex items-center gap-2 cursor-pointer"
+                                title={"Up to #{@max_attachments} files, max #{@max_attachment_size_mb}MB each"}
+                              >
+                                <.icon name="hero-photo" class="w-4 h-4" /> Image
+                              </label>
+                            </li>
+
+                            <li role="none">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onclick="window.dispatchEvent(new CustomEvent('phx-kit-comments-audio-toggle'))"
+                                phx-click="close_attach_menu"
+                                phx-target={@myself}
+                                class="flex items-center gap-2"
+                              >
+                                <.icon name="hero-microphone" class="w-4 h-4" /> Record
+                              </button>
+                            </li>
+                          <% end %>
+                        </ul>
+                      <% end %>
+
+                      <%= if @giphy_open? do %>
+                        <div
+                          class="pk-giphy-backdrop"
+                          phx-click="close_giphy_picker"
+                          phx-target={@myself}
+                        >
+                          <div
+                            phx-click="noop"
+                            phx-target={@myself}
+                            phx-window-keydown="close_giphy_picker"
+                            phx-key="escape"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="Giphy picker"
+                            class="pk-giphy-picker p-3 shadow-lg bg-base-100 rounded-box border border-base-300"
+                          >
+                            <label for={"giphy-search-#{@myself}"} class="sr-only">
+                              Search GIFs
+                            </label>
+                            <input
+                              id={"giphy-search-#{@myself}"}
+                              type="text"
+                              name="q"
+                              value={@giphy_query}
+                              placeholder="Search GIFs..."
+                              aria-label="Search GIFs"
+                              class="input input-bordered input-sm w-full"
+                              phx-keyup="giphy_search"
+                              phx-target={@myself}
+                              phx-debounce="300"
+                              onkeydown="if(event.key === 'Enter') event.preventDefault()"
+                              autocomplete="off"
+                            />
+
+                            <div class="pk-giphy-picker-scroll mt-2">
+                              <%= cond do %>
+                                <% @giphy_results != [] -> %>
+                                  <div
+                                    class="grid gap-2"
+                                    role="listbox"
+                                    aria-label="GIF results"
+                                    style="grid-template-columns: repeat(3, minmax(0, 1fr));"
+                                  >
+                                    <%= for gif <- @giphy_results do %>
+                                      <button
+                                        type="button"
+                                        role="option"
+                                        aria-label={"Select GIF #{gif["id"]}"}
+                                        phx-click="select_giphy"
+                                        phx-value-id={gif["id"]}
+                                        phx-target={@myself}
+                                        class="border border-base-300 rounded hover:border-primary overflow-hidden bg-base-200"
+                                      >
+                                        <img
+                                          src={gif["preview_url"]}
+                                          loading="lazy"
+                                          alt=""
+                                          class="w-full object-cover"
+                                          style="height: 6rem;"
+                                        />
+                                      </button>
+                                    <% end %>
+                                  </div>
+                                <% String.trim(@giphy_query) == "" -> %>
+                                  <p class="text-xs text-base-content/60 text-center py-4">
+                                    Type a search term to find GIFs.
+                                  </p>
+                                <% true -> %>
+                                  <p class="text-xs text-base-content/60 text-center py-4">
+                                    No results.
+                                  </p>
+                              <% end %>
+                            </div>
+                          </div>
+                        </div>
+                      <% end %>
                     </div>
-                  <% end %>
+
+                  <% true -> %>
                 <% end %>
               </div>
 
@@ -206,6 +440,11 @@
             </div>
           </.form>
         </div>
+        <% else %>
+          <div class="mb-6 text-sm text-base-content/60">
+            Sign in to post a comment.
+          </div>
+        <% end %>
 
         <%!-- Comments List --%>
         <%= if length(@comments) > 0 do %>

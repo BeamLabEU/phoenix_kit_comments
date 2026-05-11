@@ -51,10 +51,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   @impl true
   def mount(socket) do
+    max_size_mb = PhoenixKitComments.get_max_attachment_size_mb()
+    max_entries = PhoenixKitComments.get_max_attachments()
+
     {:ok,
      socket
      |> assign(:comments, [])
      |> assign(:comment_count, 0)
+     |> assign(:loaded?, false)
      |> assign(:reply_to, nil)
      |> assign(:new_comment, "")
      |> assign(:editing_uuid, nil)
@@ -62,7 +66,22 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:giphy_open?, false)
      |> assign(:giphy_query, "")
      |> assign(:giphy_results, [])
-     |> assign(:giphy_selected, nil)}
+     |> assign(:giphy_selected, nil)
+     |> assign(:attach_menu_open?, false)
+     |> assign(:recording_audio?, false)
+     |> assign(:max_attachments, max_entries)
+     |> assign(:max_attachment_size_mb, max_size_mb)
+     |> allow_upload(:attachment,
+       accept: ~w(
+         image/*
+         video/*
+         audio/*
+         .pdf .doc .docx .txt .md
+         .zip .rar .7z
+       ),
+       max_entries: max_entries,
+       max_file_size: max_size_mb * 1024 * 1024
+     )}
   end
 
   @impl true
@@ -74,12 +93,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> assign_new(:show_likes, fn -> false end)
       |> assign_new(:title, fn -> "Comments" end)
       |> assign_new(:form_extras, fn -> [] end)
+      |> assign_new(:current_user, fn -> nil end)
+      |> assign(:can_post?, assigns[:current_user] != nil)
       |> assign(:giphy_enabled?, PhoenixKitComments.giphy_enabled?())
+      |> assign(:attachments_enabled?, PhoenixKitComments.attachments_enabled?())
       |> assign(:max_length, PhoenixKitComments.get_max_length())
 
     socket =
-      if changed?(socket, :resource_uuid) or socket.assigns.comments == [] do
-        load_comments(socket)
+      if changed?(socket, :resource_uuid) or not socket.assigns.loaded? do
+        socket |> load_comments() |> assign(:loaded?, true)
       else
         socket
       end
@@ -88,9 +110,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   @impl true
+  def handle_event("add_comment", _params, %{assigns: %{can_post?: false}} = socket) do
+    {:noreply, put_flash(socket, :error, "Sign in to post a comment")}
+  end
+
   def handle_event("add_comment", params, socket) do
     comment_text = Map.get(params, "comment", "")
-    metadata_params = Map.get(params, "metadata", %{})
+
+    metadata_params =
+      params
+      |> Map.get("metadata", %{})
+      |> Map.delete("giphy")
 
     metadata =
       case socket.assigns.giphy_selected do
@@ -98,47 +128,84 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         gif -> Map.put(metadata_params, "giphy", gif)
       end
 
-    attrs = %{
-      content: comment_text,
-      parent_uuid: socket.assigns.reply_to,
-      metadata: metadata
-    }
-
-    case PhoenixKitComments.create_comment(
-           socket.assigns.resource_type,
-           socket.assigns.resource_uuid,
-           socket.assigns.current_user.uuid,
-           attrs
-         ) do
-      {:ok, _comment} ->
-        send(
-          self(),
-          {:comments_updated,
-           %{
-             resource_type: socket.assigns.resource_type,
-             resource_uuid: socket.assigns.resource_uuid,
-             action: :created
-           }}
-        )
-
-        {:noreply,
-         socket
-         |> assign(:new_comment, "")
-         |> assign(:reply_to, nil)
-         |> assign(:giphy_selected, nil)
-         |> assign(:giphy_open?, false)
-         |> assign(:giphy_results, [])
-         |> assign(:giphy_query, "")
-         |> load_comments()
-         |> put_flash(:info, "Comment added")}
-
-      {:error, %Ecto.Changeset{} = changeset} ->
-        message = first_error_message(changeset) || "Failed to add comment"
+    case consume_attachments(socket) do
+      {:error, message} ->
         {:noreply, put_flash(socket, :error, message)}
 
-      {:error, _other} ->
-        {:noreply, put_flash(socket, :error, "Failed to add comment")}
+      {:ok, file_uuids} ->
+        attrs = %{
+          content: comment_text,
+          parent_uuid: socket.assigns.reply_to,
+          metadata: metadata,
+          attachment_file_uuids: file_uuids
+        }
+
+        case PhoenixKitComments.create_comment(
+               socket.assigns.resource_type,
+               socket.assigns.resource_uuid,
+               socket.assigns.current_user.uuid,
+               attrs
+             ) do
+          {:ok, _comment} ->
+            send(
+              self(),
+              {:comments_updated,
+               %{
+                 resource_type: socket.assigns.resource_type,
+                 resource_uuid: socket.assigns.resource_uuid,
+                 action: :created
+               }}
+            )
+
+            {:noreply,
+             socket
+             |> assign(:new_comment, "")
+             |> assign(:reply_to, nil)
+             |> assign(:giphy_selected, nil)
+             |> assign(:giphy_open?, false)
+             |> assign(:giphy_results, [])
+             |> assign(:giphy_query, "")
+             |> assign(:recording_audio?, false)
+             |> load_comments()
+             |> put_flash(:info, "Comment added")}
+
+          {:error, %Ecto.Changeset{} = changeset} ->
+            message = first_error_message(changeset) || "Failed to add comment"
+            {:noreply, put_flash(socket, :error, message)}
+
+          {:error, :empty_comment} ->
+            {:noreply, put_flash(socket, :error, "Comment can't be empty")}
+
+          {:error, :attachments_disabled} ->
+            {:noreply, put_flash(socket, :error, "Attachments are disabled")}
+
+          {:error, :too_many_attachments} ->
+            max = PhoenixKitComments.get_max_attachments()
+            {:noreply, put_flash(socket, :error, "Up to #{max} attachments per comment")}
+
+          {:error, _other} ->
+            {:noreply, put_flash(socket, :error, "Failed to add comment")}
+        end
     end
+  end
+
+  def handle_event("cancel_upload", %{"ref" => ref}, socket) do
+    {:noreply, cancel_upload(socket, :attachment, ref)}
+  end
+
+  def handle_event("audio_recording_started", _params, socket) do
+    {:noreply, assign(socket, :recording_audio?, true)}
+  end
+
+  def handle_event("audio_recording_stopped", _params, socket) do
+    {:noreply, assign(socket, :recording_audio?, false)}
+  end
+
+  def handle_event("audio_recording_error", %{"message" => message}, socket) do
+    {:noreply,
+     socket
+     |> assign(:recording_audio?, false)
+     |> put_flash(:error, message)}
   end
 
   @impl true
@@ -167,6 +234,21 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   @impl true
   def handle_event("close_giphy_picker", _params, socket) do
     {:noreply, assign(socket, :giphy_open?, false)}
+  end
+
+  def handle_event("toggle_attach_menu", _params, socket) do
+    {:noreply, assign(socket, :attach_menu_open?, not socket.assigns.attach_menu_open?)}
+  end
+
+  def handle_event("close_attach_menu", _params, socket) do
+    {:noreply, assign(socket, :attach_menu_open?, false)}
+  end
+
+  def handle_event("open_giphy_from_menu", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:attach_menu_open?, false)
+     |> assign(:giphy_open?, true)}
   end
 
   def handle_event("noop", _params, socket), do: {:noreply, socket}
@@ -354,6 +436,37 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     end
   end
 
+  defp consume_attachments(socket) do
+    if Enum.empty?(socket.assigns.uploads.attachment.entries) do
+      {:ok, []}
+    else
+      user_uuid = socket.assigns.current_user.uuid
+
+      results =
+        consume_uploaded_entries(socket, :attachment, fn meta, entry ->
+          opts = [
+            filename: entry.client_name,
+            content_type: entry.client_type,
+            size_bytes: entry.client_size,
+            user_uuid: user_uuid
+          ]
+
+          case PhoenixKit.Modules.Storage.store_file(meta.path, opts) do
+            {:ok, %{uuid: uuid}} -> {:ok, {:ok, uuid}}
+            {:error, reason} -> {:ok, {:error, reason}}
+          end
+        end)
+
+      case Enum.split_with(results, &match?({:ok, _}, &1)) do
+        {oks, []} ->
+          {:ok, Enum.map(oks, fn {:ok, uuid} -> uuid end)}
+
+        {_, [{:error, reason} | _]} ->
+          {:error, "Upload failed: #{inspect(reason)}"}
+      end
+    end
+  end
+
   defp load_comments(socket) do
     comments =
       PhoenixKitComments.get_comment_tree(
@@ -385,6 +498,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       if(@comment.depth > 0, do: "ml-2 sm:ml-4 border-l-2 border-base-300", else: "")
     ]}>
       <div class="bg-base-200 rounded-lg p-3 sm:p-4">
+        <%= if @comment.status == "deleted" do %>
+          <div class="text-sm text-base-content/50 italic">[removed]</div>
+        <% else %>
         <%!-- Comment Header --%>
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
           <div class="flex items-center gap-2 text-sm min-w-0 flex-wrap">
@@ -477,6 +593,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               />
             </div>
           <% end %>
+
+          <%= if comment_media(@comment) != [] do %>
+            <div class="mt-2 space-y-2">
+              <%= for media <- comment_media(@comment) do %>
+                <.render_attachment media={media} />
+              <% end %>
+            </div>
+          <% end %>
+        <% end %>
         <% end %>
 
         <%!-- Nested Comments (Replies) --%>
@@ -498,13 +623,88 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     """
   end
 
+  attr(:media, :map, required: true)
+
+  defp render_attachment(%{media: %{file: %{file_type: "image"} = file}} = assigns) do
+    assigns = assign(assigns, :src, signed_url(file, "medium"))
+
+    ~H"""
+    <a href={signed_url(@media.file, "original")} target="_blank" rel="noopener">
+      <img
+        src={@src}
+        loading="lazy"
+        alt={@media.caption || @media.file.original_file_name}
+        class="rounded-lg max-w-xs max-h-80 h-auto"
+      />
+    </a>
+    """
+  end
+
+  defp render_attachment(%{media: %{file: %{file_type: "video"} = file}} = assigns) do
+    assigns =
+      assigns
+      |> assign(:src, signed_url(file, "original"))
+      |> assign(:poster, signed_url(file, "video_thumbnail"))
+
+    ~H"""
+    <video controls preload="metadata" poster={@poster} class="rounded-lg max-w-md w-full">
+      <source src={@src} type={@media.file.mime_type} />
+      Your browser does not support video playback.
+    </video>
+    """
+  end
+
+  defp render_attachment(%{media: %{file: %{file_type: "audio"} = file}} = assigns) do
+    assigns = assign(assigns, :src, signed_url(file, "original"))
+
+    ~H"""
+    <audio controls preload="metadata" class="w-full max-w-md">
+      <source src={@src} type={@media.file.mime_type} />
+      Your browser does not support audio playback.
+    </audio>
+    """
+  end
+
+  defp render_attachment(%{media: %{file: file}} = assigns) do
+    assigns =
+      assigns
+      |> assign(:href, signed_url(file, "original"))
+      |> assign(:size_kb, div(file.size || 0, 1024))
+
+    ~H"""
+    <a
+      href={@href}
+      download={@media.file.original_file_name}
+      class="inline-flex items-center gap-2 px-3 py-2 bg-base-200 rounded hover:bg-base-300"
+    >
+      <.icon name="hero-document-arrow-down" class="w-5 h-5 shrink-0" />
+      <div class="min-w-0">
+        <div class="text-sm font-medium truncate">{@media.file.original_file_name}</div>
+        <div class="text-xs text-base-content/60">{@size_kb} KB</div>
+      </div>
+    </a>
+    """
+  end
+
+  defp signed_url(%{uuid: uuid}, variant),
+    do: PhoenixKit.Modules.Storage.URLSigner.signed_url(to_string(uuid), variant)
+
+  defp comment_media(%{media: media}) when is_list(media), do: media
+  defp comment_media(_), do: []
+
+  defp can_edit_comment?(nil, _comment), do: false
+
   defp can_edit_comment?(user, comment) do
     user.uuid == comment.user_uuid or user_is_admin?(user)
   end
 
+  defp can_delete_comment?(nil, _comment), do: false
+
   defp can_delete_comment?(user, comment) do
     user.uuid == comment.user_uuid or user_is_admin?(user)
   end
+
+  defp user_is_admin?(nil), do: false
 
   defp user_is_admin?(user) do
     Roles.user_has_role_owner?(user) or Roles.user_has_role_admin?(user)
@@ -521,8 +721,18 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp first_error_message(%Ecto.Changeset{errors: errors}) do
     case errors do
-      [{field, {msg, _opts}} | _] -> "#{field} #{msg}"
+      [{field, {msg, _opts}} | _] -> "#{Phoenix.Naming.humanize(field)} #{msg}"
       _ -> nil
     end
   end
+
+  defp attachment_icon("image/" <> _), do: "hero-photo"
+  defp attachment_icon("video/" <> _), do: "hero-film"
+  defp attachment_icon("audio/" <> _), do: "hero-musical-note"
+  defp attachment_icon(_), do: "hero-document"
+
+  defp upload_error_label(:too_large), do: "File too large"
+  defp upload_error_label(:too_many_files), do: "Too many files"
+  defp upload_error_label(:not_accepted), do: "File type not allowed"
+  defp upload_error_label(other), do: "Upload error: #{inspect(other)}"
 end
