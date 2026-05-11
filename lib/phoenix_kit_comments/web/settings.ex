@@ -156,7 +156,10 @@ defmodule PhoenixKitComments.Web.Settings do
           "comments_max_length" => "10000",
           "comments_giphy_enabled" => "false",
           "comments_giphy_api_key" => "",
-          "comments_giphy_rating" => "g"
+          "comments_giphy_rating" => "g",
+          "comments_attachments_enabled" => "false",
+          "comments_max_attachments" => "4",
+          "comments_attachment_max_size_mb" => "20"
         }
 
         Enum.each(defaults, fn {key, value} ->
@@ -180,11 +183,16 @@ defmodule PhoenixKitComments.Web.Settings do
     comments_giphy_enabled
     comments_giphy_api_key
     comments_giphy_rating
+    comments_attachments_enabled
+    comments_max_attachments
+    comments_attachment_max_size_mb
   )
 
   @numeric_settings %{
     "comments_max_depth" => {1, 50, "10"},
-    "comments_max_length" => {100, 100_000, "10000"}
+    "comments_max_length" => {100, 100_000, "10000"},
+    "comments_max_attachments" => {1, 10, "4"},
+    "comments_attachment_max_size_mb" => {1, 500, "20"}
   }
 
   defp do_save_settings(params, socket) do
@@ -322,6 +330,9 @@ defmodule PhoenixKitComments.Web.Settings do
     |> assign(:comments_giphy_enabled, "false")
     |> assign(:comments_giphy_api_key, "")
     |> assign(:comments_giphy_rating, "g")
+    |> assign(:comments_attachments_enabled, "false")
+    |> assign(:comments_max_attachments, "4")
+    |> assign(:comments_attachment_max_size_mb, "20")
     |> assign(:resource_paths, %{})
     |> assign(:counts_by_type, %{})
     |> assign(:unconfigured_types, [])
@@ -348,6 +359,15 @@ defmodule PhoenixKitComments.Web.Settings do
     |> assign(:comments_giphy_enabled, Settings.get_setting("comments_giphy_enabled", "false"))
     |> assign(:comments_giphy_api_key, Settings.get_setting("comments_giphy_api_key", ""))
     |> assign(:comments_giphy_rating, Settings.get_setting("comments_giphy_rating", "g"))
+    |> assign(
+      :comments_attachments_enabled,
+      Settings.get_setting("comments_attachments_enabled", "false")
+    )
+    |> assign(:comments_max_attachments, Settings.get_setting("comments_max_attachments", "4"))
+    |> assign(
+      :comments_attachment_max_size_mb,
+      Settings.get_setting("comments_attachment_max_size_mb", "20")
+    )
     |> assign(:resource_paths, resource_paths)
     |> assign(:counts_by_type, counts_by_type)
     |> assign(:unconfigured_types, unconfigured_types)

@@ -62,6 +62,7 @@ defmodule PhoenixKitComments do
   alias PhoenixKitComments.Comment
   alias PhoenixKitComments.CommentDislike
   alias PhoenixKitComments.CommentLike
+  alias PhoenixKitComments.CommentMedia
 
   # ============================================================================
   # Module Status
@@ -115,6 +116,51 @@ defmodule PhoenixKitComments do
       {n, _} -> n
       :error -> 10_000
     end
+  end
+
+  # ============================================================================
+  # Attachments configuration
+  # ============================================================================
+
+  @doc "Returns `true` when comment attachments are enabled in settings."
+  @spec attachments_enabled?() :: boolean()
+  def attachments_enabled? do
+    Settings.get_boolean_setting("comments_attachments_enabled", false)
+  rescue
+    _ -> false
+  end
+
+  @doc "Returns the per-comment attachment count cap (default 4)."
+  @spec get_max_attachments() :: pos_integer()
+  def get_max_attachments do
+    case Integer.parse(Settings.get_setting("comments_max_attachments", "4")) do
+      {n, _} when n > 0 -> n
+      _ -> 4
+    end
+  rescue
+    _ -> 4
+  end
+
+  @doc """
+  Returns the per-attachment size cap in MB.
+
+  Clamped against the global `storage_max_upload_size_mb` so an admin
+  can't accidentally let comment uploads exceed the platform cap.
+  """
+  @spec get_max_attachment_size_mb() :: pos_integer()
+  def get_max_attachment_size_mb do
+    comment_cap = parse_size_setting("comments_attachment_max_size_mb", 20)
+    global_cap = parse_size_setting("storage_max_upload_size_mb", 500)
+    min(comment_cap, global_cap)
+  end
+
+  defp parse_size_setting(key, default) do
+    case Integer.parse(Settings.get_setting(key, Integer.to_string(default))) do
+      {n, _} when n > 0 -> n
+      _ -> default
+    end
+  rescue
+    _ -> default
   end
 
   # ============================================================================
@@ -288,7 +334,11 @@ defmodule PhoenixKitComments do
   - `resource_type` - Type of resource (e.g., "post")
   - `resource_uuid` - UUID of the resource
   - `user_uuid` - UUID of commenter
-  - `attrs` - Comment attributes (content, parent_uuid, etc.)
+  - `attrs` - Comment attributes (content, parent_uuid, metadata, etc.).
+    May include `:attachment_file_uuids` — a list of
+    `PhoenixKit.Modules.Storage.File` UUIDs to attach to the new comment
+    in display order. Comment insert + attachments run in one
+    transaction; any attach failure rolls back the comment too.
   """
   def create_comment(resource_type, resource_uuid, user_uuid, attrs) when is_binary(user_uuid) do
     if UUIDUtils.valid?(user_uuid) do
@@ -299,19 +349,87 @@ defmodule PhoenixKitComments do
   end
 
   defp do_create_comment(resource_type, resource_uuid, user_uuid, attrs) do
+    {file_uuids, attrs} = Map.pop(attrs, :attachment_file_uuids, [])
+    file_uuids = List.wrap(file_uuids)
+
     attrs =
       attrs
       |> Map.put(:resource_type, resource_type)
       |> Map.put(:resource_uuid, resource_uuid)
       |> Map.put(:user_uuid, user_uuid)
+      |> Map.put(:has_attachments?, file_uuids != [])
       |> maybe_calculate_depth()
       |> maybe_set_initial_status()
 
     with :ok <- validate_depth(attrs),
          :ok <- validate_content_length(attrs),
-         {:ok, comment} <- %Comment{} |> Comment.changeset(attrs) |> repo().insert() do
+         :ok <- validate_attachments(file_uuids),
+         :ok <- validate_has_body(attrs, file_uuids),
+         {:ok, comment} <- insert_comment_with_attachments(attrs, file_uuids) do
       notify_resource_handler(:on_comment_created, resource_type, resource_uuid, comment)
       {:ok, comment}
+    end
+  end
+
+  defp insert_comment_with_attachments(attrs, []) do
+    %Comment{} |> Comment.changeset(attrs) |> repo().insert()
+  end
+
+  defp insert_comment_with_attachments(attrs, file_uuids) do
+    repo().transaction(fn ->
+      with {:ok, comment} <- %Comment{} |> Comment.changeset(attrs) |> repo().insert(),
+           :ok <- attach_files(comment.uuid, file_uuids) do
+        repo().preload(comment, media: :file)
+      else
+        {:error, reason} -> repo().rollback(reason)
+      end
+    end)
+  end
+
+  defp attach_files(comment_uuid, file_uuids) do
+    file_uuids
+    |> Enum.with_index(1)
+    |> Enum.reduce_while(:ok, fn {file_uuid, position}, _acc ->
+      case attach_media(comment_uuid, file_uuid, position: position) do
+        {:ok, _} -> {:cont, :ok}
+        {:error, changeset} -> {:halt, {:error, changeset}}
+      end
+    end)
+  end
+
+  defp validate_attachments(file_uuids) do
+    cond do
+      file_uuids == [] ->
+        :ok
+
+      not attachments_enabled?() ->
+        {:error, :attachments_disabled}
+
+      length(file_uuids) > get_max_attachments() ->
+        {:error, :too_many_attachments}
+
+      Enum.any?(file_uuids, &(not UUIDUtils.valid?(to_string(&1)))) ->
+        {:error, :invalid_file_uuid}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_has_body(attrs, file_uuids) do
+    content = attrs[:content] || attrs["content"] || ""
+    metadata = attrs[:metadata] || attrs["metadata"] || %{}
+
+    has_content? = String.trim(to_string(content)) != ""
+
+    has_giphy? =
+      is_map(metadata) and
+        match?(%{"url" => u} when is_binary(u) and u != "", metadata["giphy"])
+
+    if has_content? or has_giphy? or file_uuids != [] do
+      :ok
+    else
+      {:error, :empty_comment}
     end
   end
 
@@ -393,7 +511,7 @@ defmodule PhoenixKitComments do
             c.resource_uuid == ^resource_uuid and
             c.status in ["published", "deleted"],
         order_by: [asc: c.inserted_at],
-        preload: [:user]
+        preload: [:user, media: :file]
       )
       |> repo().all()
 
@@ -608,6 +726,61 @@ defmodule PhoenixKitComments do
       hidden: count_all_comments(status: "hidden"),
       deleted: count_all_comments(status: "deleted")
     }
+  end
+
+  # ============================================================================
+  # Comment Attachments
+  # ============================================================================
+
+  @doc """
+  Attaches an uploaded file to a comment.
+
+  `position` defaults to 1; the caller is responsible for assigning
+  non-colliding positions (the DB has a unique constraint on
+  `(comment_uuid, position)`).
+  """
+  @spec attach_media(UUIDv7.t(), UUIDv7.t(), keyword()) ::
+          {:ok, CommentMedia.t()} | {:error, Ecto.Changeset.t()}
+  def attach_media(comment_uuid, file_uuid, opts \\ []) do
+    position = Keyword.get(opts, :position, 1)
+    caption = Keyword.get(opts, :caption)
+
+    %CommentMedia{}
+    |> CommentMedia.changeset(%{
+      comment_uuid: comment_uuid,
+      file_uuid: file_uuid,
+      position: position,
+      caption: caption
+    })
+    |> repo().insert()
+  end
+
+  @doc "Detaches a media row by `(comment_uuid, file_uuid)`."
+  def detach_media(comment_uuid, file_uuid) do
+    case repo().get_by(CommentMedia, comment_uuid: comment_uuid, file_uuid: file_uuid) do
+      nil -> {:error, :not_found}
+      media -> repo().delete(media)
+    end
+  end
+
+  @doc "Detaches a media row by its own uuid."
+  def detach_media_by_uuid(media_uuid) do
+    case repo().get(CommentMedia, media_uuid) do
+      nil -> {:error, :not_found}
+      media -> repo().delete(media)
+    end
+  end
+
+  @doc "Lists media for a comment, ordered by `position`."
+  def list_comment_media(comment_uuid, opts \\ []) do
+    preloads = Keyword.get(opts, :preload, [:file])
+
+    from(m in CommentMedia,
+      where: m.comment_uuid == ^comment_uuid,
+      order_by: [asc: m.position]
+    )
+    |> repo().all()
+    |> repo().preload(preloads)
   end
 
   # ============================================================================

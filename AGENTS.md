@@ -109,6 +109,7 @@ Four statuses as strings:
 - `phoenix_kit_comments` — Comment records (UUIDv7 PK, self-referencing `parent_uuid`)
 - `phoenix_kit_comments_likes` — Like records with unique `(comment_uuid, user_uuid)` constraint (`uq_comments_likes_comment_user`)
 - `phoenix_kit_comments_dislikes` — Dislike records with unique `(comment_uuid, user_uuid)` constraint (`uq_comments_dislikes_comment_user`)
+- `phoenix_kit_comment_media` — Junction table linking comments to `phoenix_kit_files` (Storage); unique `(comment_uuid, position)`; `ON DELETE CASCADE` on `comment_uuid`, `ON DELETE RESTRICT` on `file_uuid`. Introduced in PhoenixKit migration V113.
 
 ### Settings Keys
 
@@ -118,6 +119,12 @@ Four statuses as strings:
 | `comments_moderation` | boolean | false | New comments start as "pending" |
 | `comments_max_depth` | integer | 10 | Maximum nesting level |
 | `comments_max_length` | integer | 10000 | Maximum comment character length |
+| `comments_giphy_enabled` | boolean | false | Show the Giphy picker in the comment form |
+| `comments_giphy_api_key` | string | "" | Giphy API key (DB-stored) |
+| `comments_giphy_rating` | string | "g" | Giphy content rating filter (g/pg/pg-13/r) |
+| `comments_attachments_enabled` | boolean | false | Allow image/video/audio/file attachments and in-browser voice recording |
+| `comments_max_attachments` | integer | 4 | Per-comment attachment count cap (1–10) |
+| `comments_attachment_max_size_mb` | integer | 20 | Per-file size cap (MB), clamped against global `storage_max_upload_size_mb` |
 
 ## Critical Conventions
 

@@ -2,6 +2,42 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## Unreleased
+
+### Features
+
+- **Comment attachments**: comments can now carry images, video, audio, and
+  miscellaneous file uploads alongside text or a Giphy GIF. Attachments
+  flow through the parent `PhoenixKit.Modules.Storage` stack (multi-bucket
+  redundancy, variant generation) and link to comments via a new
+  `phoenix_kit_comment_media` junction table.
+- **In-browser voice recording**: a microphone button on the comment form
+  records via `MediaRecorder` (webm/opus) and submits the result through
+  the same upload queue as drag-and-drop attachments. Recordings are
+  audio attachments — no separate code path.
+- Three new admin settings under `/admin/settings/comments` →
+  "Attachments":
+  - `comments_attachments_enabled` (master toggle, default off)
+  - `comments_max_attachments` (per-comment cap, 1–10, default 4)
+  - `comments_attachment_max_size_mb` (per-file size cap, 1–500,
+    clamped against the global `storage_max_upload_size_mb`)
+- `create_comment/4` accepts a new `:attachment_file_uuids` key — a list
+  of `PhoenixKit.Modules.Storage.File` UUIDs to attach in display order.
+  Insert + attaches run in one transaction.
+- New public context fns: `attach_media/3`, `detach_media/2`,
+  `detach_media_by_uuid/1`, `list_comment_media/2`,
+  `attachments_enabled?/0`, `get_max_attachments/0`,
+  `get_max_attachment_size_mb/0`.
+- Comment validity rule generalized to "content **OR** Giphy **OR**
+  attachments". The Comment schema gains a virtual `:has_attachments?`
+  field set by the orchestrator at insert time.
+
+### Migration
+
+- Requires the new `phoenix_kit_comment_media` table introduced in
+  PhoenixKit migration V113. Run `mix ecto.migrate` after bumping the
+  parent `phoenix_kit` dep.
+
 ## 0.1.5 — 2026-04-17
 
 ### Features
