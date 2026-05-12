@@ -2,6 +2,17 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.1 — 2026-05-12
+
+### Features
+
+- Rendered comments now carry `data-comment-uuid` and (when present)
+  `data-annotation-uuid` on the outer wrapper, letting sibling components
+  on the host page correlate DOM nodes with comment + linked-resource
+  uuids without reaching into render internals.
+  `data-annotation-uuid` is sourced from `metadata["annotation_uuid"]`
+  and omitted when nil.
+
 ## 0.2.0 — 2026-05-11
 
 ### Features
