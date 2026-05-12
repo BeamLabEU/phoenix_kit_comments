@@ -524,9 +524,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   def render_comment(assigns) do
     ~H"""
-    <div class={[
-      if(@comment.depth > 0, do: "ml-2 sm:ml-4 border-l-2 border-base-300", else: "")
-    ]}>
+    <div
+      data-comment-uuid={@comment.uuid}
+      data-annotation-uuid={get_in(@comment.metadata || %{}, ["annotation_uuid"])}
+      class={[
+        if(@comment.depth > 0, do: "ml-2 sm:ml-4 border-l-2 border-base-300", else: "")
+      ]}
+    >
       <div class="bg-base-200 rounded-lg p-3 sm:p-4">
         <%= if @comment.status == "deleted" do %>
           <div class="text-sm text-base-content/50 italic">[removed]</div>
