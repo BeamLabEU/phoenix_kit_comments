@@ -533,7 +533,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     >
       <div class="bg-base-200 rounded-lg p-3 sm:p-4">
         <%= if @comment.status == "deleted" do %>
-          <div class="text-sm text-base-content/50 italic">[removed]</div>
+          <div class="text-sm text-base-content/50 italic">{gettext("[removed]")}</div>
         <% else %>
         <%!-- Comment Header --%>
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
@@ -543,7 +543,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               <%= if @comment.user do %>
                 {@comment.user.email}
               <% else %>
-                Unknown
+                {gettext("Unknown")}
               <% end %>
             </span>
             <span class="text-base-content/60 hidden sm:inline">&bull;</span>
@@ -560,7 +560,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               phx-target={@myself}
               class="btn btn-ghost btn-xs"
             >
-              <.icon name="hero-arrow-uturn-left" class="w-4 h-4" /> Reply
+              <.icon name="hero-arrow-uturn-left" class="w-4 h-4" /> {gettext("Reply")}
             </button>
 
             <%= if can_edit_comment?(@current_user, @comment) do %>
@@ -580,7 +580,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 phx-value-id={@comment.uuid}
                 phx-target={@myself}
                 class="btn btn-ghost btn-xs text-error"
-                data-confirm="Are you sure you want to delete this comment?"
+                data-confirm={gettext("Are you sure you want to delete this comment?")}
               >
                 <.icon name="hero-trash" class="w-4 h-4" />
               </button>
@@ -604,10 +604,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 phx-target={@myself}
                 class="btn btn-ghost btn-sm"
               >
-                Cancel
+                {gettext("Cancel")}
               </button>
               <button type="submit" class="btn btn-primary btn-sm">
-                <.icon name="hero-check" class="w-4 h-4 mr-1" /> Save
+                <.icon name="hero-check" class="w-4 h-4 mr-1" /> {gettext("Save")}
               </button>
             </div>
           </.form>
