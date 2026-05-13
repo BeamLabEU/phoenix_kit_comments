@@ -93,7 +93,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> assign(assigns)
       |> assign_new(:enabled, fn -> true end)
       |> assign_new(:show_likes, fn -> false end)
-      |> assign_new(:title, fn -> "Comments" end)
+      |> assign_new(:title, fn -> gettext("Comments") end)
       |> assign_new(:form_extras, fn -> [] end)
       |> assign_new(:current_user, fn -> nil end)
       |> assign(:can_post?, assigns[:current_user] != nil)
@@ -113,7 +113,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   @impl true
   def handle_event("add_comment", _params, %{assigns: %{can_post?: false}} = socket) do
-    {:noreply, put_flash(socket, :error, "Sign in to post a comment")}
+    {:noreply, put_flash(socket, :error, gettext("Sign in to post a comment"))}
   end
 
   def handle_event("add_comment", params, socket) do
@@ -234,7 +234,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
          socket
          |> assign(:giphy_query, query)
          |> assign(:giphy_results, [])
-         |> put_flash(:error, "Giphy search failed. Check the API key in settings.")}
+         |> put_flash(:error, gettext("Giphy search failed. Check the API key in settings."))}
     end
   end
 
@@ -277,7 +277,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   def handle_event("edit_comment", %{"id" => comment_uuid}, socket) do
     case PhoenixKitComments.get_comment(comment_uuid) do
       nil ->
-        {:noreply, put_flash(socket, :error, "Comment not found")}
+        {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
 
       comment ->
         if can_edit_comment?(socket.assigns.current_user, comment) do
@@ -287,7 +287,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
            |> assign(:editing_content, comment.content)
            |> assign(:reply_to, nil)}
         else
-          {:noreply, put_flash(socket, :error, "You don't have permission to edit this comment")}
+          {:noreply,
+           put_flash(socket, :error, gettext("You don't have permission to edit this comment"))}
         end
     end
   end
@@ -306,12 +307,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
     case PhoenixKitComments.get_comment(comment_uuid) do
       nil ->
-        {:noreply, put_flash(socket, :error, "Comment not found")}
+        {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
 
       comment ->
         if comment.resource_type != socket.assigns.resource_type or
              comment.resource_uuid != socket.assigns.resource_uuid do
-          {:noreply, put_flash(socket, :error, "Invalid comment for this resource")}
+          {:noreply, put_flash(socket, :error, gettext("Invalid comment for this resource"))}
         else
           do_save_edit(socket, comment, content)
         end
@@ -322,7 +323,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   def handle_event("delete_comment", %{"id" => comment_uuid}, socket) do
     case PhoenixKitComments.get_comment(comment_uuid) do
       nil ->
-        {:noreply, socket |> put_flash(:error, "Comment not found")}
+        {:noreply, socket |> put_flash(:error, gettext("Comment not found"))}
 
       comment ->
         do_delete_comment(socket, comment)
@@ -364,10 +365,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
              |> assign(:giphy_query, "")
              |> assign(:recording_audio?, false)
              |> load_comments()
-             |> put_flash(:info, "Comment added")}
+             |> put_flash(:info, gettext("Comment added"))}
 
           {:error, %Ecto.Changeset{} = changeset} ->
-            message = first_error_message(changeset) || "Failed to add comment"
+            message = first_error_message(changeset) || gettext("Failed to add comment")
             {:noreply, put_flash(socket, :error, message)}
 
           {:error, reason} when is_atom(reason) ->
@@ -376,28 +377,31 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     end
   end
 
-  defp create_error_message(:empty_comment), do: "Comment can't be empty"
-  defp create_error_message(:attachments_disabled), do: "Attachments are disabled"
+  defp create_error_message(:empty_comment), do: gettext("Comment can't be empty")
+  defp create_error_message(:attachments_disabled), do: gettext("Attachments are disabled")
 
   defp create_error_message(:too_many_attachments),
-    do: "Up to #{PhoenixKitComments.get_max_attachments()} attachments per comment"
+    do:
+      gettext("Up to %{count} attachments per comment",
+        count: PhoenixKitComments.get_max_attachments()
+      )
 
-  defp create_error_message(:max_depth_exceeded), do: "Reply nesting is too deep"
-  defp create_error_message(:content_too_long), do: "Comment exceeds maximum length"
-  defp create_error_message(:invalid_user_uuid), do: "Invalid user"
-  defp create_error_message(:invalid_file_uuid), do: "Invalid file attachment"
-  defp create_error_message(_), do: "Failed to add comment"
+  defp create_error_message(:max_depth_exceeded), do: gettext("Reply nesting is too deep")
+  defp create_error_message(:content_too_long), do: gettext("Comment exceeds maximum length")
+  defp create_error_message(:invalid_user_uuid), do: gettext("Invalid user")
+  defp create_error_message(:invalid_file_uuid), do: gettext("Invalid file attachment")
+  defp create_error_message(_), do: gettext("Failed to add comment")
 
   defp do_delete_comment(socket, comment) do
     cond do
       # First verify the comment belongs to the current resource (IDOR protection)
       comment.resource_type != socket.assigns.resource_type or
           comment.resource_uuid != socket.assigns.resource_uuid ->
-        {:noreply, socket |> put_flash(:error, "Invalid comment for this resource")}
+        {:noreply, socket |> put_flash(:error, gettext("Invalid comment for this resource"))}
 
       not can_delete_comment?(socket.assigns.current_user, comment) ->
         {:noreply,
-         socket |> put_flash(:error, "You don't have permission to delete this comment")}
+         socket |> put_flash(:error, gettext("You don't have permission to delete this comment"))}
 
       true ->
         execute_delete(socket, comment)
@@ -410,14 +414,21 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
     cond do
       content == "" ->
-        {:noreply, put_flash(socket, :error, "Comment cannot be empty")}
+        {:noreply, put_flash(socket, :error, gettext("Comment cannot be empty"))}
 
       String.length(content) > max_length ->
         {:noreply,
-         put_flash(socket, :error, "Comment exceeds maximum length of #{max_length} characters")}
+         put_flash(
+           socket,
+           :error,
+           gettext("Comment exceeds maximum length of %{max_length} characters",
+             max_length: max_length
+           )
+         )}
 
       not can_edit_comment?(socket.assigns.current_user, comment) ->
-        {:noreply, put_flash(socket, :error, "You don't have permission to edit this comment")}
+        {:noreply,
+         put_flash(socket, :error, gettext("You don't have permission to edit this comment"))}
 
       true ->
         do_update_comment(socket, comment, content)
@@ -432,10 +443,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
          |> assign(:editing_uuid, nil)
          |> assign(:editing_content, "")
          |> load_comments()
-         |> put_flash(:info, "Comment updated")}
+         |> put_flash(:info, gettext("Comment updated"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update comment")}
+        {:noreply, put_flash(socket, :error, gettext("Failed to update comment"))}
     end
   end
 
@@ -455,10 +466,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         {:noreply,
          socket
          |> load_comments()
-         |> put_flash(:info, "Comment deleted")}
+         |> put_flash(:info, gettext("Comment deleted"))}
 
       {:error, _} ->
-        {:noreply, socket |> put_flash(:error, "Failed to delete comment")}
+        {:noreply, socket |> put_flash(:error, gettext("Failed to delete comment"))}
     end
   end
 
@@ -493,7 +504,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         {:ok, Enum.map(oks, fn {:ok, uuid} -> uuid end)}
 
       {_, [{:error, reason} | _]} ->
-        {:error, "Upload failed: #{inspect(reason)}"}
+        {:error, gettext("Upload failed: %{reason}", reason: inspect(reason))}
     end
   end
 
@@ -569,6 +580,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 phx-value-id={@comment.uuid}
                 phx-target={@myself}
                 class="btn btn-ghost btn-xs"
+                aria-label={gettext("Edit comment")}
               >
                 <.icon name="hero-pencil-square" class="w-4 h-4" />
               </button>
@@ -622,7 +634,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               <img
                 src={gif["url"]}
                 loading="lazy"
-                alt="GIF"
+                alt={gettext("GIF")}
                 class="rounded-lg w-full max-w-xs h-auto"
               />
             </div>
@@ -683,7 +695,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     ~H"""
     <video controls preload="metadata" poster={@poster} class="rounded-lg max-w-md w-full">
       <source src={@src} type={@media.file.mime_type} />
-      Your browser does not support video playback.
+      {gettext("Your browser does not support video playback.")}
     </video>
     """
   end
@@ -694,7 +706,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     ~H"""
     <audio controls preload="metadata" class="w-full max-w-md">
       <source src={@src} type={@media.file.mime_type} />
-      Your browser does not support audio playback.
+      {gettext("Your browser does not support audio playback.")}
     </audio>
     """
   end
@@ -765,8 +777,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp attachment_icon("audio/" <> _), do: "hero-musical-note"
   defp attachment_icon(_), do: "hero-document"
 
-  defp upload_error_label(:too_large), do: "File too large"
-  defp upload_error_label(:too_many_files), do: "Too many files"
-  defp upload_error_label(:not_accepted), do: "File type not allowed"
-  defp upload_error_label(other), do: "Upload error: #{inspect(other)}"
+  defp upload_error_label(:too_large), do: gettext("File too large")
+  defp upload_error_label(:too_many_files), do: gettext("Too many files")
+  defp upload_error_label(:not_accepted), do: gettext("File type not allowed")
+  defp upload_error_label(other), do: gettext("Upload error: %{reason}", reason: inspect(other))
 end

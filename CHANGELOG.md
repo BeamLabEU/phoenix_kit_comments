@@ -2,6 +2,17 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.2 — 2026-05-14
+
+### Fixed
+
+- Complete gettext/i18n coverage for `CommentsComponent` flash messages,
+  error helpers, upload labels, video/audio fallback text, and accessibility
+  attributes (`alt`, `aria-label`).
+- Version sync between `mix.exs`, `version/0`, and test assertion.
+- Precommit cleanliness: removed stale self-referential `phoenix_kit_comments`
+  from `mix.lock`, formatted `mix.exs`.
+
 ## 0.2.1 — 2026-05-12
 
 ### Features

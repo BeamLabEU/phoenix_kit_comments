@@ -1,7 +1,7 @@
 defmodule PhoenixKitComments.MixProject do
   use Mix.Project
 
-  @version "0.2.1"
+  @version "0.2.2"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_comments"
 
   def project do
@@ -42,7 +42,11 @@ defmodule PhoenixKitComments.MixProject do
     [
       quality: ["format", "credo --strict", "dialyzer"],
       "quality.ci": ["format --check-formatted", "credo --strict", "dialyzer"],
-      precommit: ["compile", "quality"]
+      precommit: [
+        "compile --force --warnings-as-errors",
+        "deps.unlock --check-unused",
+        "quality.ci"
+      ]
     ]
   end
 
