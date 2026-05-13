@@ -141,10 +141,10 @@
           <%= if @reply_to do %>
             <div class="alert alert-info mb-2">
               <div class="flex-1">
-                <span>Replying to comment</span>
+                <span>{gettext("Replying to comment")}</span>
               </div>
               <button phx-click="cancel_reply" phx-target={@myself} class="btn btn-ghost btn-sm">
-                Cancel
+                {gettext("Cancel")}
               </button>
             </div>
           <% end %>
@@ -158,7 +158,7 @@
           >
             <textarea
               name="comment"
-              placeholder="Write a comment..."
+              placeholder={gettext("Write a comment...")}
               class="textarea textarea-bordered w-full"
               rows="3"
               phx-debounce="150"
@@ -200,13 +200,13 @@
                       class="w-10 h-10 object-cover rounded shrink-0"
                       alt=""
                     />
-                    <div class="flex-1 min-w-0 text-sm font-medium truncate">GIF</div>
+                    <div class="flex-1 min-w-0 text-sm font-medium truncate">{gettext("GIF")}</div>
                     <button
                       type="button"
                       phx-click="remove_giphy"
                       phx-target={@myself}
                       class="btn btn-ghost btn-xs"
-                      aria-label="Remove GIF"
+                      aria-label={gettext("Remove GIF")}
                     >
                       <.icon name="hero-x-mark" class="w-4 h-4" />
                     </button>
@@ -234,7 +234,7 @@
                       phx-click="cancel_upload"
                       phx-value-ref={entry.ref}
                       phx-target={@myself}
-                      aria-label={"Remove #{entry.client_name}"}
+                      aria-label={gettext("Remove %{name}", name: entry.client_name)}
                       class="btn btn-ghost btn-xs"
                     >
                       <.icon name="hero-x-mark" class="w-4 h-4" />
@@ -260,11 +260,11 @@
                     <button
                       type="button"
                       onclick="window.dispatchEvent(new CustomEvent('phx-kit-comments-audio-toggle'))"
-                      aria-label="Stop recording"
+                      aria-label={gettext("Stop recording")}
                       class="btn btn-sm btn-error gap-1"
                     >
                       <span class="inline-block w-2 h-2 rounded-full bg-base-100 animate-pulse"></span>
-                      <.icon name="hero-stop-circle" class="w-4 h-4" /> Stop recording
+                      <.icon name="hero-stop-circle" class="w-4 h-4" /> {gettext("Stop recording")}
                     </button>
 
                   <% @attachments_enabled? or @giphy_enabled? -> %>
@@ -275,8 +275,8 @@
                         phx-target={@myself}
                         aria-haspopup="menu"
                         aria-expanded={to_string(@attach_menu_open?)}
-                        aria-label="Attach media"
-                        title="Attach media"
+                        aria-label={gettext("Attach media")}
+                        title={gettext("Attach media")}
                         class={[
                           "btn btn-sm",
                           if(@attach_menu_open?, do: "btn-primary", else: "btn-ghost")
@@ -292,7 +292,7 @@
                           phx-key="escape"
                           phx-target={@myself}
                           role="menu"
-                          aria-label="Attach media options"
+                          aria-label={gettext("Attach media options")}
                           class="absolute top-full left-0 mt-1 z-50 menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-1"
                         >
                           <%= if @giphy_enabled? do %>
@@ -304,7 +304,7 @@
                                 phx-target={@myself}
                                 class="flex items-center gap-2"
                               >
-                                <.icon name="hero-film" class="w-4 h-4" /> GIF
+                                <.icon name="hero-film" class="w-4 h-4" /> {gettext("GIF")}
                               </button>
                             </li>
                           <% end %>
@@ -317,9 +317,14 @@
                                 phx-click="close_attach_menu"
                                 phx-target={@myself}
                                 class="flex items-center gap-2 cursor-pointer"
-                                title={"Up to #{@max_attachments} files, max #{@max_attachment_size_mb}MB each"}
+                                title={
+                                  gettext("Up to %{count} files, max %{size}MB each",
+                                    count: @max_attachments,
+                                    size: @max_attachment_size_mb
+                                  )
+                                }
                               >
-                                <.icon name="hero-photo" class="w-4 h-4" /> Image
+                                <.icon name="hero-photo" class="w-4 h-4" /> {gettext("Image")}
                               </label>
                             </li>
 
@@ -332,7 +337,7 @@
                                 phx-target={@myself}
                                 class="flex items-center gap-2"
                               >
-                                <.icon name="hero-microphone" class="w-4 h-4" /> Record
+                                <.icon name="hero-microphone" class="w-4 h-4" /> {gettext("Record")}
                               </button>
                             </li>
                           <% end %>
@@ -352,19 +357,19 @@
                             phx-key="escape"
                             role="dialog"
                             aria-modal="true"
-                            aria-label="Giphy picker"
+                            aria-label={gettext("Giphy picker")}
                             class="pk-giphy-picker p-3 shadow-lg bg-base-100 rounded-box border border-base-300"
                           >
                             <label for={"giphy-search-#{@myself}"} class="sr-only">
-                              Search GIFs
+                              {gettext("Search GIFs")}
                             </label>
                             <input
                               id={"giphy-search-#{@myself}"}
                               type="text"
                               name="q"
                               value={@giphy_query}
-                              placeholder="Search GIFs..."
-                              aria-label="Search GIFs"
+                              placeholder={gettext("Search GIFs...")}
+                              aria-label={gettext("Search GIFs")}
                               class="input input-bordered input-sm w-full"
                               phx-keyup="giphy_search"
                               phx-target={@myself}
@@ -379,14 +384,14 @@
                                   <div
                                     class="grid gap-2"
                                     role="listbox"
-                                    aria-label="GIF results"
+                                    aria-label={gettext("GIF results")}
                                     style="grid-template-columns: repeat(3, minmax(0, 1fr));"
                                   >
                                     <%= for gif <- @giphy_results do %>
                                       <button
                                         type="button"
                                         role="option"
-                                        aria-label={"Select GIF #{gif["id"]}"}
+                                        aria-label={gettext("Select GIF %{id}", id: gif["id"])}
                                         phx-click="select_giphy"
                                         phx-value-id={gif["id"]}
                                         phx-target={@myself}
@@ -404,11 +409,11 @@
                                   </div>
                                 <% String.trim(@giphy_query) == "" -> %>
                                   <p class="text-xs text-base-content/60 text-center py-4">
-                                    Type a search term to find GIFs.
+                                    {gettext("Type a search term to find GIFs.")}
                                   </p>
                                 <% true -> %>
                                   <p class="text-xs text-base-content/60 text-center py-4">
-                                    No results.
+                                    {gettext("No results.")}
                                   </p>
                               <% end %>
                             </div>
@@ -430,11 +435,11 @@
                     class="btn btn-ghost btn-sm"
                     disabled={@new_comment == "" and @giphy_selected == nil}
                   >
-                    Cancel
+                    {gettext("Cancel")}
                   </button>
                 <% end %>
                 <button type="submit" class="btn btn-primary btn-sm">
-                  <.icon name="hero-paper-airplane" class="w-4 h-4 mr-2" /> Post Comment
+                  <.icon name="hero-paper-airplane" class="w-4 h-4 mr-2" /> {gettext("Post Comment")}
                 </button>
               </div>
             </div>
@@ -442,7 +447,7 @@
         </div>
         <% else %>
           <div class="mb-6 text-sm text-base-content/60">
-            Sign in to post a comment.
+            {gettext("Sign in to post a comment.")}
           </div>
         <% end %>
 
@@ -462,7 +467,7 @@
         <% else %>
           <div class="text-center py-8 text-base-content/60">
             <.icon name="hero-chat-bubble-left" class="w-12 h-12 mx-auto mb-2 opacity-50" />
-            <p>No comments yet. Be the first to comment!</p>
+            <p>{gettext("No comments yet. Be the first to comment!")}</p>
           </div>
         <% end %>
       </div>
