@@ -68,6 +68,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:comment_count, 0)
      |> assign(:loaded?, false)
      |> assign(:reply_to, nil)
+     |> assign(:composer_open?, false)
      |> assign(:new_comment, "")
      |> assign(:editing_uuid, nil)
      |> assign(:editing_content, "")
@@ -249,10 +250,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
              socket
              |> assign(:new_comment, "")
              |> assign(:reply_to, nil)
+             |> assign(:composer_open?, false)
              |> assign(:giphy_selected, nil)
              |> assign(:giphy_open?, false)
              |> assign(:giphy_results, [])
              |> assign(:giphy_query, "")
+             |> assign(:attach_menu_open?, false)
              |> assign(:recording_audio?, false)
              |> load_comments()
              |> put_flash(:info, "Comment added")}
@@ -297,6 +300,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   @impl true
+  def handle_event("open_composer", _params, socket) do
+    {:noreply, assign(socket, :composer_open?, true)}
+  end
+
+  @impl true
   def handle_event("update_comment_draft", %{"comment" => text}, socket) do
     {:noreply, assign(socket, :new_comment, text)}
   end
@@ -308,10 +316,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     {:noreply,
      socket
      |> assign(:new_comment, "")
+     |> assign(:reply_to, nil)
+     |> assign(:composer_open?, false)
      |> assign(:giphy_selected, nil)
      |> assign(:giphy_open?, false)
      |> assign(:giphy_results, [])
-     |> assign(:giphy_query, "")}
+     |> assign(:giphy_query, "")
+     |> assign(:attach_menu_open?, false)}
   end
 
   @impl true
@@ -385,6 +396,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     {:noreply,
      socket
      |> assign(:reply_to, comment_uuid)
+     |> assign(:composer_open?, true)
      |> assign(:editing_uuid, nil)
      |> assign(:editing_content, "")}
   end
