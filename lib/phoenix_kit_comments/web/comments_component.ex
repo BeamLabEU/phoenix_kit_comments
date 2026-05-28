@@ -966,7 +966,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         <%!-- Suppressed during comment-edit (@editing_uuid matches) —  --%>
         <%!-- the unified edit form below carries its own label input.  --%>
         <%= if @decoration && @editing_uuid != @comment.uuid do %>
-          <div class="mb-2">
+          <div class="mt-2 mb-2">
             <%= if @decoration_editing? do %>
               <.form
                 for={%{}}
