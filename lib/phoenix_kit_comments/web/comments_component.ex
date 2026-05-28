@@ -49,6 +49,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   alias PhoenixKit.Users.Roles
 
+  # Leaf is an optional dep. When present, the comment form swaps
+  # textareas for `<.live_component module={Leaf}>`. Without leaf
+  # installed, the form falls back to plain textareas with no
+  # behavior change. `@compile {:no_warn_undefined, [Leaf]}` keeps
+  # dialyzer / compiler quiet in the leaf-absent build; runtime
+  # behavior is guarded by `leaf_available?/0`.
+  @compile {:no_warn_undefined, [Leaf]}
+
   @impl true
   def mount(socket) do
     max_size_mb = PhoenixKitComments.get_max_attachment_size_mb()
@@ -89,7 +97,20 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      )}
   end
 
+  # Leaf content forwarded from a host LV via `forward_leaf_event/2`.
+  # `:draft` updates the new-comment / reply assign; `:edit` updates
+  # the inline-edit assign. Either way the next form submit reads
+  # from socket.assigns instead of params (Leaf doesn't bubble
+  # form-collectable elements to the parent form).
   @impl true
+  def update(%{leaf_content_changed: %{kind: :draft, content: content}}, socket) do
+    {:ok, assign(socket, :new_comment, content)}
+  end
+
+  def update(%{leaf_content_changed: %{kind: :edit, content: content}}, socket) do
+    {:ok, assign(socket, :editing_content, content)}
+  end
+
   def update(assigns, socket) do
     socket =
       socket
@@ -165,7 +186,22 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   def handle_event("add_comment", params, socket) do
-    comment_text = Map.get(params, "comment", "")
+    # When Leaf is the editor, content lives in socket.assigns
+    # (kept fresh by forwarded `:leaf_changed` messages from the
+    # host LV). The form submit doesn't carry Leaf's contenteditable.
+    # Falls back to params for the plain-textarea path.
+    comment_text =
+      params
+      |> Map.get("comment")
+      |> case do
+        nil ->
+          if leaf_available?(),
+            do: socket.assigns.new_comment,
+            else: ""
+
+        text ->
+          text
+      end
 
     metadata_params =
       params
@@ -197,6 +233,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                attrs
              ) do
           {:ok, _comment} ->
+            reset_leaf_draft_editor(socket.assigns.id)
+
             send(
               self(),
               {:comments_updated,
@@ -398,7 +436,20 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   @impl true
   def handle_event("save_edit", params, socket) do
     comment_uuid = socket.assigns.editing_uuid
-    content = Map.get(params, "content", "")
+
+    # Same Leaf-vs-textarea source split as `add_comment`.
+    content =
+      params
+      |> Map.get("content")
+      |> case do
+        nil ->
+          if leaf_available?(),
+            do: socket.assigns.editing_content,
+            else: ""
+
+        text ->
+          text
+      end
 
     case PhoenixKitComments.get_comment(comment_uuid) do
       nil ->
@@ -684,6 +735,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   attr(:comment, :map, required: true)
   attr(:current_user, :map, required: true)
   attr(:myself, :any, required: true)
+  attr(:component_id, :string, required: true)
   attr(:editing_uuid, :string, default: nil)
   attr(:editing_content, :string, default: "")
   attr(:comment_decorations, :map, default: %{})
@@ -868,12 +920,33 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               />
               <hr class="border-base-300" />
             <% end %>
-            <textarea
-              name="content"
-              class="textarea textarea-bordered w-full"
-              rows="3"
-              required
-            ><%= @editing_content %></textarea>
+            <%!-- Edit body. Leaf when available, plain textarea fallback. --%>
+            <%!-- Editor id encodes the comment uuid so morphdom remounts  --%>
+            <%!-- a fresh Leaf when the user opens edit on a different     --%>
+            <%!-- comment. Save reads from socket.assigns.editing_content   --%>
+            <%!-- (kept fresh via forwarded :leaf_changed events).         --%>
+            <%= if leaf_available?() do %>
+              <.live_component
+                module={Leaf}
+                id={edit_editor_id(@component_id, @comment.uuid)}
+                content={@editing_content || ""}
+                preset={:advanced}
+                placeholder="Edit your comment..."
+                height="200px"
+                debounce={400}
+                upload_handler={nil}
+                sync_input_name="content"
+                loading_preset={:random}
+                loading_text={nil}
+              />
+            <% else %>
+              <textarea
+                name="content"
+                class="textarea textarea-bordered w-full"
+                rows="3"
+                required
+              ><%= @editing_content %></textarea>
+            <% end %>
             <div class="flex flex-wrap justify-end gap-2">
               <button
                 type="button"
@@ -923,6 +996,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 comment={child}
                 current_user={@current_user}
                 myself={@myself}
+                component_id={@component_id}
                 editing_uuid={@editing_uuid}
                 editing_content={@editing_content}
                 comment_decorations={@comment_decorations}
@@ -1049,4 +1123,97 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp upload_error_label(:too_many_files), do: "Too many files"
   defp upload_error_label(:not_accepted), do: "File type not allowed"
   defp upload_error_label(other), do: "Upload error: #{inspect(other)}"
+
+  # ── Leaf editor integration ──────────────────────────────────
+  # Leaf (the optional rich-text editor) is a LiveComponent that
+  # sends `{:leaf_changed, %{editor_id, markdown, html}}` to
+  # `self()` — i.e. the parent LiveView process, NOT the
+  # CommentsComponent (which is itself a LiveComponent). Host LVs
+  # that embed CommentsComponent must catch those messages and
+  # call `forward_leaf_event/2` so the component can keep its
+  # draft / edit assigns in sync. Without forwarding, Leaf still
+  # works visually but the form has no content to submit.
+  #
+  # ## Host wiring (one-liner per LiveView)
+  #
+  #     def handle_info({:leaf_changed, _} = msg, socket) do
+  #       PhoenixKitComments.Web.CommentsComponent.forward_leaf_event(msg, socket)
+  #     end
+  #
+  # ## Editor ID namespace
+  #
+  # The component owns the editor IDs and gates them with
+  # `"pk-comments:<component_id>:..."` so the forwarder routes
+  # only its own events. Other Leaf instances in the same host LV
+  # (e.g. a post-content editor) are passed through unchanged via
+  # `:pass`, letting the host's own handler match them.
+
+  @doc """
+  Forward a Leaf content-changed message from a host LiveView's
+  `handle_info` into the comments component. Routes only events
+  whose `editor_id` starts with `"pk-comments:"`; returns `:pass`
+  for unrelated editors so the caller can fall through to its own
+  handler.
+
+  ## Example
+
+      def handle_info({:leaf_changed, _} = msg, socket) do
+        PhoenixKitComments.Web.CommentsComponent.forward_leaf_event(msg, socket)
+      end
+
+  Returns `{:noreply, socket}` on a match (already wrapped, ready
+  to return from handle_info), or `:pass` when the editor isn't
+  ours.
+  """
+  def forward_leaf_event(
+        {:leaf_changed, %{editor_id: editor_id, markdown: markdown}},
+        socket
+      )
+      when is_binary(editor_id) do
+    case parse_editor_id(editor_id) do
+      {:ok, component_id, kind} ->
+        Phoenix.LiveView.send_update(__MODULE__,
+          id: component_id,
+          leaf_content_changed: %{kind: kind, content: markdown || ""}
+        )
+
+        {:noreply, socket}
+
+      :pass ->
+        :pass
+    end
+  end
+
+  def forward_leaf_event(_msg, _socket), do: :pass
+
+  # Parse "pk-comments:<component_id>:<kind>(:rest...)" into
+  # `{:ok, component_id, kind}`. The kind is `:draft` for the
+  # new-comment / reply form (one per component) or `:edit` for
+  # the inline edit form (also one at a time per component).
+  defp parse_editor_id("pk-comments:" <> rest) do
+    case String.split(rest, ":", parts: 3) do
+      [component_id, "draft"] -> {:ok, component_id, :draft}
+      [component_id, "edit", _comment_uuid] -> {:ok, component_id, :edit}
+      _ -> :pass
+    end
+  end
+
+  defp parse_editor_id(_), do: :pass
+
+  defp leaf_available?, do: Code.ensure_loaded?(Leaf)
+
+  defp draft_editor_id(component_id), do: "pk-comments:#{component_id}:draft"
+
+  defp edit_editor_id(component_id, comment_uuid),
+    do: "pk-comments:#{component_id}:edit:#{comment_uuid}"
+
+  defp reset_leaf_draft_editor(component_id) do
+    if leaf_available?() do
+      Phoenix.LiveView.send_update(Leaf,
+        id: draft_editor_id(component_id),
+        action: :set_content,
+        content: ""
+      )
+    end
+  end
 end

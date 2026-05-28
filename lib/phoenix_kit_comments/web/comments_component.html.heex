@@ -156,13 +156,36 @@
             phx-target={@myself}
             class="space-y-2"
           >
-            <textarea
-              name="comment"
-              placeholder="Write a comment..."
-              class="textarea textarea-bordered w-full"
-              rows="3"
-              phx-debounce="150"
-            ><%= @new_comment %></textarea>
+            <%!-- New / reply comment editor. When the optional :leaf  --%>
+            <%!-- dep is present, render the rich-text Leaf editor;    --%>
+            <%!-- the host LV must forward {:leaf_changed, ...} via    --%>
+            <%!-- forward_leaf_event/2 so the content syncs to         --%>
+            <%!-- socket.assigns.new_comment for submit. Without leaf, --%>
+            <%!-- fall back to the original plain textarea (no host    --%>
+            <%!-- wiring needed).                                       --%>
+            <%= if leaf_available?() do %>
+              <.live_component
+                module={Leaf}
+                id={draft_editor_id(@id)}
+                content={@new_comment || ""}
+                preset={:advanced}
+                placeholder="Write a comment..."
+                height="200px"
+                debounce={400}
+                upload_handler={nil}
+                sync_input_name="comment"
+                loading_preset={:random}
+                loading_text={nil}
+              />
+            <% else %>
+              <textarea
+                name="comment"
+                placeholder="Write a comment..."
+                class="textarea textarea-bordered w-full"
+                rows="3"
+                phx-debounce="150"
+              ><%= @new_comment %></textarea>
+            <% end %>
 
             <div class={[
               "text-xs text-right",
@@ -454,6 +477,7 @@
                 comment={comment}
                 current_user={@current_user}
                 myself={@myself}
+                component_id={@id}
                 editing_uuid={@editing_uuid}
                 editing_content={@editing_content}
                 comment_decorations={@comment_decorations}
