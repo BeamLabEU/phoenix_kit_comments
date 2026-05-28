@@ -1350,12 +1350,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     assigns = assign(assigns, :src, signed_url(file, "medium"))
 
     ~H"""
-    <a href={signed_url(@media.file, "original")} target="_blank" rel="noopener">
+    <a
+      href={signed_url(@media.file, "original")}
+      target="_blank"
+      rel="noopener"
+      class="block"
+    >
       <img
         src={@src}
         loading="lazy"
         alt={@media.caption || @media.file.original_file_name}
-        class="rounded-lg max-w-xs max-h-80 h-auto"
+        class="rounded-lg w-full h-auto max-h-96 object-contain"
       />
     </a>
     """
