@@ -1123,7 +1123,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           {Calendar.strftime(@comment.inserted_at, "%b %d, %Y %I:%M %p")}
         </div>
 
-        <div class="flex flex-wrap items-center gap-1.5 mt-2">
+        <div class="flex flex-wrap items-center justify-end gap-1.5 mt-2">
           <%= if @show_likes do %>
             <button
               type="button"
