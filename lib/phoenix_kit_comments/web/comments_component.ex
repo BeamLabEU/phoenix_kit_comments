@@ -63,6 +63,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:new_comment, "")
      |> assign(:editing_uuid, nil)
      |> assign(:editing_content, "")
+     # Per-decoration inline-edit state. The uuid is a
+     # `{metadata_key, comment_uuid}` tuple (or nil) so two different
+     # decoration kinds on the same comment don't collide.
+     |> assign(:editing_decoration_uuid, nil)
+     |> assign(:editing_decoration_value, "")
      |> assign(:giphy_open?, false)
      |> assign(:giphy_query, "")
      |> assign(:giphy_results, [])
@@ -94,6 +99,51 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> assign_new(:title, fn -> "Comments" end)
       |> assign_new(:form_extras, fn -> [] end)
       |> assign_new(:current_user, fn -> nil end)
+      # Optional per-comment decoration registry. Generic surface
+      # for rendering an external label above the comment body,
+      # driven by one of the comment's `metadata[key]` fields. The
+      # comments package stays domain-agnostic; the caller declares
+      # which metadata field to read and what label to display for
+      # each known value.
+      #
+      # Shape:
+      #
+      #     %{
+      #       <metadata_key> => %{
+      #         <metadata_value> => %{
+      #           label: <string>,           # required — what to render
+      #           on_save: <atom> | nil      # optional — fires send_update
+      #                                      # to parent_module/parent_id
+      #                                      # when set; nil = read-only
+      #         },
+      #         ...
+      #       },
+      #       ...
+      #     }
+      #
+      # Example consumers:
+      #   PhoenixKit's MediaCanvasViewer for annotation titles:
+      #     %{"annotation_uuid" => %{
+      #         "abc-uuid" => %{label: "Sky shot", on_save: :annotation_title_updated}
+      #       }}
+      #   Hypothetical post-category decoration:
+      #     %{"category_id" => %{
+      #         "42" => %{label: "Releases", on_save: nil}
+      #       }}
+      #
+      # The first matching decoration wins per comment; multiple
+      # decorations per comment aren't supported in this iteration.
+      |> assign_new(:comment_decorations, fn -> %{} end)
+      # Parent component to receive `send_update` when a decoration
+      # is inline-edited (only relevant for decorations whose
+      # entry sets `on_save`). The payload shape is:
+      #
+      #     %{action: <on_save atom>,
+      #       metadata_key: <string>,
+      #       metadata_value: <string>,
+      #       label: <new string>}
+      |> assign_new(:parent_module, fn -> nil end)
+      |> assign_new(:parent_id, fn -> nil end)
       |> assign(:can_post?, assigns[:current_user] != nil)
       |> assign(:giphy_enabled?, PhoenixKitComments.giphy_enabled?())
       |> assign(:attachments_enabled?, PhoenixKitComments.attachments_enabled?())
@@ -314,10 +364,21 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
       comment ->
         if can_edit_comment?(socket.assigns.current_user, comment) do
+          # When the comment has a matching decoration entry,
+          # pre-fill `:editing_decoration_value` so the unified
+          # edit form opens with the live label. No-op for comments
+          # with no decoration — the input renders behind a guard.
+          decoration_label =
+            case find_decoration_for_comment(comment, socket.assigns.comment_decorations) do
+              %{label: label} when is_binary(label) -> label
+              _ -> ""
+            end
+
           {:noreply,
            socket
            |> assign(:editing_uuid, comment_uuid)
            |> assign(:editing_content, comment.content)
+           |> assign(:editing_decoration_value, decoration_label)
            |> assign(:reply_to, nil)}
         else
           {:noreply, put_flash(socket, :error, "You don't have permission to edit this comment")}
@@ -330,12 +391,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     {:noreply,
      socket
      |> assign(:editing_uuid, nil)
-     |> assign(:editing_content, "")}
+     |> assign(:editing_content, "")
+     |> assign(:editing_decoration_value, "")}
   end
 
   @impl true
-  def handle_event("save_edit", %{"content" => content}, socket) do
+  def handle_event("save_edit", params, socket) do
     comment_uuid = socket.assigns.editing_uuid
+    content = Map.get(params, "content", "")
 
     case PhoenixKitComments.get_comment(comment_uuid) do
       nil ->
@@ -346,9 +409,69 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
              comment.resource_uuid != socket.assigns.resource_uuid do
           {:noreply, put_flash(socket, :error, "Invalid comment for this resource")}
         else
+          # If the edit form carried a "label" field (i.e. the
+          # comment has a matching decoration with an `on_save`
+          # action), forward the new label to the parent. Comment-
+          # content save below is unconditional. Both updates fire
+          # in the same tick.
+          maybe_forward_decoration_update(socket, comment, params)
           do_save_edit(socket, comment, content)
         end
     end
+  end
+
+  # ── Decoration inline-edit ───────────────────────────────────
+  # Decorations live on the consumer's parent resource (e.g. an
+  # annotation's title in PhoenixKit's MediaCanvasViewer), not on
+  # the comment row. We provide UI + state plumbing; the parent
+  # component owns the actual write via the configured per-entry
+  # `:on_save` action atom.
+
+  @impl true
+  def handle_event("begin_decoration_edit", %{"uuid" => comment_uuid}, socket) do
+    case find_decoration_for_comment_uuid(comment_uuid, socket) do
+      %{label: label, on_save: on_save, metadata_key: metadata_key} when not is_nil(on_save) ->
+        {:noreply,
+         socket
+         |> assign(:editing_decoration_uuid, {metadata_key, comment_uuid})
+         |> assign(:editing_decoration_value, label || "")}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("cancel_decoration_edit", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:editing_decoration_uuid, nil)
+     |> assign(:editing_decoration_value, "")}
+  end
+
+  @impl true
+  def handle_event("save_decoration", %{"uuid" => comment_uuid, "label" => label}, socket) do
+    case find_decoration_for_comment_uuid(comment_uuid, socket) do
+      %{on_save: on_save, metadata_key: metadata_key, metadata_value: metadata_value}
+      when not is_nil(on_save) ->
+        if socket.assigns.parent_module && socket.assigns.parent_id do
+          Phoenix.LiveView.send_update(socket.assigns.parent_module,
+            id: socket.assigns.parent_id,
+            action: on_save,
+            metadata_key: metadata_key,
+            metadata_value: metadata_value,
+            label: String.trim(label)
+          )
+        end
+
+      _ ->
+        :ok
+    end
+
+    {:noreply,
+     socket
+     |> assign(:editing_decoration_uuid, nil)
+     |> assign(:editing_decoration_value, "")}
   end
 
   @impl true
@@ -361,6 +484,78 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         do_delete_comment(socket, comment)
     end
   end
+
+  # Forward a decoration label captured by the comment-edit form
+  # to the parent component (only when the comment has a matching
+  # decoration entry with an `:on_save` action). Called from
+  # `save_edit` alongside the comment-content write so a single
+  # Save click persists both surfaces in one tick.
+  defp maybe_forward_decoration_update(socket, comment, params) do
+    label = Map.get(params, "label")
+    parent_module = socket.assigns.parent_module
+    parent_id = socket.assigns.parent_id
+
+    with true <- is_binary(label),
+         true <- parent_module != nil and parent_id != nil,
+         %{on_save: on_save, metadata_key: metadata_key, metadata_value: metadata_value}
+         when not is_nil(on_save) <-
+           find_decoration_for_comment(comment, socket.assigns.comment_decorations) do
+      Phoenix.LiveView.send_update(parent_module,
+        id: parent_id,
+        action: on_save,
+        metadata_key: metadata_key,
+        metadata_value: metadata_value,
+        label: String.trim(label)
+      )
+    end
+
+    :ok
+  end
+
+  # Finds the first decoration entry that matches a comment. Scans
+  # `comment_decorations` in iteration order; returns a map with
+  # `:label, :on_save, :metadata_key, :metadata_value` or `nil`.
+  # Multi-decoration support (rendering more than one label per
+  # comment) is intentionally out of scope for now.
+  defp find_decoration_for_comment(comment, decorations) when is_map(decorations) do
+    metadata = comment.metadata || %{}
+
+    Enum.find_value(decorations, fn {metadata_key, values_map} ->
+      with value when is_binary(value) <- Map.get(metadata, metadata_key),
+           %{} = entry <- Map.get(values_map, value) do
+        entry
+        |> Map.put_new(:on_save, nil)
+        |> Map.merge(%{metadata_key: metadata_key, metadata_value: value})
+      else
+        _ -> nil
+      end
+    end)
+  end
+
+  defp find_decoration_for_comment(_, _), do: nil
+
+  # Same as above but resolves the comment from the in-memory tree
+  # by uuid first. Used by the title-only click-to-edit flow which
+  # only carries the comment uuid in its phx-value-uuid.
+  defp find_decoration_for_comment_uuid(comment_uuid, socket) do
+    case find_comment_in_tree(socket.assigns.comments, comment_uuid) do
+      nil -> nil
+      comment -> find_decoration_for_comment(comment, socket.assigns.comment_decorations)
+    end
+  end
+
+  defp find_comment_in_tree([], _uuid), do: nil
+
+  defp find_comment_in_tree([comment | rest], uuid) do
+    if to_string(comment.uuid) == to_string(uuid) do
+      comment
+    else
+      find_comment_in_tree(comment.children || [], uuid) ||
+        find_comment_in_tree(rest, uuid)
+    end
+  end
+
+  defp find_comment_in_tree(_, _), do: nil
 
   defp do_delete_comment(socket, comment) do
     cond do
@@ -491,12 +686,33 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   attr(:myself, :any, required: true)
   attr(:editing_uuid, :string, default: nil)
   attr(:editing_content, :string, default: "")
+  attr(:comment_decorations, :map, default: %{})
+  attr(:editing_decoration_uuid, :any, default: nil)
+  attr(:editing_decoration_value, :string, default: "")
 
   def render_comment(assigns) do
+    decoration = find_decoration_for_comment(assigns.comment, assigns.comment_decorations)
+
+    # Convenience: the pre-existing data-annotation-uuid attr on the
+    # rendered wrapper. Kept for callers that target shapes via that
+    # selector (predates the decoration refactor).
+    annotation_uuid = get_in(assigns.comment.metadata || %{}, ["annotation_uuid"])
+
+    assigns =
+      assigns
+      |> assign(:decoration, decoration)
+      |> assign(:annotation_uuid, annotation_uuid)
+      |> assign(
+        :decoration_editing?,
+        decoration && match?({_, _}, assigns.editing_decoration_uuid) &&
+          assigns.editing_decoration_uuid ==
+            {decoration.metadata_key, assigns.comment.uuid}
+      )
+
     ~H"""
     <div
       data-comment-uuid={@comment.uuid}
-      data-annotation-uuid={get_in(@comment.metadata || %{}, ["annotation_uuid"])}
+      data-annotation-uuid={@annotation_uuid}
       class={[
         if(@comment.depth > 0, do: "ml-2 sm:ml-4 border-l-2 border-base-300", else: "")
       ]}
@@ -558,9 +774,100 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           </div>
         </div>
 
+        <%!-- Decoration label (when this comment matches an entry in   --%>
+        <%!-- :comment_decorations). Sits BETWEEN the user-info         --%>
+        <%!-- header and the comment body so the hierarchy reads:       --%>
+        <%!-- who/when → topic → comment.                                --%>
+        <%!--                                                            --%>
+        <%!-- Read-only when the decoration's `:on_save` is nil;        --%>
+        <%!-- click-to-edit when set. The pencil icon only appears on   --%>
+        <%!-- hover so the header doesn't shout "edit me" until the     --%>
+        <%!-- user reaches it.                                           --%>
+        <%!--                                                            --%>
+        <%!-- Suppressed during comment-edit (@editing_uuid matches) —  --%>
+        <%!-- the unified edit form below carries its own label input.  --%>
+        <%= if @decoration && @editing_uuid != @comment.uuid do %>
+          <div class="mb-2">
+            <%= if @decoration_editing? do %>
+              <.form
+                for={%{}}
+                phx-submit="save_decoration"
+                phx-target={@myself}
+                class="flex items-center gap-2"
+              >
+                <input type="hidden" name="uuid" value={@comment.uuid} />
+                <input
+                  type="text"
+                  name="label"
+                  value={@editing_decoration_value}
+                  maxlength="200"
+                  phx-mounted={Phoenix.LiveView.JS.focus()}
+                  phx-keydown="cancel_decoration_edit"
+                  phx-key="escape"
+                  phx-target={@myself}
+                  class="input input-bordered input-sm flex-1 text-sm font-semibold"
+                />
+                <button type="submit" class="btn btn-primary btn-xs">
+                  <.icon name="hero-check" class="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  phx-click="cancel_decoration_edit"
+                  phx-target={@myself}
+                  class="btn btn-ghost btn-xs"
+                >
+                  <.icon name="hero-x-mark" class="w-3.5 h-3.5" />
+                </button>
+              </.form>
+            <% else %>
+              <div
+                class={[
+                  "group flex items-center gap-1",
+                  @decoration.on_save && "cursor-pointer"
+                ]}
+                phx-click={@decoration.on_save && "begin_decoration_edit"}
+                phx-value-uuid={@comment.uuid}
+                phx-target={@myself}
+              >
+                <h4 class={[
+                  "text-sm font-semibold break-words flex-1 min-w-0",
+                  @decoration.on_save && "group-hover:text-primary transition-colors"
+                ]}>
+                  {@decoration.label}
+                </h4>
+                <%= if @decoration.on_save do %>
+                  <.icon
+                    name="hero-pencil-square"
+                    class="w-3.5 h-3.5 opacity-0 group-hover:opacity-60 shrink-0 transition-opacity"
+                  />
+                <% end %>
+              </div>
+            <% end %>
+            <hr class="mt-1 border-base-300" />
+          </div>
+        <% end %>
+
         <%!-- Comment Content (or Edit Form) --%>
         <%= if @editing_uuid == @comment.uuid do %>
           <.form for={%{}} phx-submit="save_edit" phx-target={@myself} class="space-y-2">
+            <%!-- When this comment has a decoration with an `on_save`    --%>
+            <%!-- action, the edit form opens label + body together.      --%>
+            <%!-- Save writes both: comment content through the normal    --%>
+            <%!-- `do_save_edit` path, decoration label via send_update   --%>
+            <%!-- to the parent. The standalone click-the-label flow      --%>
+            <%!-- above stays as a shortcut for "just rename, don't       --%>
+            <%!-- re-edit the body."                                       --%>
+            <%= if @decoration && @decoration.on_save do %>
+              <input
+                type="text"
+                name="label"
+                value={@editing_decoration_value}
+                maxlength="200"
+                placeholder="Title"
+                class="input input-bordered input-sm w-full text-sm font-semibold"
+              />
+              <hr class="border-base-300" />
+            <% end %>
             <textarea
               name="content"
               class="textarea textarea-bordered w-full"
@@ -618,6 +925,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 myself={@myself}
                 editing_uuid={@editing_uuid}
                 editing_content={@editing_content}
+                comment_decorations={@comment_decorations}
+                editing_decoration_uuid={@editing_decoration_uuid}
+                editing_decoration_value={@editing_decoration_value}
               />
             <% end %>
           </div>
