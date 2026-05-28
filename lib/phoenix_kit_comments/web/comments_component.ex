@@ -104,7 +104,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # from socket.assigns instead of params (Leaf doesn't bubble
   # form-collectable elements to the parent form).
   @impl true
-  def update(%{leaf_content_changed: %{kind: :draft, content: content}}, socket) do
+  def update(%{leaf_content_changed: %{kind: kind, content: content}}, socket)
+      when kind in [:draft, :reply] do
     {:ok, assign(socket, :new_comment, content)}
   end
 
@@ -234,7 +235,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                attrs
              ) do
           {:ok, _comment} ->
-            reset_leaf_draft_editor(socket.assigns.id)
+            reset_leaf_draft_editor(socket.assigns.id, socket.assigns.reply_to)
 
             send(
               self(),
@@ -396,7 +397,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     {:noreply,
      socket
      |> assign(:reply_to, comment_uuid)
-     |> assign(:composer_open?, true)
+     |> assign(:composer_open?, false)
+     |> assign(:new_comment, "")
      |> assign(:editing_uuid, nil)
      |> assign(:editing_content, "")}
   end
@@ -753,6 +755,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   attr(:comment_decorations, :map, default: %{})
   attr(:editing_decoration_uuid, :any, default: nil)
   attr(:editing_decoration_value, :string, default: "")
+  attr(:reply_to, :string, default: nil)
+  attr(:new_comment, :string, default: "")
+  attr(:max_length, :integer, required: true)
+  attr(:uploads, :map, required: true)
+  attr(:attachments_enabled?, :boolean, required: true)
+  attr(:max_attachments, :integer, required: true)
+  attr(:max_attachment_size_mb, :integer, required: true)
 
   def render_comment(assigns) do
     decoration = find_decoration_for_comment(assigns.comment, assigns.comment_decorations)
@@ -1000,6 +1009,122 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         <% end %>
         <% end %>
 
+        <%= if @reply_to == @comment.uuid do %>
+          <div class="mt-3 border-l-2 border-primary/40 pl-3">
+            <div class="text-xs font-medium text-base-content/60 mb-2">Replying here</div>
+            <.form
+              for={%{}}
+              phx-submit="add_comment"
+              phx-change="update_comment_draft"
+              phx-target={@myself}
+              class="space-y-2"
+            >
+              <%= if leaf_available?() do %>
+                <.live_component
+                  module={Leaf}
+                  id={reply_editor_id(@component_id, @comment.uuid)}
+                  content={@new_comment || ""}
+                  preset={:advanced}
+                  placeholder="Write a reply..."
+                  height="160px"
+                  debounce={400}
+                  upload_handler={nil}
+                  sync_input_name="comment"
+                  loading_preset={:random}
+                  loading_text={nil}
+                />
+              <% else %>
+                <textarea
+                  name="comment"
+                  placeholder="Write a reply..."
+                  class="textarea textarea-bordered w-full"
+                  rows="3"
+                  phx-debounce="150"
+                ><%= @new_comment %></textarea>
+              <% end %>
+
+              <div class={[
+                "text-xs text-right",
+                if(String.length(@new_comment) > @max_length,
+                  do: "text-error font-semibold",
+                  else: "text-base-content/60"
+                )
+              ]}>
+                {String.length(@new_comment)} / {@max_length}
+              </div>
+
+              <%= if @attachments_enabled? do %>
+                <.live_file_input upload={@uploads.attachment} class="sr-only" />
+
+                <%= if @uploads.attachment.entries != [] or @uploads.attachment.errors != [] do %>
+                  <div class="space-y-2">
+                    <%= for entry <- @uploads.attachment.entries do %>
+                      <div class="flex items-center gap-3 bg-base-200 rounded p-2">
+                        <.icon
+                          name={attachment_icon(entry.client_type)}
+                          class="w-5 h-5 shrink-0 text-base-content/60"
+                        />
+                        <div class="flex-1 min-w-0">
+                          <div class="text-sm font-medium truncate">{entry.client_name}</div>
+                          <%= if entry.progress > 0 and entry.progress < 100 do %>
+                            <progress
+                              class="progress progress-primary w-full h-1"
+                              value={entry.progress}
+                              max="100"
+                            ></progress>
+                          <% end %>
+                        </div>
+                        <button
+                          type="button"
+                          phx-click="cancel_upload"
+                          phx-value-ref={entry.ref}
+                          phx-target={@myself}
+                          aria-label={"Remove #{entry.client_name}"}
+                          class="btn btn-ghost btn-xs"
+                        >
+                          <.icon name="hero-x-mark" class="w-4 h-4" />
+                        </button>
+                      </div>
+                    <% end %>
+
+                    <%= for err <- upload_errors(@uploads.attachment) do %>
+                      <p class="text-xs text-error">{upload_error_label(err)}</p>
+                    <% end %>
+                    <%= for entry <- @uploads.attachment.entries, err <- upload_errors(@uploads.attachment, entry) do %>
+                      <p class="text-xs text-error">
+                        {entry.client_name}: {upload_error_label(err)}
+                      </p>
+                    <% end %>
+                  </div>
+                <% end %>
+              <% end %>
+
+              <div class="flex flex-wrap justify-end gap-2">
+                <%= if @attachments_enabled? do %>
+                  <label
+                    for={@uploads.attachment.ref}
+                    class="btn btn-ghost btn-sm cursor-pointer"
+                    title={"Up to #{@max_attachments} files, max #{@max_attachment_size_mb}MB each"}
+                  >
+                    <.icon name="hero-paper-clip" class="w-4 h-4 mr-1" /> Attach
+                  </label>
+                <% end %>
+                <button
+                  type="button"
+                  phx-click="cancel_new_comment"
+                  phx-target={@myself}
+                  class="btn btn-ghost btn-sm"
+                >
+                  Hide
+                </button>
+                <button type="submit" class="btn btn-primary btn-sm">
+                  <.icon name="hero-paper-airplane" class="w-4 h-4 mr-2" /> Post Reply
+                </button>
+              </div>
+            </.form>
+          </div>
+        <% end %>
+
         <%!-- Nested Comments (Replies) --%>
         <%= if @comment.children && length(@comment.children) > 0 do %>
           <div class="mt-4 space-y-3">
@@ -1014,6 +1139,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 comment_decorations={@comment_decorations}
                 editing_decoration_uuid={@editing_decoration_uuid}
                 editing_decoration_value={@editing_decoration_value}
+                reply_to={@reply_to}
+                new_comment={@new_comment}
+                max_length={@max_length}
+                uploads={@uploads}
+                attachments_enabled?={@attachments_enabled?}
+                max_attachments={@max_attachments}
+                max_attachment_size_mb={@max_attachment_size_mb}
               />
             <% end %>
           </div>
@@ -1205,6 +1337,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp parse_editor_id("pk-comments:" <> rest) do
     case String.split(rest, ":", parts: 3) do
       [component_id, "draft"] -> {:ok, component_id, :draft}
+      [component_id, "reply", _comment_uuid] -> {:ok, component_id, :reply}
       [component_id, "edit", _comment_uuid] -> {:ok, component_id, :edit}
       _ -> :pass
     end
@@ -1216,13 +1349,22 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp draft_editor_id(component_id), do: "pk-comments:#{component_id}:draft"
 
+  defp reply_editor_id(component_id, comment_uuid),
+    do: "pk-comments:#{component_id}:reply:#{comment_uuid}"
+
   defp edit_editor_id(component_id, comment_uuid),
     do: "pk-comments:#{component_id}:edit:#{comment_uuid}"
 
-  defp reset_leaf_draft_editor(component_id) do
+  defp reset_leaf_draft_editor(component_id, reply_to) do
     if leaf_available?() do
+      editor_id =
+        case reply_to do
+          nil -> draft_editor_id(component_id)
+          comment_uuid -> reply_editor_id(component_id, comment_uuid)
+        end
+
       Phoenix.LiveView.send_update(Leaf,
-        id: draft_editor_id(component_id),
+        id: editor_id,
         action: :set_content,
         content: ""
       )

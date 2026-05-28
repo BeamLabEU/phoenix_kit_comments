@@ -137,23 +137,8 @@
 
         <%!-- New Comment Form --%>
         <%= if @can_post? do %>
-          <%= if @composer_open? or @reply_to do %>
+          <%= if @composer_open? and is_nil(@reply_to) do %>
             <div class="mb-6">
-              <%= if @reply_to do %>
-                <div class="alert alert-info mb-2">
-                  <div class="flex-1">
-                    <span>Replying to comment</span>
-                  </div>
-                  <button
-                    phx-click="cancel_reply"
-                    phx-target={@myself}
-                    class="btn btn-ghost btn-sm"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              <% end %>
-
               <.form
                 for={%{}}
                 phx-submit="add_comment"
@@ -466,6 +451,7 @@
               </.form>
             </div>
           <% else %>
+            <%= if is_nil(@reply_to) do %>
             <div class="mb-6">
               <button
                 type="button"
@@ -476,6 +462,7 @@
                 <.icon name="hero-pencil-square" class="w-5 h-5 mr-2" /> Write comment
               </button>
             </div>
+            <% end %>
           <% end %>
         <% else %>
           <div class="mb-6 text-sm text-base-content/60">
@@ -497,6 +484,13 @@
                 comment_decorations={@comment_decorations}
                 editing_decoration_uuid={@editing_decoration_uuid}
                 editing_decoration_value={@editing_decoration_value}
+                reply_to={@reply_to}
+                new_comment={@new_comment}
+                max_length={@max_length}
+                uploads={@uploads}
+                attachments_enabled?={@attachments_enabled?}
+                max_attachments={@max_attachments}
+                max_attachment_size_mb={@max_attachment_size_mb}
               />
             <% end %>
           </div>
