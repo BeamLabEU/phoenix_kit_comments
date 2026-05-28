@@ -111,7 +111,7 @@ defmodule PhoenixKitCommentsTest do
     test "returns a version string" do
       version = PhoenixKitComments.version()
       assert is_binary(version)
-      assert version == "0.1.5"
+      assert version == "0.2.2"
     end
 
     test "stays in sync with mix.exs @version" do
@@ -178,9 +178,19 @@ defmodule PhoenixKitCommentsTest do
       assert cs.valid?
     end
 
-    test "accepts blank content when has_attachments? virtual is true" do
-      cs = Comment.changeset(%Comment{}, Map.put(@base_attrs, :has_attachments?, true))
+    test "accepts blank content when has_media: true is passed in opts" do
+      cs = Comment.changeset(%Comment{}, @base_attrs, has_media: true)
       assert cs.valid?
+    end
+
+    test "ignores has_attachments? in attrs (no longer a public cast field)" do
+      # Regression: `:has_attachments?` was previously castable, which let
+      # any caller of `update_comment/2` claim media presence without
+      # actually having any. The virtual field is gone — passing it via
+      # attrs should be ignored and the blank-content rule still fires.
+      cs = Comment.changeset(%Comment{}, Map.put(@base_attrs, :has_attachments?, true))
+      refute cs.valid?
+      assert {"can't be blank without a GIF or attachment", _} = cs.errors[:content]
     end
 
     test "rejects when giphy value is a non-renderable shape" do

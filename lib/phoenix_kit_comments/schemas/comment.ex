@@ -24,6 +24,14 @@ defmodule PhoenixKitComments.Comment do
   - `like_count` - Denormalized like counter
   - `dislike_count` - Denormalized dislike counter
   - `metadata` - Arbitrary JSONB data (giphy reactions, custom flags, rich embeds, etc.)
+
+  ## Media
+
+  The `has_many :media` association links to `PhoenixKitComments.CommentMedia`
+  rows ordered by `position`. Content-or-media validation (`content` is
+  optional iff Giphy or media is present) checks the loaded association
+  on updates; the orchestrator passes `has_media: true` on insert when
+  it's about to attach files in the same transaction.
   """
   use Ecto.Schema
   import Ecto.Changeset
@@ -79,12 +87,6 @@ defmodule PhoenixKitComments.Comment do
       preload_order: [asc: :position]
     )
 
-    # Set by the orchestrator (`PhoenixKitComments.create_comment/4`) when
-    # the new comment has at least one attachment, or by callers updating
-    # a comment that already has attachments. Lets the changeset accept a
-    # blank `content` field as long as media is present.
-    field(:has_attachments?, :boolean, virtual: true, default: false)
-
     timestamps(type: :utc_datetime)
   end
 
@@ -96,9 +98,16 @@ defmodule PhoenixKitComments.Comment do
   - `resource_type` - Type of resource being commented on
   - `resource_uuid` - UUID of the resource
   - `user_uuid` - Reference to commenter
-  - Either `content` OR a Giphy attachment in `metadata["giphy"]`
+  - Either `content`, a Giphy attachment in `metadata["giphy"]`, or media
+
+  ## Options
+
+  - `:has_media` — boolean. When set, overrides the inferred media
+    presence (used by `PhoenixKitComments.create_comment/4` because the
+    new comment has no `uuid` yet and the `media` association is not
+    loaded). Not part of `cast` — callers cannot drive it via attrs.
   """
-  def changeset(comment, attrs) do
+  def changeset(comment, attrs, opts \\ []) do
     comment
     |> cast(attrs, [
       :resource_type,
@@ -108,15 +117,14 @@ defmodule PhoenixKitComments.Comment do
       :content,
       :status,
       :depth,
-      :metadata,
-      :has_attachments?
+      :metadata
     ])
     |> validate_required([:resource_type, :resource_uuid, :user_uuid])
     |> validate_inclusion(:status, ["published", "hidden", "deleted", "pending"])
     |> validate_length(:content, max: 10_000)
     |> validate_length(:resource_type, max: 50)
     |> ensure_content_not_nil()
-    |> validate_content_or_media()
+    |> validate_content_or_media(opts)
     |> foreign_key_constraint(:user_uuid)
     |> foreign_key_constraint(:parent_uuid)
   end
@@ -129,7 +137,24 @@ defmodule PhoenixKitComments.Comment do
     end
   end
 
-  defp validate_content_or_media(changeset) do
+  # Status-only / counter-only updates don't change content or metadata,
+  # so the existing record was already validated at insert (or last
+  # content edit). Skipping avoids forcing every status-only update path
+  # — including `bulk_update_status/2` — to preload `:media` just to
+  # re-prove the original invariant.
+  defp validate_content_or_media(changeset, opts) do
+    inserting? = is_nil(get_field(changeset, :uuid))
+    content_changing? = Map.has_key?(changeset.changes, :content)
+    metadata_changing? = Map.has_key?(changeset.changes, :metadata)
+
+    if inserting? or content_changing? or metadata_changing? do
+      do_validate_content_or_media(changeset, opts)
+    else
+      changeset
+    end
+  end
+
+  defp do_validate_content_or_media(changeset, opts) do
     content = changeset |> get_field(:content) |> to_string() |> String.trim()
     metadata = get_field(changeset, :metadata) || %{}
 
@@ -137,13 +162,27 @@ defmodule PhoenixKitComments.Comment do
       is_map(metadata) and
         match?(%{"url" => u} when is_binary(u) and u != "", metadata["giphy"])
 
-    has_attachments? = get_field(changeset, :has_attachments?) == true
+    has_media? = resolve_has_media(changeset, opts)
 
     cond do
       content != "" -> changeset
       has_gif? -> changeset
-      has_attachments? -> changeset
+      has_media? -> changeset
       true -> add_error(changeset, :content, "can't be blank without a GIF or attachment")
+    end
+  end
+
+  defp resolve_has_media(changeset, opts) do
+    case Keyword.fetch(opts, :has_media) do
+      {:ok, value} when is_boolean(value) -> value
+      _ -> infer_has_media(changeset)
+    end
+  end
+
+  defp infer_has_media(changeset) do
+    case get_field(changeset, :media) do
+      media when is_list(media) and media != [] -> true
+      _ -> false
     end
   end
 
