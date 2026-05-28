@@ -1039,6 +1039,16 @@ defmodule PhoenixKitComments do
     |> repo().preload(preloads)
   end
 
+  @doc "Lists comment UUIDs from `comment_uuids` liked by `user_uuid`."
+  def list_user_liked_comment_uuids(user_uuid, comment_uuids)
+      when is_binary(user_uuid) and is_list(comment_uuids) do
+    from(l in CommentLike,
+      where: l.user_uuid == ^user_uuid and l.comment_uuid in ^comment_uuids,
+      select: l.comment_uuid
+    )
+    |> repo().all()
+  end
+
   # ============================================================================
   # Dislike Operations
   # ============================================================================
@@ -1095,6 +1105,16 @@ defmodule PhoenixKitComments do
     |> repo().preload(preloads)
   end
 
+  @doc "Lists comment UUIDs from `comment_uuids` disliked by `user_uuid`."
+  def list_user_disliked_comment_uuids(user_uuid, comment_uuids)
+      when is_binary(user_uuid) and is_list(comment_uuids) do
+    from(d in CommentDislike,
+      where: d.user_uuid == ^user_uuid and d.comment_uuid in ^comment_uuids,
+      select: d.comment_uuid
+    )
+    |> repo().all()
+  end
+
   # ============================================================================
   # Private Helpers
   # ============================================================================
@@ -1135,30 +1155,30 @@ defmodule PhoenixKitComments do
   defp empty_deleted?(_), do: false
 
   defp insert_reaction(schema, comment_uuid, user_uuid, counter_field) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-    {count, _} =
-      repo().insert_all(
-        schema,
-        [
-          %{
-            uuid: UUIDv7.generate(),
-            comment_uuid: comment_uuid,
-            user_uuid: user_uuid,
-            inserted_at: now,
-            updated_at: now
-          }
-        ],
-        on_conflict: :nothing,
-        conflict_target: [:comment_uuid, :user_uuid]
-      )
-
-    if count > 0 do
-      increment_comment_counter(comment_uuid, counter_field)
-      true
-    else
+    if reaction_exists?(schema, comment_uuid, user_uuid) do
       false
+    else
+      %{}
+      |> then(&struct(schema, &1))
+      |> schema.changeset(%{comment_uuid: comment_uuid, user_uuid: user_uuid})
+      |> repo().insert()
+      |> case do
+        {:ok, _reaction} ->
+          increment_comment_counter(comment_uuid, counter_field)
+          true
+
+        {:error, _changeset} ->
+          false
+      end
     end
+  end
+
+  defp reaction_exists?(schema, comment_uuid, user_uuid) do
+    repo().exists?(
+      from(r in schema,
+        where: r.comment_uuid == ^comment_uuid and r.user_uuid == ^user_uuid
+      )
+    )
   end
 
   defp maybe_remove_reaction(schema, comment_uuid, user_uuid, counter_field) do

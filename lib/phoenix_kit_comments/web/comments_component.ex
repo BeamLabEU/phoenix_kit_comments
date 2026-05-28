@@ -22,7 +22,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   ## Optional Attrs
 
   - `enabled` - Whether comments are enabled (default: true)
-  - `show_likes` - Show like/dislike buttons (default: false)
+  - `show_likes` - Show like/dislike buttons (default: true)
   - `title` - Section title (default: "Comments")
 
   ## Slots
@@ -83,6 +83,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:giphy_selected, nil)
      |> assign(:attach_menu_open?, false)
      |> assign(:recording_audio?, false)
+     |> assign(:liked_comment_uuids, MapSet.new())
+     |> assign(:disliked_comment_uuids, MapSet.new())
      |> assign(:max_attachments, max_entries)
      |> assign(:max_attachment_size_mb, max_size_mb)
      |> allow_upload(:attachment,
@@ -118,7 +120,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       socket
       |> assign(assigns)
       |> assign_new(:enabled, fn -> true end)
-      |> assign_new(:show_likes, fn -> false end)
+      |> assign_new(:show_likes, fn -> true end)
       |> assign_new(:title, fn -> "Comments" end)
       |> assign_new(:form_extras, fn -> [] end)
       |> assign_new(:current_user, fn -> nil end)
@@ -178,6 +180,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       else
         socket
       end
+
+    socket = load_reaction_state(socket)
 
     {:ok, socket}
   end
@@ -390,6 +394,16 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   @impl true
   def handle_event("remove_giphy", _params, socket) do
     {:noreply, assign(socket, :giphy_selected, nil)}
+  end
+
+  @impl true
+  def handle_event("toggle_like", %{"id" => comment_uuid}, socket) do
+    toggle_reaction(socket, comment_uuid, :like)
+  end
+
+  @impl true
+  def handle_event("toggle_dislike", %{"id" => comment_uuid}, socket) do
+    toggle_reaction(socket, comment_uuid, :dislike)
   end
 
   @impl true
@@ -622,6 +636,51 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp find_comment_in_tree(_, _), do: nil
 
+  defp toggle_reaction(%{assigns: %{current_user: nil}} = socket, _comment_uuid, _reaction) do
+    {:noreply, put_flash(socket, :error, "Sign in to react to comments")}
+  end
+
+  defp toggle_reaction(socket, comment_uuid, reaction) do
+    case find_comment_in_tree(socket.assigns.comments, comment_uuid) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Comment not found")}
+
+      %{status: "deleted"} ->
+        {:noreply, put_flash(socket, :error, "Cannot react to a deleted comment")}
+
+      _comment ->
+        user_uuid = socket.assigns.current_user.uuid
+        result = apply_reaction(comment_uuid, user_uuid, reaction)
+
+        case result do
+          {:ok, _} ->
+            {:noreply,
+             socket
+             |> load_comments()
+             |> load_reaction_state()}
+
+          {:error, _} ->
+            {:noreply, put_flash(socket, :error, "Failed to update reaction")}
+        end
+    end
+  end
+
+  defp apply_reaction(comment_uuid, user_uuid, :like) do
+    if PhoenixKitComments.comment_liked_by?(comment_uuid, user_uuid) do
+      PhoenixKitComments.unlike_comment(comment_uuid, user_uuid)
+    else
+      PhoenixKitComments.like_comment(comment_uuid, user_uuid)
+    end
+  end
+
+  defp apply_reaction(comment_uuid, user_uuid, :dislike) do
+    if PhoenixKitComments.comment_disliked_by?(comment_uuid, user_uuid) do
+      PhoenixKitComments.undislike_comment(comment_uuid, user_uuid)
+    else
+      PhoenixKitComments.dislike_comment(comment_uuid, user_uuid)
+    end
+  end
+
   defp do_delete_comment(socket, comment) do
     cond do
       # First verify the comment belongs to the current resource (IDOR protection)
@@ -746,6 +805,45 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     |> assign(:comment_count, comment_count)
   end
 
+  defp load_reaction_state(%{assigns: %{show_likes: false}} = socket) do
+    socket
+    |> assign(:liked_comment_uuids, MapSet.new())
+    |> assign(:disliked_comment_uuids, MapSet.new())
+  end
+
+  defp load_reaction_state(%{assigns: %{current_user: nil}} = socket) do
+    socket
+    |> assign(:liked_comment_uuids, MapSet.new())
+    |> assign(:disliked_comment_uuids, MapSet.new())
+  end
+
+  defp load_reaction_state(socket) do
+    comment_uuids = comment_tree_uuids(socket.assigns.comments)
+    user_uuid = socket.assigns.current_user.uuid
+
+    socket
+    |> assign(
+      :liked_comment_uuids,
+      PhoenixKitComments.list_user_liked_comment_uuids(user_uuid, comment_uuids)
+      |> MapSet.new()
+    )
+    |> assign(
+      :disliked_comment_uuids,
+      PhoenixKitComments.list_user_disliked_comment_uuids(user_uuid, comment_uuids)
+      |> MapSet.new()
+    )
+  end
+
+  defp comment_tree_uuids(comments) when is_list(comments) do
+    Enum.flat_map(comments, fn comment ->
+      [comment.uuid | comment_tree_uuids(comment.children || [])]
+    end)
+  end
+
+  defp reaction_active?(comment_uuids, comment_uuid) do
+    MapSet.member?(comment_uuids, comment_uuid)
+  end
+
   attr(:comment, :map, required: true)
   attr(:current_user, :map, required: true)
   attr(:myself, :any, required: true)
@@ -755,6 +853,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   attr(:comment_decorations, :map, default: %{})
   attr(:editing_decoration_uuid, :any, default: nil)
   attr(:editing_decoration_value, :string, default: "")
+  attr(:show_likes, :boolean, default: true)
+  attr(:liked_comment_uuids, :any, required: true)
+  attr(:disliked_comment_uuids, :any, required: true)
   attr(:reply_to, :string, default: nil)
   attr(:new_comment, :string, default: "")
   attr(:max_length, :integer, required: true)
@@ -813,6 +914,42 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
           <%!-- Comment Actions --%>
           <div class="flex gap-2 flex-wrap shrink-0">
+            <%= if @show_likes do %>
+              <button
+                type="button"
+                phx-click="toggle_like"
+                phx-value-id={@comment.uuid}
+                phx-target={@myself}
+                disabled={is_nil(@current_user)}
+                title="Like"
+                class={[
+                  "btn btn-xs",
+                  reaction_active?(@liked_comment_uuids, @comment.uuid) && "btn-primary",
+                  !reaction_active?(@liked_comment_uuids, @comment.uuid) && "btn-ghost"
+                ]}
+              >
+                <.icon name="hero-hand-thumb-up" class="w-4 h-4" />
+                <span>{@comment.like_count || 0}</span>
+              </button>
+
+              <button
+                type="button"
+                phx-click="toggle_dislike"
+                phx-value-id={@comment.uuid}
+                phx-target={@myself}
+                disabled={is_nil(@current_user)}
+                title="Dislike"
+                class={[
+                  "btn btn-xs",
+                  reaction_active?(@disliked_comment_uuids, @comment.uuid) && "btn-primary",
+                  !reaction_active?(@disliked_comment_uuids, @comment.uuid) && "btn-ghost"
+                ]}
+              >
+                <.icon name="hero-hand-thumb-down" class="w-4 h-4" />
+                <span>{@comment.dislike_count || 0}</span>
+              </button>
+            <% end %>
+
             <button
               phx-click="reply_to"
               phx-value-id={@comment.uuid}
@@ -1139,6 +1276,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 comment_decorations={@comment_decorations}
                 editing_decoration_uuid={@editing_decoration_uuid}
                 editing_decoration_value={@editing_decoration_value}
+                show_likes={@show_likes}
+                liked_comment_uuids={@liked_comment_uuids}
+                disliked_comment_uuids={@disliked_comment_uuids}
                 reply_to={@reply_to}
                 new_comment={@new_comment}
                 max_length={@max_length}
