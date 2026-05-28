@@ -938,94 +938,19 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         <%= if @comment.status == "deleted" do %>
           <div class="text-sm text-base-content/50 italic">{gettext("[removed]")}</div>
         <% else %>
-        <%!-- Comment Header --%>
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
-          <div class="flex items-center gap-2 text-sm min-w-0 flex-wrap">
-            <.icon name="hero-user-circle" class="w-5 h-5 text-base-content/60 shrink-0" />
-            <span class="font-semibold truncate min-w-0 max-w-full">
-              <%= if @comment.user do %>
-                {@comment.user.email}
-              <% else %>
-                {gettext("Unknown")}
-              <% end %>
-            </span>
-            <span class="text-base-content/60 hidden sm:inline">&bull;</span>
-            <span class="text-base-content/60 text-xs sm:text-sm whitespace-nowrap">
-              {Calendar.strftime(@comment.inserted_at, "%b %d, %Y %I:%M %p")}
-            </span>
-          </div>
-
-          <%!-- Comment Actions --%>
-          <div class="flex gap-2 flex-wrap shrink-0">
-            <%= if @show_likes do %>
-              <button
-                type="button"
-                phx-click="toggle_like"
-                phx-value-id={@comment.uuid}
-                phx-target={@myself}
-                disabled={is_nil(@current_user)}
-                title="Like"
-                class={[
-                  "btn btn-xs",
-                  reaction_active?(@liked_comment_uuids, @comment.uuid) && "btn-primary",
-                  !reaction_active?(@liked_comment_uuids, @comment.uuid) && "btn-ghost"
-                ]}
-              >
-                <.icon name="hero-hand-thumb-up" class="w-4 h-4" />
-                <span>{@comment.like_count || 0}</span>
-              </button>
-
-              <button
-                type="button"
-                phx-click="toggle_dislike"
-                phx-value-id={@comment.uuid}
-                phx-target={@myself}
-                disabled={is_nil(@current_user)}
-                title="Dislike"
-                class={[
-                  "btn btn-xs",
-                  reaction_active?(@disliked_comment_uuids, @comment.uuid) && "btn-primary",
-                  !reaction_active?(@disliked_comment_uuids, @comment.uuid) && "btn-ghost"
-                ]}
-              >
-                <.icon name="hero-hand-thumb-down" class="w-4 h-4" />
-                <span>{@comment.dislike_count || 0}</span>
-              </button>
+        <%!-- Comment Header — avatar + email only. Date moves below the    --%>
+        <%!-- body and actions sit in a footer row so a narrow embed        --%>
+        <%!-- container (sidebar, info panel) can't squeeze the email into  --%>
+        <%!-- "te…" with the action buttons hogging the row.                 --%>
+        <div class="flex items-center gap-2 text-sm mb-2 min-w-0">
+          <.icon name="hero-user-circle" class="w-5 h-5 text-base-content/60 shrink-0" />
+          <span class="font-semibold truncate min-w-0">
+            <%= if @comment.user do %>
+              {@comment.user.email}
+            <% else %>
+              {gettext("Unknown")}
             <% end %>
-
-            <button
-              phx-click="reply_to"
-              phx-value-id={@comment.uuid}
-              phx-target={@myself}
-              class="btn btn-ghost btn-xs"
-            >
-              <.icon name="hero-arrow-uturn-left" class="w-4 h-4" /> {gettext("Reply")}
-            </button>
-
-            <%= if can_edit_comment?(@current_user, @comment) do %>
-              <button
-                phx-click="edit_comment"
-                phx-value-id={@comment.uuid}
-                phx-target={@myself}
-                class="btn btn-ghost btn-xs"
-                aria-label={gettext("Edit comment")}
-              >
-                <.icon name="hero-pencil-square" class="w-4 h-4" />
-              </button>
-            <% end %>
-
-            <%= if can_delete_comment?(@current_user, @comment) do %>
-              <button
-                phx-click="delete_comment"
-                phx-value-id={@comment.uuid}
-                phx-target={@myself}
-                class="btn btn-ghost btn-xs text-error"
-                data-confirm={gettext("Are you sure you want to delete this comment?")}
-              >
-                <.icon name="hero-trash" class="w-4 h-4" />
-              </button>
-            <% end %>
-          </div>
+          </span>
         </div>
 
         <%!-- Decoration label (when this comment matches an entry in   --%>
@@ -1188,6 +1113,86 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             </div>
           <% end %>
         <% end %>
+
+        <%!-- Footer — date on its own row above the action buttons, both --%>
+        <%!-- stacked under the body. Narrow embeds get a stable layout    --%>
+        <%!-- (email never truncates under action chips), wide embeds keep --%>
+        <%!-- the action row from looking centered next to a half-empty    --%>
+        <%!-- email line.                                                   --%>
+        <div class="text-xs text-base-content/60 mt-2">
+          {Calendar.strftime(@comment.inserted_at, "%b %d, %Y %I:%M %p")}
+        </div>
+
+        <div class="flex flex-wrap items-center gap-1.5 mt-2">
+          <%= if @show_likes do %>
+            <button
+              type="button"
+              phx-click="toggle_like"
+              phx-value-id={@comment.uuid}
+              phx-target={@myself}
+              disabled={is_nil(@current_user)}
+              title={gettext("Like")}
+              class={[
+                "btn btn-xs",
+                reaction_active?(@liked_comment_uuids, @comment.uuid) && "btn-primary",
+                !reaction_active?(@liked_comment_uuids, @comment.uuid) && "btn-ghost"
+              ]}
+            >
+              <.icon name="hero-hand-thumb-up" class="w-4 h-4" />
+              <span>{@comment.like_count || 0}</span>
+            </button>
+
+            <button
+              type="button"
+              phx-click="toggle_dislike"
+              phx-value-id={@comment.uuid}
+              phx-target={@myself}
+              disabled={is_nil(@current_user)}
+              title={gettext("Dislike")}
+              class={[
+                "btn btn-xs",
+                reaction_active?(@disliked_comment_uuids, @comment.uuid) && "btn-primary",
+                !reaction_active?(@disliked_comment_uuids, @comment.uuid) && "btn-ghost"
+              ]}
+            >
+              <.icon name="hero-hand-thumb-down" class="w-4 h-4" />
+              <span>{@comment.dislike_count || 0}</span>
+            </button>
+          <% end %>
+
+          <button
+            phx-click="reply_to"
+            phx-value-id={@comment.uuid}
+            phx-target={@myself}
+            class="btn btn-ghost btn-xs"
+          >
+            <.icon name="hero-arrow-uturn-left" class="w-4 h-4" /> {gettext("Reply")}
+          </button>
+
+          <%= if can_edit_comment?(@current_user, @comment) do %>
+            <button
+              phx-click="edit_comment"
+              phx-value-id={@comment.uuid}
+              phx-target={@myself}
+              class="btn btn-ghost btn-xs"
+              aria-label={gettext("Edit comment")}
+            >
+              <.icon name="hero-pencil-square" class="w-4 h-4" />
+            </button>
+          <% end %>
+
+          <%= if can_delete_comment?(@current_user, @comment) do %>
+            <button
+              phx-click="delete_comment"
+              phx-value-id={@comment.uuid}
+              phx-target={@myself}
+              class="btn btn-ghost btn-xs text-error"
+              data-confirm={gettext("Are you sure you want to delete this comment?")}
+            >
+              <.icon name="hero-trash" class="w-4 h-4" />
+            </button>
+          <% end %>
+        </div>
         <% end %>
 
         <%= if @reply_to == @comment.uuid do %>
