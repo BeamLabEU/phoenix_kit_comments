@@ -984,7 +984,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                   phx-keydown="cancel_decoration_edit"
                   phx-key="escape"
                   phx-target={@myself}
-                  class="input input-bordered input-sm flex-1 text-sm font-semibold"
+                  class="input input-bordered input-sm flex-1 text-base font-bold"
                 />
                 <button type="submit" class="btn btn-primary btn-xs">
                   <.icon name="hero-check" class="w-3.5 h-3.5" />
@@ -1009,7 +1009,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 phx-target={@myself}
               >
                 <h4 class={[
-                  "text-sm font-semibold break-words flex-1 min-w-0",
+                  "text-base font-bold break-words flex-1 min-w-0",
                   @decoration.on_save && "group-hover:text-primary transition-colors"
                 ]}>
                   {@decoration.label}
@@ -1043,7 +1043,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 value={@editing_decoration_value}
                 maxlength="200"
                 placeholder="Title"
-                class="input input-bordered input-sm w-full text-sm font-semibold"
+                class="input input-bordered input-sm w-full text-base font-bold"
               />
               <hr class="border-base-300" />
             <% end %>
