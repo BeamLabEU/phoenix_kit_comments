@@ -1209,34 +1209,42 @@ defmodule PhoenixKitComments do
   defp empty_deleted?(%{status: "deleted", children: []}), do: true
   defp empty_deleted?(_), do: false
 
+  # Insert a like/dislike via the changeset, then bump the counter.
+  #
+  # NOTE: we deliberately do NOT use `insert_all` with
+  # `on_conflict: :nothing, conflict_target: [:comment_uuid, :user_uuid]`.
+  # The likes/dislikes tables have no composite unique index on
+  # (comment_uuid, user_uuid) — the original UNIQUE(comment_id, user_id)
+  # was dropped when the integer `user_id` column was removed during the
+  # uuid-FK migration, and nothing recreates it on `user_uuid`. With no
+  # matching index, `ON CONFLICT (comment_uuid, user_uuid)` raises
+  # Postgrex "no unique or exclusion constraint matching" on every
+  # insert. The `reaction_exists?/3` precheck is therefore the dedup.
   defp insert_reaction(schema, comment_uuid, user_uuid, counter_field) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-    # Single atomic insert: `on_conflict: :nothing` makes a duplicate
-    # like/dislike a no-op (count == 0) instead of a check-then-insert
-    # race. Only increment the counter when a row was actually written.
-    {count, _} =
-      repo().insert_all(
-        schema,
-        [
-          %{
-            uuid: UUIDv7.generate(),
-            comment_uuid: comment_uuid,
-            user_uuid: user_uuid,
-            inserted_at: now,
-            updated_at: now
-          }
-        ],
-        on_conflict: :nothing,
-        conflict_target: [:comment_uuid, :user_uuid]
-      )
-
-    if count > 0 do
-      increment_comment_counter(comment_uuid, counter_field)
-      true
-    else
+    if reaction_exists?(schema, comment_uuid, user_uuid) do
       false
+    else
+      schema
+      |> struct()
+      |> schema.changeset(%{comment_uuid: comment_uuid, user_uuid: user_uuid})
+      |> repo().insert()
+      |> case do
+        {:ok, _reaction} ->
+          increment_comment_counter(comment_uuid, counter_field)
+          true
+
+        {:error, _changeset} ->
+          false
+      end
     end
+  end
+
+  defp reaction_exists?(schema, comment_uuid, user_uuid) do
+    repo().exists?(
+      from(r in schema,
+        where: r.comment_uuid == ^comment_uuid and r.user_uuid == ^user_uuid
+      )
+    )
   end
 
   defp maybe_remove_reaction(schema, comment_uuid, user_uuid, counter_field) do
