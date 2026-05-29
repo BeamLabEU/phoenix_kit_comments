@@ -2,6 +2,30 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.4 — 2026-05-29
+
+### Features
+
+- Header is now configurable via three optional, backward-compatible
+  assigns (defaults reproduce current behavior exactly):
+  - `show_title` (default `true`) — when `false`, the
+    "{title} ({count})" header line is not rendered.
+  - `collapsible` (default `false`) — turns the header into a
+    disclosure toggle (chevron + `aria-expanded`/`aria-controls`) that
+    collapses/expands the whole body. Collapse state is ephemeral
+    (in-memory, resets on remount).
+  - `initial_collapsed` (default `false`) — starting collapse state when
+    `collapsible`; host-customizable.
+  Note: the collapse chevron lives in the header, so `collapsible` has
+  no visible toggle when `show_title: false` (the thread stays per
+  `initial_collapsed`).
+- `composer_position` (default `:top`) — render the "Write comment"
+  composer at `:top`, `:bottom`, or `:both`. Bottom is off by default.
+  Internally the composer's open state is now position-aware
+  (`composer_open_at`), so `:both` never mounts two Leaf editors or two
+  upload inputs — only the opened position shows the form; the other
+  stays a button.
+
 ## 0.2.3 — 2026-05-29
 
 ### Changed

@@ -70,7 +70,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:comment_count, 0)
      |> assign(:loaded?, false)
      |> assign(:reply_to, nil)
-     |> assign(:composer_open?, false)
+     # nil | :top | :bottom — which placement (see composer_position)
+     # currently has the open compose form. At most one is open at a
+     # time so the Leaf editor id + the single :attachment upload input
+     # never render twice.
+     |> assign(:composer_open_at, nil)
      |> assign(:new_comment, "")
      |> assign(:editing_uuid, nil)
      |> assign(:editing_content, "")
@@ -124,6 +128,18 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> assign_new(:enabled, fn -> true end)
       |> assign_new(:show_likes, fn -> true end)
       |> assign_new(:title, fn -> gettext("Comments") end)
+      # Header presentation. `show_title` renders the
+      # "{title} ({count})" line; `collapsible` turns that line into a
+      # disclosure toggle for the whole body; `initial_collapsed` is the
+      # starting state (ephemeral — see :collapsed? seed below). All
+      # default to today's behavior (title shown, not collapsible,
+      # expanded).
+      |> assign_new(:show_title, fn -> true end)
+      |> assign_new(:collapsible, fn -> false end)
+      |> assign_new(:initial_collapsed, fn -> false end)
+      # Where the "Write comment" composer renders: :top (default),
+      # :bottom, or :both. Bottom is off by default.
+      |> assign_new(:composer_position, fn -> :top end)
       |> assign_new(:form_extras, fn -> [] end)
       |> assign_new(:current_user, fn -> nil end)
       # Optional per-comment decoration registry. Generic surface
@@ -175,6 +191,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> assign(:giphy_enabled?, PhoenixKitComments.giphy_enabled?())
       |> assign(:attachments_enabled?, PhoenixKitComments.attachments_enabled?())
       |> assign(:max_length, PhoenixKitComments.get_max_length())
+
+    # Seed collapse state once from initial_collapsed, then leave it
+    # alone. assign_new only fires when :collapsed? is absent, so the
+    # user's toggle survives later update/2 + send_update passes
+    # (ephemeral within the component's lifetime, host sets the start).
+    socket = assign_new(socket, :collapsed?, fn -> socket.assigns.initial_collapsed end)
 
     socket =
       if changed?(socket, :resource_uuid) or not socket.assigns.loaded? do
@@ -270,8 +292,21 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   @impl true
-  def handle_event("open_composer", _params, socket) do
-    {:noreply, assign(socket, :composer_open?, true)}
+  def handle_event("open_composer", params, socket) do
+    # Position comes from phx-value-position on the button; default :top
+    # so an older caller without the value still opens the top composer.
+    position =
+      case params["position"] do
+        "bottom" -> :bottom
+        _ -> :top
+      end
+
+    {:noreply, assign(socket, :composer_open_at, position)}
+  end
+
+  @impl true
+  def handle_event("toggle_collapsed", _params, socket) do
+    {:noreply, assign(socket, :collapsed?, not socket.assigns.collapsed?)}
   end
 
   @impl true
@@ -287,7 +322,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      socket
      |> assign(:new_comment, "")
      |> assign(:reply_to, nil)
-     |> assign(:composer_open?, false)
+     |> assign(:composer_open_at, nil)
      |> assign(:giphy_selected, nil)
      |> assign(:giphy_open?, false)
      |> assign(:giphy_results, [])
@@ -376,7 +411,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     {:noreply,
      socket
      |> assign(:reply_to, comment_uuid)
-     |> assign(:composer_open?, false)
+     |> assign(:composer_open_at, nil)
      |> assign(:new_comment, "")
      |> assign(:editing_uuid, nil)
      |> assign(:editing_content, "")}
@@ -662,7 +697,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                attrs
              ) do
           {:ok, _comment} ->
-            reset_leaf_draft_editor(socket.assigns.id, socket.assigns.reply_to)
+            reset_leaf_draft_editor(
+              socket.assigns.id,
+              socket.assigns.reply_to,
+              socket.assigns.composer_open_at
+            )
 
             send(
               self(),
@@ -678,7 +717,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
              socket
              |> assign(:new_comment, "")
              |> assign(:reply_to, nil)
-             |> assign(:composer_open?, false)
+             |> assign(:composer_open_at, nil)
              |> assign(:giphy_selected, nil)
              |> assign(:giphy_open?, false)
              |> assign(:giphy_results, [])
@@ -1532,7 +1571,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # the inline edit form (also one at a time per component).
   defp parse_editor_id("pk-comments:" <> rest) do
     case String.split(rest, ":", parts: 3) do
-      [component_id, "draft"] -> {:ok, component_id, :draft}
+      # Draft editor ids carry their composer position
+      # ("...:draft:top" / "...:draft:bottom"); the position doesn't
+      # change the forwarding kind, so both map to :draft.
+      [component_id, "draft", _position] -> {:ok, component_id, :draft}
       [component_id, "reply", _comment_uuid] -> {:ok, component_id, :reply}
       [component_id, "edit", _comment_uuid] -> {:ok, component_id, :edit}
       _ -> :pass
@@ -1541,9 +1583,377 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp parse_editor_id(_), do: :pass
 
+  # The "Write comment" composer for one placement (:top or :bottom).
+  # Renders the open form when this position is the one currently open
+  # (`composer_open_at == position`) and no reply is in progress; the
+  # "Write comment" button when closed; the sign-in notice (once, at the
+  # primary position) when the viewer can't post. Driven entirely by the
+  # parent's assigns, passed through as `ctx`, so events target the
+  # parent LiveComponent (`ctx.myself`).
+  attr(:ctx, :map, required: true)
+  attr(:position, :atom, required: true)
+
+  defp new_comment_composer(assigns) do
+    # Top composer sits above the list (mb), bottom sits below it (mt).
+    assigns =
+      assign(assigns, :spacing, if(assigns.position == :top, do: "mb-6", else: "mt-6"))
+
+    ~H"""
+    <%= cond do %>
+      <% not @ctx.can_post? -> %>
+        <%= if @position == primary_composer_position(@ctx.composer_position) do %>
+          <div class={[@spacing, "text-sm text-base-content/60"]}>
+            {gettext("Sign in to post a comment.")}
+          </div>
+        <% end %>
+      <% @ctx.composer_open_at == @position and is_nil(@ctx.reply_to) -> %>
+        <div class={@spacing}>
+          <.form
+            for={%{}}
+            phx-submit="add_comment"
+            phx-change="update_comment_draft"
+            phx-target={@ctx.myself}
+            class="space-y-2"
+          >
+            <%!-- New comment editor. When the optional :leaf dep is     --%>
+            <%!-- present, render the rich-text Leaf editor; the host LV --%>
+            <%!-- must forward {:leaf_changed, ...} via                  --%>
+            <%!-- forward_leaf_event/2 so the content syncs to           --%>
+            <%!-- socket.assigns.new_comment for submit. Without leaf,   --%>
+            <%!-- fall back to the original plain textarea.               --%>
+            <%= if leaf_available?() do %>
+              <.live_component
+                module={Leaf}
+                id={draft_editor_id(@ctx.id, @position)}
+                content={@ctx.new_comment || ""}
+                preset={:advanced}
+                placeholder={gettext("Write a comment...")}
+                height="200px"
+                debounce={400}
+                upload_handler={nil}
+                sync_input_name="comment"
+                loading_preset={:random}
+                loading_text={nil}
+              />
+            <% else %>
+              <textarea
+                name="comment"
+                placeholder={gettext("Write a comment...")}
+                class="textarea textarea-bordered w-full"
+                rows="3"
+                phx-debounce="150"
+              ><%= @ctx.new_comment %></textarea>
+            <% end %>
+
+            <div class={[
+              "text-xs text-right",
+              if(String.length(@ctx.new_comment) > @ctx.max_length,
+                do: "text-error font-semibold",
+                else: "text-base-content/60"
+              )
+            ]}>
+              {String.length(@ctx.new_comment)} / {@ctx.max_length}
+            </div>
+
+            <%= if @ctx.form_extras != [], do: render_slot(@ctx.form_extras) %>
+
+            <%!-- Persistent: recorder hook + live file input. Both must
+                 stay in the DOM across menu open/close so the upload
+                 state and MediaRecorder lifecycle survive. --%>
+            <%= if @ctx.attachments_enabled? do %>
+              <div
+                id={"audio-recorder-#{@ctx.myself}-#{@position}"}
+                phx-hook="PhoenixKitCommentsAudioRecorder"
+                phx-target={@ctx.myself}
+                data-upload-name="attachment"
+                class="hidden"
+              />
+              <.live_file_input upload={@ctx.uploads.attachment} class="sr-only" />
+            <% end %>
+
+            <%!-- Staged media (uploads + selected GIF) --%>
+            <%= if (@ctx.attachments_enabled? and (@ctx.uploads.attachment.entries != [] or @ctx.uploads.attachment.errors != [])) or @ctx.giphy_selected do %>
+              <div class="space-y-2">
+                <%= if @ctx.giphy_selected do %>
+                  <div class="flex items-center gap-3 bg-base-200 rounded p-2">
+                    <img
+                      src={@ctx.giphy_selected["preview_url"]}
+                      class="w-10 h-10 object-cover rounded shrink-0"
+                      alt=""
+                    />
+                    <div class="flex-1 min-w-0 text-sm font-medium truncate">{gettext("GIF")}</div>
+                    <button
+                      type="button"
+                      phx-click="remove_giphy"
+                      phx-target={@ctx.myself}
+                      class="btn btn-ghost btn-xs"
+                      aria-label={gettext("Remove GIF")}
+                    >
+                      <.icon name="hero-x-mark" class="w-4 h-4" />
+                    </button>
+                  </div>
+                <% end %>
+
+                <%= for entry <- @ctx.uploads.attachment.entries do %>
+                  <div class="flex items-center gap-3 bg-base-200 rounded p-2">
+                    <.icon
+                      name={attachment_icon(entry.client_type)}
+                      class="w-5 h-5 shrink-0 text-base-content/60"
+                    />
+                    <div class="flex-1 min-w-0">
+                      <div class="text-sm font-medium truncate">{entry.client_name}</div>
+                      <%= if entry.progress > 0 and entry.progress < 100 do %>
+                        <progress
+                          class="progress progress-primary w-full h-1"
+                          value={entry.progress}
+                          max="100"
+                        ></progress>
+                      <% end %>
+                    </div>
+                    <button
+                      type="button"
+                      phx-click="cancel_upload"
+                      phx-value-ref={entry.ref}
+                      phx-target={@ctx.myself}
+                      aria-label={gettext("Remove %{name}", name: entry.client_name)}
+                      class="btn btn-ghost btn-xs"
+                    >
+                      <.icon name="hero-x-mark" class="w-4 h-4" />
+                    </button>
+                  </div>
+                <% end %>
+
+                <%= for err <- upload_errors(@ctx.uploads.attachment) do %>
+                  <p class="text-xs text-error">{upload_error_label(err)}</p>
+                <% end %>
+                <%= for entry <- @ctx.uploads.attachment.entries, err <- upload_errors(@ctx.uploads.attachment, entry) do %>
+                  <p class="text-xs text-error">
+                    {entry.client_name}: {upload_error_label(err)}
+                  </p>
+                <% end %>
+              </div>
+            <% end %>
+
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <%= cond do %>
+                  <% @ctx.recording_audio? -> %>
+                    <button
+                      type="button"
+                      onclick="window.dispatchEvent(new CustomEvent('phx-kit-comments-audio-toggle'))"
+                      aria-label={gettext("Stop recording")}
+                      class="btn btn-sm btn-error gap-1"
+                    >
+                      <span class="inline-block w-2 h-2 rounded-full bg-base-100 animate-pulse"></span>
+                      <.icon name="hero-stop-circle" class="w-4 h-4" /> {gettext("Stop recording")}
+                    </button>
+
+                  <% @ctx.attachments_enabled? or @ctx.giphy_enabled? -> %>
+                    <div class="relative inline-block">
+                      <button
+                        type="button"
+                        phx-click="toggle_attach_menu"
+                        phx-target={@ctx.myself}
+                        aria-haspopup="menu"
+                        aria-expanded={to_string(@ctx.attach_menu_open?)}
+                        aria-label={gettext("Attach media")}
+                        title={gettext("Attach media")}
+                        class={[
+                          "btn btn-sm",
+                          if(@ctx.attach_menu_open?, do: "btn-primary", else: "btn-ghost")
+                        ]}
+                      >
+                        <.icon name="hero-paper-clip" class="w-5 h-5" />
+                      </button>
+
+                      <%= if @ctx.attach_menu_open? do %>
+                        <ul
+                          phx-click-away="close_attach_menu"
+                          phx-window-keydown="close_attach_menu"
+                          phx-key="escape"
+                          phx-target={@ctx.myself}
+                          role="menu"
+                          aria-label={gettext("Attach media options")}
+                          class="absolute top-full left-0 mt-1 z-50 menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-1"
+                        >
+                          <%= if @ctx.giphy_enabled? do %>
+                            <li role="none">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                phx-click="open_giphy_from_menu"
+                                phx-target={@ctx.myself}
+                                class="flex items-center gap-2"
+                              >
+                                <.icon name="hero-film" class="w-4 h-4" /> {gettext("GIF")}
+                              </button>
+                            </li>
+                          <% end %>
+
+                          <%= if @ctx.attachments_enabled? do %>
+                            <li role="none">
+                              <label
+                                for={@ctx.uploads.attachment.ref}
+                                role="menuitem"
+                                phx-click="close_attach_menu"
+                                phx-target={@ctx.myself}
+                                class="flex items-center gap-2 cursor-pointer"
+                                title={
+                                  gettext("Up to %{count} files, max %{size}MB each",
+                                    count: @ctx.max_attachments,
+                                    size: @ctx.max_attachment_size_mb
+                                  )
+                                }
+                              >
+                                <.icon name="hero-photo" class="w-4 h-4" /> {gettext("Image")}
+                              </label>
+                            </li>
+
+                            <li role="none">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onclick="window.dispatchEvent(new CustomEvent('phx-kit-comments-audio-toggle'))"
+                                phx-click="close_attach_menu"
+                                phx-target={@ctx.myself}
+                                class="flex items-center gap-2"
+                              >
+                                <.icon name="hero-microphone" class="w-4 h-4" /> {gettext("Record")}
+                              </button>
+                            </li>
+                          <% end %>
+                        </ul>
+                      <% end %>
+
+                      <%= if @ctx.giphy_open? do %>
+                        <div
+                          class="pk-giphy-backdrop"
+                          phx-click="close_giphy_picker"
+                          phx-target={@ctx.myself}
+                        >
+                          <div
+                            phx-click="noop"
+                            phx-target={@ctx.myself}
+                            phx-window-keydown="close_giphy_picker"
+                            phx-key="escape"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label={gettext("Giphy picker")}
+                            class="pk-giphy-picker p-3 shadow-lg bg-base-100 rounded-box border border-base-300"
+                          >
+                            <label for={"giphy-search-#{@ctx.myself}-#{@position}"} class="sr-only">
+                              {gettext("Search GIFs")}
+                            </label>
+                            <input
+                              id={"giphy-search-#{@ctx.myself}-#{@position}"}
+                              type="text"
+                              name="q"
+                              value={@ctx.giphy_query}
+                              placeholder={gettext("Search GIFs...")}
+                              aria-label={gettext("Search GIFs")}
+                              class="input input-bordered input-sm w-full"
+                              phx-keyup="giphy_search"
+                              phx-target={@ctx.myself}
+                              phx-debounce="300"
+                              onkeydown="if(event.key === 'Enter') event.preventDefault()"
+                              autocomplete="off"
+                            />
+
+                            <div class="pk-giphy-picker-scroll mt-2">
+                              <%= cond do %>
+                                <% @ctx.giphy_results != [] -> %>
+                                  <div
+                                    class="grid gap-2"
+                                    role="listbox"
+                                    aria-label={gettext("GIF results")}
+                                    style="grid-template-columns: repeat(3, minmax(0, 1fr));"
+                                  >
+                                    <%= for gif <- @ctx.giphy_results do %>
+                                      <button
+                                        type="button"
+                                        role="option"
+                                        aria-label={gettext("Select GIF %{id}", id: gif["id"])}
+                                        phx-click="select_giphy"
+                                        phx-value-id={gif["id"]}
+                                        phx-target={@ctx.myself}
+                                        class="border border-base-300 rounded hover:border-primary overflow-hidden bg-base-200"
+                                      >
+                                        <img
+                                          src={gif["preview_url"]}
+                                          loading="lazy"
+                                          alt=""
+                                          class="w-full object-cover"
+                                          style="height: 6rem;"
+                                        />
+                                      </button>
+                                    <% end %>
+                                  </div>
+                                <% String.trim(@ctx.giphy_query) == "" -> %>
+                                  <p class="text-xs text-base-content/60 text-center py-4">
+                                    {gettext("Type a search term to find GIFs.")}
+                                  </p>
+                                <% true -> %>
+                                  <p class="text-xs text-base-content/60 text-center py-4">
+                                    {gettext("No results.")}
+                                  </p>
+                              <% end %>
+                            </div>
+                          </div>
+                        </div>
+                      <% end %>
+                    </div>
+
+                  <% true -> %>
+                <% end %>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  phx-click="cancel_new_comment"
+                  phx-target={@ctx.myself}
+                  class="btn btn-ghost btn-sm"
+                >
+                  {gettext("Hide")}
+                </button>
+                <button type="submit" class="btn btn-primary btn-sm">
+                  <.icon name="hero-paper-airplane" class="w-4 h-4 mr-2" /> {gettext("Post Comment")}
+                </button>
+              </div>
+            </div>
+          </.form>
+        </div>
+      <% is_nil(@ctx.reply_to) -> %>
+        <div class={@spacing}>
+          <button
+            type="button"
+            phx-click="open_composer"
+            phx-value-position={@position}
+            phx-target={@ctx.myself}
+            class="btn btn-primary w-full sm:w-auto"
+          >
+            <.icon name="hero-pencil-square" class="w-5 h-5 mr-2" /> {gettext("Write comment")}
+          </button>
+        </div>
+      <% true -> %>
+    <% end %>
+    """
+  end
+
+  # The single position that shows the "sign in to post" notice when the
+  # viewer can't post — avoids rendering it twice for composer_position
+  # :both. First present position wins.
+  defp primary_composer_position(:bottom), do: :bottom
+  defp primary_composer_position(_), do: :top
+
   defp leaf_available?, do: Code.ensure_loaded?(Leaf)
 
-  defp draft_editor_id(component_id), do: "pk-comments:#{component_id}:draft"
+  # Draft editor id is position-scoped (:top / :bottom) so a
+  # composer_position: :both embed never mounts two Leaf editors under
+  # the same DOM id. Only one position is open at a time, but the ids
+  # still differ so morphdom can't confuse them.
+  defp draft_editor_id(component_id, position),
+    do: "pk-comments:#{component_id}:draft:#{position}"
 
   defp reply_editor_id(component_id, comment_uuid),
     do: "pk-comments:#{component_id}:reply:#{comment_uuid}"
@@ -1551,11 +1961,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp edit_editor_id(component_id, comment_uuid),
     do: "pk-comments:#{component_id}:edit:#{comment_uuid}"
 
-  defp reset_leaf_draft_editor(component_id, reply_to) do
+  # Clear the Leaf editor that was just submitted. For a reply it's the
+  # per-comment reply editor; for a new comment it's the draft editor at
+  # whichever position was open (falls back to :top if unknown).
+  defp reset_leaf_draft_editor(component_id, reply_to, composer_open_at) do
     if leaf_available?() do
       editor_id =
         case reply_to do
-          nil -> draft_editor_id(component_id)
+          nil -> draft_editor_id(component_id, composer_open_at || :top)
           comment_uuid -> reply_editor_id(component_id, comment_uuid)
         end
 
