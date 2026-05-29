@@ -198,14 +198,24 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     # (ephemeral within the component's lifetime, host sets the start).
     socket = assign_new(socket, :collapsed?, fn -> socket.assigns.initial_collapsed end)
 
+    reload? = changed?(socket, :resource_uuid) or not socket.assigns.loaded?
+
     socket =
-      if changed?(socket, :resource_uuid) or not socket.assigns.loaded? do
+      if reload? do
         socket |> load_comments() |> assign(:loaded?, true)
       else
         socket
       end
 
-    socket = load_reaction_state(socket)
+    # Reaction state depends only on the loaded comments + the viewer.
+    # Re-run it when comments reload or when those inputs change, rather
+    # than firing two queries on every parent re-render / send_update.
+    socket =
+      if reload? or changed?(socket, :current_user) or changed?(socket, :show_likes) do
+        load_reaction_state(socket)
+      else
+        socket
+      end
 
     {:ok, socket}
   end
@@ -435,10 +445,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           # edit form opens with the live label. No-op for comments
           # with no decoration — the input renders behind a guard.
           decoration_label =
-            case find_decoration_for_comment(comment, socket.assigns.comment_decorations) do
-              %{label: label} when is_binary(label) -> label
-              _ -> ""
-            end
+            decoration_label_for(comment, socket.assigns.comment_decorations)
 
           {:noreply,
            socket
@@ -613,6 +620,16 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   defp find_decoration_for_comment(_, _), do: nil
+
+  # Label for a comment's matching decoration, or "" when none. Kept
+  # separate so the edit_comment handler doesn't nest a case inside its
+  # permission `if` (Credo max nesting depth).
+  defp decoration_label_for(comment, decorations) do
+    case find_decoration_for_comment(comment, decorations) do
+      %{label: label} when is_binary(label) -> label
+      _ -> ""
+    end
+  end
 
   # Same as above but resolves the comment from the in-memory tree
   # by uuid first. Used by the title-only click-to-edit flow which
@@ -1081,7 +1098,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 name="label"
                 value={@editing_decoration_value}
                 maxlength="200"
-                placeholder="Title"
+                placeholder={gettext("Title")}
                 class="input input-bordered input-sm w-full text-base font-bold"
               />
               <hr class="border-base-300" />
@@ -1097,7 +1114,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 id={edit_editor_id(@component_id, @comment.uuid)}
                 content={@editing_content || ""}
                 preset={:advanced}
-                placeholder="Edit your comment..."
+                placeholder={gettext("Edit your comment...")}
                 height="200px"
                 debounce={400}
                 upload_handler={nil}
@@ -1236,7 +1253,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
         <%= if @reply_to == @comment.uuid do %>
           <div class="mt-3 border-l-2 border-primary/40 pl-3">
-            <div class="text-xs font-medium text-base-content/60 mb-2">Replying here</div>
+            <div class="text-xs font-medium text-base-content/60 mb-2">{gettext("Replying here")}</div>
             <.form
               for={%{}}
               phx-submit="add_comment"
@@ -1250,7 +1267,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                   id={reply_editor_id(@component_id, @comment.uuid)}
                   content={@new_comment || ""}
                   preset={:advanced}
-                  placeholder="Write a reply..."
+                  placeholder={gettext("Write a reply...")}
                   height="160px"
                   debounce={400}
                   upload_handler={nil}
@@ -1261,7 +1278,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               <% else %>
                 <textarea
                   name="comment"
-                  placeholder="Write a reply..."
+                  placeholder={gettext("Write a reply...")}
                   class="textarea textarea-bordered w-full"
                   rows="3"
                   phx-debounce="150"
@@ -1304,7 +1321,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                           phx-click="cancel_upload"
                           phx-value-ref={entry.ref}
                           phx-target={@myself}
-                          aria-label={"Remove #{entry.client_name}"}
+                          aria-label={gettext("Remove %{name}", name: entry.client_name)}
                           class="btn btn-ghost btn-xs"
                         >
                           <.icon name="hero-x-mark" class="w-4 h-4" />
@@ -1329,9 +1346,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                   <label
                     for={@uploads.attachment.ref}
                     class="btn btn-ghost btn-sm cursor-pointer"
-                    title={"Up to #{@max_attachments} files, max #{@max_attachment_size_mb}MB each"}
+                    title={
+                      gettext("Up to %{count} files, max %{size}MB each",
+                        count: @max_attachments,
+                        size: @max_attachment_size_mb
+                      )
+                    }
                   >
-                    <.icon name="hero-paper-clip" class="w-4 h-4 mr-1" /> Attach
+                    <.icon name="hero-paper-clip" class="w-4 h-4 mr-1" /> {gettext("Attach")}
                   </label>
                 <% end %>
                 <button
@@ -1340,10 +1362,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                   phx-target={@myself}
                   class="btn btn-ghost btn-sm"
                 >
-                  Hide
+                  {gettext("Hide")}
                 </button>
                 <button type="submit" class="btn btn-primary btn-sm">
-                  <.icon name="hero-paper-airplane" class="w-4 h-4 mr-2" /> Post Reply
+                  <.icon name="hero-paper-airplane" class="w-4 h-4 mr-2" /> {gettext("Post Reply")}
                 </button>
               </div>
             </.form>

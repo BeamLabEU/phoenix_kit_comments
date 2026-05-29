@@ -1210,30 +1210,33 @@ defmodule PhoenixKitComments do
   defp empty_deleted?(_), do: false
 
   defp insert_reaction(schema, comment_uuid, user_uuid, counter_field) do
-    if reaction_exists?(schema, comment_uuid, user_uuid) do
-      false
-    else
-      %{}
-      |> then(&struct(schema, &1))
-      |> schema.changeset(%{comment_uuid: comment_uuid, user_uuid: user_uuid})
-      |> repo().insert()
-      |> case do
-        {:ok, _reaction} ->
-          increment_comment_counter(comment_uuid, counter_field)
-          true
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-        {:error, _changeset} ->
-          false
-      end
-    end
-  end
-
-  defp reaction_exists?(schema, comment_uuid, user_uuid) do
-    repo().exists?(
-      from(r in schema,
-        where: r.comment_uuid == ^comment_uuid and r.user_uuid == ^user_uuid
+    # Single atomic insert: `on_conflict: :nothing` makes a duplicate
+    # like/dislike a no-op (count == 0) instead of a check-then-insert
+    # race. Only increment the counter when a row was actually written.
+    {count, _} =
+      repo().insert_all(
+        schema,
+        [
+          %{
+            uuid: UUIDv7.generate(),
+            comment_uuid: comment_uuid,
+            user_uuid: user_uuid,
+            inserted_at: now,
+            updated_at: now
+          }
+        ],
+        on_conflict: :nothing,
+        conflict_target: [:comment_uuid, :user_uuid]
       )
-    )
+
+    if count > 0 do
+      increment_comment_counter(comment_uuid, counter_field)
+      true
+    else
+      false
+    end
   end
 
   defp maybe_remove_reaction(schema, comment_uuid, user_uuid, counter_field) do
