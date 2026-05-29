@@ -2,6 +2,30 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.3 — 2026-05-29
+
+### Changed
+
+- Comment card layout restructured to a strict vertical stack
+  (avatar + email → decoration label → body → date → actions) so the
+  card reads correctly in narrow embed containers (media sidebar,
+  MediaDetail panel) instead of truncating the email under the action
+  buttons.
+- Action buttons (like / dislike / reply / edit / delete) are now
+  right-aligned in their footer row.
+- Decoration label (annotation title) now renders at the comment body's
+  size, bold (`text-base font-bold`) — and gets top spacing so it reads
+  as a peer title rather than a cramped sub-heading.
+- Image attachments fill the comment width (`w-full max-h-96
+  object-contain`) instead of being capped at `max-w-xs`.
+- Bump leaf 0.2.13 → 0.2.21.
+
+### Merged
+
+- Integrated upstream `main` (gettext sweep + `precheck_create` upload
+  refactor) with the local Leaf-editor, decoration-registry, inline-reply,
+  reaction, and composer-toggle work.
+
 ## 0.2.2 — 2026-05-14
 
 ### Fixed
