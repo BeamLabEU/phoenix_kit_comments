@@ -956,12 +956,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   attr(:liked_comment_uuids, :any, required: true)
   attr(:disliked_comment_uuids, :any, required: true)
   attr(:reply_to, :string, default: nil)
-  attr(:new_comment, :string, default: "")
-  attr(:max_length, :integer, required: true)
-  attr(:uploads, :map, required: true)
-  attr(:attachments_enabled?, :boolean, required: true)
-  attr(:max_attachments, :integer, required: true)
-  attr(:max_attachment_size_mb, :integer, required: true)
+  # Full component assigns, forwarded so the inline reply form can reuse
+  # composer_form/1 (Leaf editor, attach menu, GIF picker, audio, char
+  # counter). Threaded through the recursive children call below.
+  attr(:ctx, :map, required: true)
 
   def render_comment(assigns) do
     decoration = find_decoration_for_comment(assigns.comment, assigns.comment_decorations)
@@ -1254,121 +1252,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         <%= if @reply_to == @comment.uuid do %>
           <div class="mt-3 border-l-2 border-primary/40 pl-3">
             <div class="text-xs font-medium text-base-content/60 mb-2">{gettext("Replying here")}</div>
-            <.form
-              for={%{}}
-              phx-submit="add_comment"
-              phx-change="update_comment_draft"
-              phx-target={@myself}
-              class="space-y-2"
-            >
-              <%= if leaf_available?() do %>
-                <.live_component
-                  module={Leaf}
-                  id={reply_editor_id(@component_id, @comment.uuid)}
-                  content={@new_comment || ""}
-                  preset={:advanced}
-                  placeholder={gettext("Write a reply...")}
-                  height="160px"
-                  debounce={400}
-                  upload_handler={nil}
-                  sync_input_name="comment"
-                  loading_preset={:random}
-                  loading_text={nil}
-                />
-              <% else %>
-                <textarea
-                  name="comment"
-                  placeholder={gettext("Write a reply...")}
-                  class="textarea textarea-bordered w-full"
-                  rows="3"
-                  phx-debounce="150"
-                ><%= @new_comment %></textarea>
-              <% end %>
-
-              <div class={[
-                "text-xs text-right",
-                if(String.length(@new_comment) > @max_length,
-                  do: "text-error font-semibold",
-                  else: "text-base-content/60"
-                )
-              ]}>
-                {String.length(@new_comment)} / {@max_length}
-              </div>
-
-              <%= if @attachments_enabled? do %>
-                <.live_file_input upload={@uploads.attachment} class="sr-only" />
-
-                <%= if @uploads.attachment.entries != [] or @uploads.attachment.errors != [] do %>
-                  <div class="space-y-2">
-                    <%= for entry <- @uploads.attachment.entries do %>
-                      <div class="flex items-center gap-3 bg-base-200 rounded p-2">
-                        <.icon
-                          name={attachment_icon(entry.client_type)}
-                          class="w-5 h-5 shrink-0 text-base-content/60"
-                        />
-                        <div class="flex-1 min-w-0">
-                          <div class="text-sm font-medium truncate">{entry.client_name}</div>
-                          <%= if entry.progress > 0 and entry.progress < 100 do %>
-                            <progress
-                              class="progress progress-primary w-full h-1"
-                              value={entry.progress}
-                              max="100"
-                            ></progress>
-                          <% end %>
-                        </div>
-                        <button
-                          type="button"
-                          phx-click="cancel_upload"
-                          phx-value-ref={entry.ref}
-                          phx-target={@myself}
-                          aria-label={gettext("Remove %{name}", name: entry.client_name)}
-                          class="btn btn-ghost btn-xs"
-                        >
-                          <.icon name="hero-x-mark" class="w-4 h-4" />
-                        </button>
-                      </div>
-                    <% end %>
-
-                    <%= for err <- upload_errors(@uploads.attachment) do %>
-                      <p class="text-xs text-error">{upload_error_label(err)}</p>
-                    <% end %>
-                    <%= for entry <- @uploads.attachment.entries, err <- upload_errors(@uploads.attachment, entry) do %>
-                      <p class="text-xs text-error">
-                        {entry.client_name}: {upload_error_label(err)}
-                      </p>
-                    <% end %>
-                  </div>
-                <% end %>
-              <% end %>
-
-              <div class="flex flex-wrap justify-end gap-2">
-                <%= if @attachments_enabled? do %>
-                  <label
-                    for={@uploads.attachment.ref}
-                    class="btn btn-ghost btn-sm cursor-pointer"
-                    title={
-                      gettext("Up to %{count} files, max %{size}MB each",
-                        count: @max_attachments,
-                        size: @max_attachment_size_mb
-                      )
-                    }
-                  >
-                    <.icon name="hero-paper-clip" class="w-4 h-4 mr-1" /> {gettext("Attach")}
-                  </label>
-                <% end %>
-                <button
-                  type="button"
-                  phx-click="cancel_new_comment"
-                  phx-target={@myself}
-                  class="btn btn-ghost btn-sm"
-                >
-                  {gettext("Hide")}
-                </button>
-                <button type="submit" class="btn btn-primary btn-sm">
-                  <.icon name="hero-paper-airplane" class="w-4 h-4 mr-2" /> {gettext("Post Reply")}
-                </button>
-              </div>
-            </.form>
+            <%!-- Same composer body as the top/bottom "Write comment"     --%>
+            <%!-- form (Leaf editor + attach menu + GIF picker + audio),   --%>
+            <%!-- scoped to this comment's reply editor id. Replies now    --%>
+            <%!-- reach feature parity with top-level comments.             --%>
+            <.composer_form
+              ctx={@ctx}
+              editor_id={reply_editor_id(@component_id, @comment.uuid)}
+              suffix={@comment.uuid}
+              placeholder={gettext("Write a reply...")}
+              submit_label={gettext("Post Reply")}
+            />
           </div>
         <% end %>
 
@@ -1390,12 +1284,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 liked_comment_uuids={@liked_comment_uuids}
                 disliked_comment_uuids={@disliked_comment_uuids}
                 reply_to={@reply_to}
-                new_comment={@new_comment}
-                max_length={@max_length}
-                uploads={@uploads}
-                attachments_enabled?={@attachments_enabled?}
-                max_attachments={@max_attachments}
-                max_attachment_size_mb={@max_attachment_size_mb}
+                ctx={@ctx}
               />
             <% end %>
           </div>
@@ -1605,6 +1494,339 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp parse_editor_id(_), do: :pass
 
+  # Shared comment-form body used by both the top/bottom composer and the
+  # inline reply form. Everything inside `<.form>` (editor, char counter,
+  # attach menu, GIF picker, audio recorder, staged-media list, submit
+  # row) is identical between the two; only the editor id, the per-form
+  # DOM-id suffix, the placeholder, and the submit label differ, so those
+  # are parameters. `with_extras` gates the host `form_extras` slot — it
+  # renders only on the primary composer, not on replies (preserves the
+  # pre-dedup reply behavior, which never rendered it).
+  attr(:ctx, :map, required: true)
+  attr(:editor_id, :string, required: true)
+  attr(:suffix, :any, required: true)
+  attr(:placeholder, :string, required: true)
+  attr(:submit_label, :string, required: true)
+  attr(:with_extras, :boolean, default: false)
+
+  defp composer_form(assigns) do
+    ~H"""
+    <.form
+      for={%{}}
+      phx-submit="add_comment"
+      phx-change="update_comment_draft"
+      phx-target={@ctx.myself}
+      class="space-y-2"
+    >
+      <%!-- Comment editor. When the optional :leaf dep is present,    --%>
+      <%!-- render the rich-text Leaf editor; the host LV must forward --%>
+      <%!-- {:leaf_changed, ...} via forward_leaf_event/2 so the       --%>
+      <%!-- content syncs to socket.assigns.new_comment for submit.    --%>
+      <%!-- Without leaf, fall back to the original plain textarea.     --%>
+      <%= if leaf_available?() do %>
+        <.live_component
+          module={Leaf}
+          id={@editor_id}
+          content={@ctx.new_comment || ""}
+          preset={:advanced}
+          placeholder={@placeholder}
+          height="200px"
+          debounce={400}
+          upload_handler={nil}
+          sync_input_name="comment"
+          loading_preset={:random}
+          loading_text={nil}
+        />
+      <% else %>
+        <textarea
+          name="comment"
+          placeholder={@placeholder}
+          class="textarea textarea-bordered w-full"
+          rows="3"
+          phx-debounce="150"
+        ><%= @ctx.new_comment %></textarea>
+      <% end %>
+
+      <div class={[
+        "text-xs text-right",
+        if(String.length(@ctx.new_comment) > @ctx.max_length,
+          do: "text-error font-semibold",
+          else: "text-base-content/60"
+        )
+      ]}>
+        {String.length(@ctx.new_comment)} / {@ctx.max_length}
+      </div>
+
+      <%= if @with_extras and @ctx.form_extras != [], do: render_slot(@ctx.form_extras) %>
+
+      <%!-- Persistent: recorder hook + live file input. Both must
+           stay in the DOM across menu open/close so the upload
+           state and MediaRecorder lifecycle survive. --%>
+      <%= if @ctx.attachments_enabled? do %>
+        <div
+          id={"audio-recorder-#{@ctx.myself}-#{@suffix}"}
+          phx-hook="PhoenixKitCommentsAudioRecorder"
+          phx-target={@ctx.myself}
+          data-upload-name="attachment"
+          class="hidden"
+        />
+        <.live_file_input upload={@ctx.uploads.attachment} class="sr-only" />
+      <% end %>
+
+      <%!-- Staged media (uploads + selected GIF) --%>
+      <%= if (@ctx.attachments_enabled? and (@ctx.uploads.attachment.entries != [] or @ctx.uploads.attachment.errors != [])) or @ctx.giphy_selected do %>
+        <div class="space-y-2">
+          <%= if @ctx.giphy_selected do %>
+            <div class="flex items-center gap-3 bg-base-200 rounded p-2">
+              <img
+                src={@ctx.giphy_selected["preview_url"]}
+                class="w-10 h-10 object-cover rounded shrink-0"
+                alt=""
+              />
+              <div class="flex-1 min-w-0 text-sm font-medium truncate">{gettext("GIF")}</div>
+              <button
+                type="button"
+                phx-click="remove_giphy"
+                phx-target={@ctx.myself}
+                class="btn btn-ghost btn-xs"
+                aria-label={gettext("Remove GIF")}
+              >
+                <.icon name="hero-x-mark" class="w-4 h-4" />
+              </button>
+            </div>
+          <% end %>
+
+          <%= for entry <- @ctx.uploads.attachment.entries do %>
+            <div class="flex items-center gap-3 bg-base-200 rounded p-2">
+              <.icon
+                name={attachment_icon(entry.client_type)}
+                class="w-5 h-5 shrink-0 text-base-content/60"
+              />
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium truncate">{entry.client_name}</div>
+                <%= if entry.progress > 0 and entry.progress < 100 do %>
+                  <progress
+                    class="progress progress-primary w-full h-1"
+                    value={entry.progress}
+                    max="100"
+                  ></progress>
+                <% end %>
+              </div>
+              <button
+                type="button"
+                phx-click="cancel_upload"
+                phx-value-ref={entry.ref}
+                phx-target={@ctx.myself}
+                aria-label={gettext("Remove %{name}", name: entry.client_name)}
+                class="btn btn-ghost btn-xs"
+              >
+                <.icon name="hero-x-mark" class="w-4 h-4" />
+              </button>
+            </div>
+          <% end %>
+
+          <%= for err <- upload_errors(@ctx.uploads.attachment) do %>
+            <p class="text-xs text-error">{upload_error_label(err)}</p>
+          <% end %>
+          <%= for entry <- @ctx.uploads.attachment.entries, err <- upload_errors(@ctx.uploads.attachment, entry) do %>
+            <p class="text-xs text-error">
+              {entry.client_name}: {upload_error_label(err)}
+            </p>
+          <% end %>
+        </div>
+      <% end %>
+
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <%= cond do %>
+            <% @ctx.recording_audio? -> %>
+              <button
+                type="button"
+                onclick="window.dispatchEvent(new CustomEvent('phx-kit-comments-audio-toggle'))"
+                aria-label={gettext("Stop recording")}
+                class="btn btn-sm btn-error gap-1"
+              >
+                <span class="inline-block w-2 h-2 rounded-full bg-base-100 animate-pulse"></span>
+                <.icon name="hero-stop-circle" class="w-4 h-4" /> {gettext("Stop recording")}
+              </button>
+
+            <% @ctx.attachments_enabled? or @ctx.giphy_enabled? -> %>
+              <div class="relative inline-block">
+                <button
+                  type="button"
+                  phx-click="toggle_attach_menu"
+                  phx-target={@ctx.myself}
+                  aria-haspopup="menu"
+                  aria-expanded={to_string(@ctx.attach_menu_open?)}
+                  aria-label={gettext("Attach media")}
+                  title={gettext("Attach media")}
+                  class={[
+                    "btn btn-sm",
+                    if(@ctx.attach_menu_open?, do: "btn-primary", else: "btn-ghost")
+                  ]}
+                >
+                  <.icon name="hero-paper-clip" class="w-5 h-5" />
+                </button>
+
+                <%= if @ctx.attach_menu_open? do %>
+                  <ul
+                    phx-click-away="close_attach_menu"
+                    phx-window-keydown="close_attach_menu"
+                    phx-key="escape"
+                    phx-target={@ctx.myself}
+                    role="menu"
+                    aria-label={gettext("Attach media options")}
+                    class="absolute top-full left-0 mt-1 z-50 menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-1"
+                  >
+                    <%= if @ctx.giphy_enabled? do %>
+                      <li role="none">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          phx-click="open_giphy_from_menu"
+                          phx-target={@ctx.myself}
+                          class="flex items-center gap-2"
+                        >
+                          <.icon name="hero-film" class="w-4 h-4" /> {gettext("GIF")}
+                        </button>
+                      </li>
+                    <% end %>
+
+                    <%= if @ctx.attachments_enabled? do %>
+                      <li role="none">
+                        <label
+                          for={@ctx.uploads.attachment.ref}
+                          role="menuitem"
+                          phx-click="close_attach_menu"
+                          phx-target={@ctx.myself}
+                          class="flex items-center gap-2 cursor-pointer"
+                          title={
+                            gettext("Up to %{count} files, max %{size}MB each",
+                              count: @ctx.max_attachments,
+                              size: @ctx.max_attachment_size_mb
+                            )
+                          }
+                        >
+                          <.icon name="hero-photo" class="w-4 h-4" /> {gettext("Image")}
+                        </label>
+                      </li>
+
+                      <li role="none">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onclick="window.dispatchEvent(new CustomEvent('phx-kit-comments-audio-toggle'))"
+                          phx-click="close_attach_menu"
+                          phx-target={@ctx.myself}
+                          class="flex items-center gap-2"
+                        >
+                          <.icon name="hero-microphone" class="w-4 h-4" /> {gettext("Record")}
+                        </button>
+                      </li>
+                    <% end %>
+                  </ul>
+                <% end %>
+
+                <%= if @ctx.giphy_open? do %>
+                  <div
+                    class="pk-giphy-backdrop"
+                    phx-click="close_giphy_picker"
+                    phx-target={@ctx.myself}
+                  >
+                    <div
+                      phx-click="noop"
+                      phx-target={@ctx.myself}
+                      phx-window-keydown="close_giphy_picker"
+                      phx-key="escape"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label={gettext("Giphy picker")}
+                      class="pk-giphy-picker p-3 shadow-lg bg-base-100 rounded-box border border-base-300"
+                    >
+                      <label for={"giphy-search-#{@ctx.myself}-#{@suffix}"} class="sr-only">
+                        {gettext("Search GIFs")}
+                      </label>
+                      <input
+                        id={"giphy-search-#{@ctx.myself}-#{@suffix}"}
+                        type="text"
+                        name="q"
+                        value={@ctx.giphy_query}
+                        placeholder={gettext("Search GIFs...")}
+                        aria-label={gettext("Search GIFs")}
+                        class="input input-bordered input-sm w-full"
+                        phx-keyup="giphy_search"
+                        phx-target={@ctx.myself}
+                        phx-debounce="300"
+                        onkeydown="if(event.key === 'Enter') event.preventDefault()"
+                        autocomplete="off"
+                      />
+
+                      <div class="pk-giphy-picker-scroll mt-2">
+                        <%= cond do %>
+                          <% @ctx.giphy_results != [] -> %>
+                            <div
+                              class="grid gap-2"
+                              role="listbox"
+                              aria-label={gettext("GIF results")}
+                              style="grid-template-columns: repeat(3, minmax(0, 1fr));"
+                            >
+                              <%= for gif <- @ctx.giphy_results do %>
+                                <button
+                                  type="button"
+                                  role="option"
+                                  aria-label={gettext("Select GIF %{id}", id: gif["id"])}
+                                  phx-click="select_giphy"
+                                  phx-value-id={gif["id"]}
+                                  phx-target={@ctx.myself}
+                                  class="border border-base-300 rounded hover:border-primary overflow-hidden bg-base-200"
+                                >
+                                  <img
+                                    src={gif["preview_url"]}
+                                    loading="lazy"
+                                    alt=""
+                                    class="w-full object-cover"
+                                    style="height: 6rem;"
+                                  />
+                                </button>
+                              <% end %>
+                            </div>
+                          <% String.trim(@ctx.giphy_query) == "" -> %>
+                            <p class="text-xs text-base-content/60 text-center py-4">
+                              {gettext("Type a search term to find GIFs.")}
+                            </p>
+                          <% true -> %>
+                            <p class="text-xs text-base-content/60 text-center py-4">
+                              {gettext("No results.")}
+                            </p>
+                        <% end %>
+                      </div>
+                    </div>
+                  </div>
+                <% end %>
+              </div>
+
+            <% true -> %>
+          <% end %>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            phx-click="cancel_new_comment"
+            phx-target={@ctx.myself}
+            class="btn btn-ghost btn-sm"
+          >
+            {gettext("Hide")}
+          </button>
+          <button type="submit" class="btn btn-primary btn-sm">
+            <.icon name="hero-paper-airplane" class="w-4 h-4 mr-2" /> {@submit_label}
+          </button>
+        </div>
+      </div>
+    </.form>
+    """
+  end
+
   # The "Write comment" composer for one placement (:top or :bottom).
   # Renders the open form when this position is the one currently open
   # (`composer_open_at == position`) and no reply is in progress; the
@@ -1630,320 +1852,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         <% end %>
       <% @ctx.composer_open_at == @position and is_nil(@ctx.reply_to) -> %>
         <div class={@spacing}>
-          <.form
-            for={%{}}
-            phx-submit="add_comment"
-            phx-change="update_comment_draft"
-            phx-target={@ctx.myself}
-            class="space-y-2"
-          >
-            <%!-- New comment editor. When the optional :leaf dep is     --%>
-            <%!-- present, render the rich-text Leaf editor; the host LV --%>
-            <%!-- must forward {:leaf_changed, ...} via                  --%>
-            <%!-- forward_leaf_event/2 so the content syncs to           --%>
-            <%!-- socket.assigns.new_comment for submit. Without leaf,   --%>
-            <%!-- fall back to the original plain textarea.               --%>
-            <%= if leaf_available?() do %>
-              <.live_component
-                module={Leaf}
-                id={draft_editor_id(@ctx.id, @position)}
-                content={@ctx.new_comment || ""}
-                preset={:advanced}
-                placeholder={gettext("Write a comment...")}
-                height="200px"
-                debounce={400}
-                upload_handler={nil}
-                sync_input_name="comment"
-                loading_preset={:random}
-                loading_text={nil}
-              />
-            <% else %>
-              <textarea
-                name="comment"
-                placeholder={gettext("Write a comment...")}
-                class="textarea textarea-bordered w-full"
-                rows="3"
-                phx-debounce="150"
-              ><%= @ctx.new_comment %></textarea>
-            <% end %>
-
-            <div class={[
-              "text-xs text-right",
-              if(String.length(@ctx.new_comment) > @ctx.max_length,
-                do: "text-error font-semibold",
-                else: "text-base-content/60"
-              )
-            ]}>
-              {String.length(@ctx.new_comment)} / {@ctx.max_length}
-            </div>
-
-            <%= if @ctx.form_extras != [], do: render_slot(@ctx.form_extras) %>
-
-            <%!-- Persistent: recorder hook + live file input. Both must
-                 stay in the DOM across menu open/close so the upload
-                 state and MediaRecorder lifecycle survive. --%>
-            <%= if @ctx.attachments_enabled? do %>
-              <div
-                id={"audio-recorder-#{@ctx.myself}-#{@position}"}
-                phx-hook="PhoenixKitCommentsAudioRecorder"
-                phx-target={@ctx.myself}
-                data-upload-name="attachment"
-                class="hidden"
-              />
-              <.live_file_input upload={@ctx.uploads.attachment} class="sr-only" />
-            <% end %>
-
-            <%!-- Staged media (uploads + selected GIF) --%>
-            <%= if (@ctx.attachments_enabled? and (@ctx.uploads.attachment.entries != [] or @ctx.uploads.attachment.errors != [])) or @ctx.giphy_selected do %>
-              <div class="space-y-2">
-                <%= if @ctx.giphy_selected do %>
-                  <div class="flex items-center gap-3 bg-base-200 rounded p-2">
-                    <img
-                      src={@ctx.giphy_selected["preview_url"]}
-                      class="w-10 h-10 object-cover rounded shrink-0"
-                      alt=""
-                    />
-                    <div class="flex-1 min-w-0 text-sm font-medium truncate">{gettext("GIF")}</div>
-                    <button
-                      type="button"
-                      phx-click="remove_giphy"
-                      phx-target={@ctx.myself}
-                      class="btn btn-ghost btn-xs"
-                      aria-label={gettext("Remove GIF")}
-                    >
-                      <.icon name="hero-x-mark" class="w-4 h-4" />
-                    </button>
-                  </div>
-                <% end %>
-
-                <%= for entry <- @ctx.uploads.attachment.entries do %>
-                  <div class="flex items-center gap-3 bg-base-200 rounded p-2">
-                    <.icon
-                      name={attachment_icon(entry.client_type)}
-                      class="w-5 h-5 shrink-0 text-base-content/60"
-                    />
-                    <div class="flex-1 min-w-0">
-                      <div class="text-sm font-medium truncate">{entry.client_name}</div>
-                      <%= if entry.progress > 0 and entry.progress < 100 do %>
-                        <progress
-                          class="progress progress-primary w-full h-1"
-                          value={entry.progress}
-                          max="100"
-                        ></progress>
-                      <% end %>
-                    </div>
-                    <button
-                      type="button"
-                      phx-click="cancel_upload"
-                      phx-value-ref={entry.ref}
-                      phx-target={@ctx.myself}
-                      aria-label={gettext("Remove %{name}", name: entry.client_name)}
-                      class="btn btn-ghost btn-xs"
-                    >
-                      <.icon name="hero-x-mark" class="w-4 h-4" />
-                    </button>
-                  </div>
-                <% end %>
-
-                <%= for err <- upload_errors(@ctx.uploads.attachment) do %>
-                  <p class="text-xs text-error">{upload_error_label(err)}</p>
-                <% end %>
-                <%= for entry <- @ctx.uploads.attachment.entries, err <- upload_errors(@ctx.uploads.attachment, entry) do %>
-                  <p class="text-xs text-error">
-                    {entry.client_name}: {upload_error_label(err)}
-                  </p>
-                <% end %>
-              </div>
-            <% end %>
-
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="flex items-center gap-2">
-                <%= cond do %>
-                  <% @ctx.recording_audio? -> %>
-                    <button
-                      type="button"
-                      onclick="window.dispatchEvent(new CustomEvent('phx-kit-comments-audio-toggle'))"
-                      aria-label={gettext("Stop recording")}
-                      class="btn btn-sm btn-error gap-1"
-                    >
-                      <span class="inline-block w-2 h-2 rounded-full bg-base-100 animate-pulse"></span>
-                      <.icon name="hero-stop-circle" class="w-4 h-4" /> {gettext("Stop recording")}
-                    </button>
-
-                  <% @ctx.attachments_enabled? or @ctx.giphy_enabled? -> %>
-                    <div class="relative inline-block">
-                      <button
-                        type="button"
-                        phx-click="toggle_attach_menu"
-                        phx-target={@ctx.myself}
-                        aria-haspopup="menu"
-                        aria-expanded={to_string(@ctx.attach_menu_open?)}
-                        aria-label={gettext("Attach media")}
-                        title={gettext("Attach media")}
-                        class={[
-                          "btn btn-sm",
-                          if(@ctx.attach_menu_open?, do: "btn-primary", else: "btn-ghost")
-                        ]}
-                      >
-                        <.icon name="hero-paper-clip" class="w-5 h-5" />
-                      </button>
-
-                      <%= if @ctx.attach_menu_open? do %>
-                        <ul
-                          phx-click-away="close_attach_menu"
-                          phx-window-keydown="close_attach_menu"
-                          phx-key="escape"
-                          phx-target={@ctx.myself}
-                          role="menu"
-                          aria-label={gettext("Attach media options")}
-                          class="absolute top-full left-0 mt-1 z-50 menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-1"
-                        >
-                          <%= if @ctx.giphy_enabled? do %>
-                            <li role="none">
-                              <button
-                                type="button"
-                                role="menuitem"
-                                phx-click="open_giphy_from_menu"
-                                phx-target={@ctx.myself}
-                                class="flex items-center gap-2"
-                              >
-                                <.icon name="hero-film" class="w-4 h-4" /> {gettext("GIF")}
-                              </button>
-                            </li>
-                          <% end %>
-
-                          <%= if @ctx.attachments_enabled? do %>
-                            <li role="none">
-                              <label
-                                for={@ctx.uploads.attachment.ref}
-                                role="menuitem"
-                                phx-click="close_attach_menu"
-                                phx-target={@ctx.myself}
-                                class="flex items-center gap-2 cursor-pointer"
-                                title={
-                                  gettext("Up to %{count} files, max %{size}MB each",
-                                    count: @ctx.max_attachments,
-                                    size: @ctx.max_attachment_size_mb
-                                  )
-                                }
-                              >
-                                <.icon name="hero-photo" class="w-4 h-4" /> {gettext("Image")}
-                              </label>
-                            </li>
-
-                            <li role="none">
-                              <button
-                                type="button"
-                                role="menuitem"
-                                onclick="window.dispatchEvent(new CustomEvent('phx-kit-comments-audio-toggle'))"
-                                phx-click="close_attach_menu"
-                                phx-target={@ctx.myself}
-                                class="flex items-center gap-2"
-                              >
-                                <.icon name="hero-microphone" class="w-4 h-4" /> {gettext("Record")}
-                              </button>
-                            </li>
-                          <% end %>
-                        </ul>
-                      <% end %>
-
-                      <%= if @ctx.giphy_open? do %>
-                        <div
-                          class="pk-giphy-backdrop"
-                          phx-click="close_giphy_picker"
-                          phx-target={@ctx.myself}
-                        >
-                          <div
-                            phx-click="noop"
-                            phx-target={@ctx.myself}
-                            phx-window-keydown="close_giphy_picker"
-                            phx-key="escape"
-                            role="dialog"
-                            aria-modal="true"
-                            aria-label={gettext("Giphy picker")}
-                            class="pk-giphy-picker p-3 shadow-lg bg-base-100 rounded-box border border-base-300"
-                          >
-                            <label for={"giphy-search-#{@ctx.myself}-#{@position}"} class="sr-only">
-                              {gettext("Search GIFs")}
-                            </label>
-                            <input
-                              id={"giphy-search-#{@ctx.myself}-#{@position}"}
-                              type="text"
-                              name="q"
-                              value={@ctx.giphy_query}
-                              placeholder={gettext("Search GIFs...")}
-                              aria-label={gettext("Search GIFs")}
-                              class="input input-bordered input-sm w-full"
-                              phx-keyup="giphy_search"
-                              phx-target={@ctx.myself}
-                              phx-debounce="300"
-                              onkeydown="if(event.key === 'Enter') event.preventDefault()"
-                              autocomplete="off"
-                            />
-
-                            <div class="pk-giphy-picker-scroll mt-2">
-                              <%= cond do %>
-                                <% @ctx.giphy_results != [] -> %>
-                                  <div
-                                    class="grid gap-2"
-                                    role="listbox"
-                                    aria-label={gettext("GIF results")}
-                                    style="grid-template-columns: repeat(3, minmax(0, 1fr));"
-                                  >
-                                    <%= for gif <- @ctx.giphy_results do %>
-                                      <button
-                                        type="button"
-                                        role="option"
-                                        aria-label={gettext("Select GIF %{id}", id: gif["id"])}
-                                        phx-click="select_giphy"
-                                        phx-value-id={gif["id"]}
-                                        phx-target={@ctx.myself}
-                                        class="border border-base-300 rounded hover:border-primary overflow-hidden bg-base-200"
-                                      >
-                                        <img
-                                          src={gif["preview_url"]}
-                                          loading="lazy"
-                                          alt=""
-                                          class="w-full object-cover"
-                                          style="height: 6rem;"
-                                        />
-                                      </button>
-                                    <% end %>
-                                  </div>
-                                <% String.trim(@ctx.giphy_query) == "" -> %>
-                                  <p class="text-xs text-base-content/60 text-center py-4">
-                                    {gettext("Type a search term to find GIFs.")}
-                                  </p>
-                                <% true -> %>
-                                  <p class="text-xs text-base-content/60 text-center py-4">
-                                    {gettext("No results.")}
-                                  </p>
-                              <% end %>
-                            </div>
-                          </div>
-                        </div>
-                      <% end %>
-                    </div>
-
-                  <% true -> %>
-                <% end %>
-              </div>
-
-              <div class="flex items-center gap-2">
-                <button
-                  type="button"
-                  phx-click="cancel_new_comment"
-                  phx-target={@ctx.myself}
-                  class="btn btn-ghost btn-sm"
-                >
-                  {gettext("Hide")}
-                </button>
-                <button type="submit" class="btn btn-primary btn-sm">
-                  <.icon name="hero-paper-airplane" class="w-4 h-4 mr-2" /> {gettext("Post Comment")}
-                </button>
-              </div>
-            </div>
-          </.form>
+          <.composer_form
+            ctx={@ctx}
+            editor_id={draft_editor_id(@ctx.id, @position)}
+            suffix={@position}
+            placeholder={gettext("Write a comment...")}
+            submit_label={gettext("Post Comment")}
+            with_extras
+          />
         </div>
       <% is_nil(@ctx.reply_to) -> %>
         <div class={@spacing}>
