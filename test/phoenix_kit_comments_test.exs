@@ -111,7 +111,7 @@ defmodule PhoenixKitCommentsTest do
     test "returns a version string" do
       version = PhoenixKitComments.version()
       assert is_binary(version)
-      assert version == "0.2.2"
+      assert version == "0.2.4"
     end
 
     test "stays in sync with mix.exs @version" do

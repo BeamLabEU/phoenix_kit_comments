@@ -1,7 +1,7 @@
 defmodule PhoenixKitComments.MixProject do
   use Mix.Project
 
-  @version "0.2.2"
+  @version "0.2.4"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_comments"
 
   def project do
@@ -60,6 +60,14 @@ defmodule PhoenixKitComments.MixProject do
 
       # Giphy API client used by the optional Giphy picker in the comment form.
       {:giphy_api, "~> 0.1.1"},
+
+      # Leaf rich-text editor (optional). When present, the comment form
+      # replaces its plain textareas with Leaf editors. Hosts must
+      # forward `{:leaf_changed, ...}` messages from their LiveView's
+      # handle_info to `PhoenixKitComments.Web.CommentsComponent.forward_leaf_event/2`
+      # for content sync to work (Leaf sends to `self()` which is the
+      # parent LV process, not the comments LiveComponent).
+      {:leaf, "~> 0.2", optional: true},
 
       # Optional: add ex_doc for generating documentation
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},

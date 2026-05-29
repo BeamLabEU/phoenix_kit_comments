@@ -2,6 +2,54 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.4 — 2026-05-29
+
+### Features
+
+- Header is now configurable via three optional, backward-compatible
+  assigns (defaults reproduce current behavior exactly):
+  - `show_title` (default `true`) — when `false`, the
+    "{title} ({count})" header line is not rendered.
+  - `collapsible` (default `false`) — turns the header into a
+    disclosure toggle (chevron + `aria-expanded`/`aria-controls`) that
+    collapses/expands the whole body. Collapse state is ephemeral
+    (in-memory, resets on remount).
+  - `initial_collapsed` (default `false`) — starting collapse state when
+    `collapsible`; host-customizable.
+  Note: the collapse chevron lives in the header, so `collapsible` has
+  no visible toggle when `show_title: false` (the thread stays per
+  `initial_collapsed`).
+- `composer_position` (default `:top`) — render the "Write comment"
+  composer at `:top`, `:bottom`, or `:both`. Bottom is off by default.
+  Internally the composer's open state is now position-aware
+  (`composer_open_at`), so `:both` never mounts two Leaf editors or two
+  upload inputs — only the opened position shows the form; the other
+  stays a button.
+
+## 0.2.3 — 2026-05-29
+
+### Changed
+
+- Comment card layout restructured to a strict vertical stack
+  (avatar + email → decoration label → body → date → actions) so the
+  card reads correctly in narrow embed containers (media sidebar,
+  MediaDetail panel) instead of truncating the email under the action
+  buttons.
+- Action buttons (like / dislike / reply / edit / delete) are now
+  right-aligned in their footer row.
+- Decoration label (annotation title) now renders at the comment body's
+  size, bold (`text-base font-bold`) — and gets top spacing so it reads
+  as a peer title rather than a cramped sub-heading.
+- Image attachments fill the comment width (`w-full max-h-96
+  object-contain`) instead of being capped at `max-w-xs`.
+- Bump leaf 0.2.13 → 0.2.21.
+
+### Merged
+
+- Integrated upstream `main` (gettext sweep + `precheck_create` upload
+  refactor) with the local Leaf-editor, decoration-registry, inline-reply,
+  reaction, and composer-toggle work.
+
 ## 0.2.2 — 2026-05-14
 
 ### Fixed
