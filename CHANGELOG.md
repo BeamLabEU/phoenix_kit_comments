@@ -2,6 +2,18 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.5 — 2026-06-02
+
+### Fixed
+
+- `CommentsComponent` no longer flips to "Sign in to post a comment" for a
+  logged-in user on a partial `send_update`. `can_post?` was derived from
+  the incoming `assigns[:current_user]` (nil on any update that omits it,
+  e.g. a parent poking `loaded?: false` to refresh the thread — as
+  PhoenixKit's MediaCanvasViewer does when an annotation is drawn). It now
+  reads the resolved socket value (kept across updates by `assign_new`),
+  so the composer stays available.
+
 ## 0.2.4 — 2026-05-29
 
 ### Features

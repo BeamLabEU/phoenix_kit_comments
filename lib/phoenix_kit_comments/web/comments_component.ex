@@ -187,7 +187,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       #       label: <new string>}
       |> assign_new(:parent_module, fn -> nil end)
       |> assign_new(:parent_id, fn -> nil end)
-      |> assign(:can_post?, assigns[:current_user] != nil)
+      # Derive from the RESOLVED socket value (kept across updates by the
+      # assign_new above), NOT the incoming `assigns`. A partial
+      # `send_update` that omits `:current_user` — e.g. a parent poking
+      # `loaded?: false` to refresh the thread (MediaCanvasViewer does this
+      # when an annotation is drawn) — would otherwise read nil and flip
+      # the composer to "Sign in to post a comment" for a logged-in user.
+      |> then(&assign(&1, :can_post?, &1.assigns.current_user != nil))
       |> assign(:giphy_enabled?, PhoenixKitComments.giphy_enabled?())
       |> assign(:attachments_enabled?, PhoenixKitComments.attachments_enabled?())
       |> assign(:max_length, PhoenixKitComments.get_max_length())
