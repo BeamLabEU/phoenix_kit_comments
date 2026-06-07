@@ -2,6 +2,26 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.6 — 2026-06-07
+
+### Features
+
+- New `PhoenixKitComments.Embed` macro. A host LiveView embedding
+  `CommentsComponent` must forward the composer's rich-text (Leaf)
+  `{:leaf_changed, …}` process message into
+  `CommentsComponent.forward_leaf_event/2`, or the editor's content never
+  reaches the component and "Post comment" silently no-ops. `use
+  PhoenixKitComments.Embed` wires that forward as an `on_mount`
+  `attach_hook(:handle_info)` lifecycle hook, so it composes with a host that
+  already defines its own `handle_info` (no clause-grouping clash, no
+  clobbering). For hosts that hard-depend on `phoenix_kit_comments`;
+  soft-dependency hosts resolve `forward_leaf_event/2` at runtime instead (see
+  the moduledoc).
+
+### Changed
+
+- Bumped dependencies (`mix.lock`).
+
 ## 0.2.5 — 2026-05-29
 
 First Hex release since 0.2.1; bundles the unreleased 0.2.2–0.2.4 work
