@@ -63,6 +63,8 @@ defmodule PhoenixKitComments.Embed do
       end
   """
 
+  alias PhoenixKitComments.Web.CommentsComponent
+
   defmacro __using__(_opts) do
     quote do
       on_mount(PhoenixKitComments.Embed)
@@ -86,7 +88,7 @@ defmodule PhoenixKitComments.Embed do
   # Lifecycle-hook body. `{:cont, socket}` lets the host's own handle_info
   # (and other hooks) run; `{:halt, socket}` consumes the message.
   def __forward_leaf__({:leaf_changed, _} = msg, socket) do
-    case PhoenixKitComments.Web.CommentsComponent.forward_leaf_event(msg, socket) do
+    case CommentsComponent.forward_leaf_event(msg, socket) do
       {:noreply, socket} -> {:halt, socket}
       # `:pass` (editor isn't ours) or any unexpected return — let the
       # message continue to the host / other hooks rather than swallow it.
