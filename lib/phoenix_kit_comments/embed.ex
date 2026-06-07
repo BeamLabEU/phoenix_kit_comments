@@ -45,10 +45,18 @@ defmodule PhoenixKitComments.Embed do
         case Code.ensure_loaded(PhoenixKitComments.Web.CommentsComponent) do
           {:module, mod} ->
             case mod.forward_leaf_event(msg, socket) do
+              # A comments editor — already handled.
               {:noreply, _} = ok -> ok
-              _ -> {:noreply, socket}
+              # `:pass` means the event is *not* a comments editor (its
+              # `editor_id` isn't `"pk-comments:"`-prefixed). Fall through
+              # to the host's own Leaf handling here; the bare
+              # `{:noreply, socket}` only fits a host whose *only* Leaf
+              # editor is the comments composer — otherwise it silently
+              # swallows the host's own editor events.
+              :pass -> {:noreply, socket}
             end
 
+          # Comments package isn't installed — nothing to forward.
           _ ->
             {:noreply, socket}
         end
