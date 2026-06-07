@@ -48,15 +48,16 @@ minor/optional notes below.
 
 ## Minor observations (non-blocking)
 
-1. **Soft-dep doc example swallows unrelated `:leaf_changed`.** The moduledoc's
-   runtime example for soft-dep hosts (`embed.ex:44-56`) maps
-   `forward_leaf_event/2`'s `:pass` return to `{:noreply, socket}`, i.e. it
-   consumes *every* `{:leaf_changed, …}` — including a host's own non-comments
-   editor. The hard-dep hook in this same file gets this right (`:pass →
-   {:cont}`). For the cited `phoenix_kit_staff` `PersonShowLive` (comments is
-   the only Leaf editor) it's fine, but the example reads as the canonical
-   soft-dep recipe; a one-line caveat — or a `:pass`-aware fall-through —
-   would protect copy-paste users that have their own editor.
+1. **Soft-dep doc example swallows unrelated `:leaf_changed`.** ✅ **Fixed** (see
+   Post-review fixes). The moduledoc's runtime example for soft-dep hosts mapped
+   `forward_leaf_event/2`'s `:pass` return to `{:noreply, socket}` via a
+   wildcard, i.e. it consumed *every* `{:leaf_changed, …}` — including a host's
+   own non-comments editor. The hard-dep hook in this same file gets this right
+   (`:pass → {:cont}`). For the cited `phoenix_kit_staff` `PersonShowLive`
+   (comments is the only Leaf editor) it was fine, but the example reads as the
+   canonical soft-dep recipe, so it now matches `:pass` explicitly and documents
+   that the bare `{:noreply, socket}` only fits a host whose only Leaf editor is
+   the comments composer.
 
 2. **No test coverage.** Consistent with the repo (only
    `phoenix_kit_comments_test.exs` exists), so not a regression. A small test
@@ -77,8 +78,21 @@ minor/optional notes below.
   `__forward_leaf__(_msg, socket) → {:cont, socket}` passes everything through.
 - **Public API / schema / migration impact** — none; purely additive.
 
+## Post-review fixes applied
+
+Committed to `main` after this review:
+
+- **Tightened the soft-dep moduledoc example** (note 1) — match `:pass`
+  explicitly instead of a wildcard, and document that the bare
+  `{:noreply, socket}` only fits a host whose only Leaf editor is the comments
+  composer. Doc-only, no behavior change. (`1d92352`)
+- **Aliased `CommentsComponent` in `__forward_leaf__/2`** to satisfy
+  `credo --strict` (`Design.AliasUsage`), which flagged the fully-qualified
+  reference. Safe here because the hook body runs in this module, not injected
+  into the caller. (`9af5e67`)
+- `mix precommit` (compile `--warnings-as-errors`, `deps.unlock --check-unused`,
+  `format --check-formatted`, `credo --strict`, `dialyzer`) now passes green.
+
 ## Suggested follow-ups (optional)
 
-- Tighten the soft-dep moduledoc example so it doesn't swallow a host's own
-  non-comments Leaf editor (note 1).
 - Add a one-line test for the hook attach + the `{:halt}`/`{:cont}` routing.
