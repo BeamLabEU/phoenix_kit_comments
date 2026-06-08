@@ -66,9 +66,7 @@ defmodule PhoenixKitCommentsTest do
 
   describe "admin_tabs/0" do
     test "returns a list of Tab structs" do
-      tabs = PhoenixKitComments.admin_tabs()
-      assert is_list(tabs)
-      assert tabs != []
+      assert [%PhoenixKit.Dashboard.Tab{} | _] = PhoenixKitComments.admin_tabs()
     end
 
     test "main tab has required fields" do
@@ -111,7 +109,7 @@ defmodule PhoenixKitCommentsTest do
     test "returns a version string" do
       version = PhoenixKitComments.version()
       assert is_binary(version)
-      assert version == "0.2.5"
+      assert version =~ ~r/^\d+\.\d+\.\d+/
     end
 
     test "stays in sync with mix.exs @version" do
