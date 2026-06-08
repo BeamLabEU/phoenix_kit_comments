@@ -4,6 +4,14 @@ All notable changes to PhoenixKitComments will be documented in this file.
 
 ## 0.2.7 — Unreleased
 
+### Changed
+
+- `leaf` is now a required dependency (was `optional: true`). The comment
+  composer is built on the Leaf editor, and phoenix_kit core already
+  hard-depends on leaf, so it's always present wherever comments runs — the
+  optional declaration described an unreachable leaf-free build. The
+  `leaf_available?/0` textarea fallback stays as defensive code.
+
 ### Fixed
 
 - `CommentsComponent` no longer flips to "Sign in to post a comment" for a
