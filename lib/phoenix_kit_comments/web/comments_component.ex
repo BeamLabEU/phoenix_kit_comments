@@ -46,6 +46,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   use PhoenixKitWeb, :live_component
 
   import PhoenixKitWeb.Components.Core.Icon
+  # Renders a comment's markdown (authored in the Leaf editor) to sanitized
+  # HTML on display, so bold/italics/lists/etc. show formatted instead of raw
+  # markdown. Earmark + HtmlSanitizer live in core (always present).
+  import PhoenixKitWeb.Components.Core.Markdown, only: [markdown: 1]
 
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
@@ -1150,8 +1154,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           </.form>
         <% else %>
           <%= if @comment.content && @comment.content != "" do %>
-            <div class="text-base-content break-words">
-              {@comment.content}
+            <div class="text-base-content break-words pk-comment-md">
+              <.markdown content={@comment.content} compact />
             </div>
           <% end %>
           <%= if gif = comment_gif(@comment) do %>

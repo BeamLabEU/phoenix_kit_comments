@@ -4,6 +4,18 @@ All notable changes to PhoenixKitComments will be documented in this file.
 
 ## 0.2.7 — Unreleased
 
+### Added
+
+- Comment bodies now render their markdown (authored in the Leaf editor) to
+  sanitized HTML on display via core's `<.markdown>` component (Earmark +
+  `HtmlSanitizer`), so bold / italics / lists / quotes / links / code show
+  formatted instead of as raw markdown. Previously the raw content string was
+  shown verbatim.
+- Scoped CSS (`.pk-comment-md`) restores list / blockquote / heading / code
+  styling that Tailwind's preflight resets, without depending on the
+  `@tailwindcss/typography` (`prose`) plugin being present in the host — so
+  lists render with bullets/numbers even where prose isn't configured.
+
 ### Changed
 
 - `leaf` is now a required dependency (was `optional: true`). The comment
