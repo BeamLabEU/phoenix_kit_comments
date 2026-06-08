@@ -2,7 +2,7 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
-## 0.2.5 — 2026-06-02
+## 0.2.7 — Unreleased
 
 ### Fixed
 
@@ -13,6 +13,57 @@ All notable changes to PhoenixKitComments will be documented in this file.
   PhoenixKit's MediaCanvasViewer does when an annotation is drawn). It now
   reads the resolved socket value (kept across updates by `assign_new`),
   so the composer stays available.
+
+## 0.2.6 — 2026-06-07
+
+### Features
+
+- New `PhoenixKitComments.Embed` macro. A host LiveView embedding
+  `CommentsComponent` must forward the composer's rich-text (Leaf)
+  `{:leaf_changed, …}` process message into
+  `CommentsComponent.forward_leaf_event/2`, or the editor's content never
+  reaches the component and "Post comment" silently no-ops. `use
+  PhoenixKitComments.Embed` wires that forward as an `on_mount`
+  `attach_hook(:handle_info)` lifecycle hook, so it composes with a host that
+  already defines its own `handle_info` (no clause-grouping clash, no
+  clobbering). For hosts that hard-depend on `phoenix_kit_comments`;
+  soft-dependency hosts resolve `forward_leaf_event/2` at runtime instead (see
+  the moduledoc).
+
+### Changed
+
+- Bumped dependencies (`mix.lock`).
+
+## 0.2.5 — 2026-05-29
+
+First Hex release since 0.2.1; bundles the unreleased 0.2.2–0.2.4 work
+below plus the fixes and cleanup in this entry.
+
+### Fixed
+
+- Likes/dislikes no longer crash. `insert_reaction/2` had been switched to
+  `insert_all` with `on_conflict: :nothing,
+  conflict_target: [:comment_uuid, :user_uuid]`, but no composite unique
+  index exists on those columns (the original `UNIQUE(comment_id,
+  user_id)` was dropped with the integer `user_id` column during the
+  uuid-FK migration and never recreated on `user_uuid`). That made every
+  like/dislike raise a Postgrex "no unique or exclusion constraint
+  matching the ON CONFLICT specification" error. Restored the
+  `exists?`-precheck + changeset insert, which doesn't depend on the
+  missing index.
+
+### Changed
+
+- Reaction highlight state (`liked_comment_uuids` /
+  `disliked_comment_uuids`) is now reloaded only when comments reload or
+  the viewer / `show_likes` change, instead of on every `update/2` —
+  removing two redundant queries per parent re-render.
+- The inline reply composer is no longer a feature-poor duplicate of the
+  top/bottom composer. Both now share one `composer_form/1`, so replies
+  gain the GIF picker, audio recorder, and full attach menu, and the form
+  markup / translations live in a single place.
+- Wrapped the remaining user-facing strings in the edit and reply forms
+  in `gettext` (they had been missed in the gettext sweep).
 
 ## 0.2.4 — 2026-05-29
 

@@ -1,92 +1,98 @@
-# PR #14 Review — Stamp `data-comment-uuid` + `data-annotation-uuid` on rendered comments
+# PR #17 Review — `PhoenixKitComments.Embed` macro for host Leaf-event forwarding
 
-- **Author:** Sasha Don (`alexdont`)
+- **Author:** Max Don (`mdon`)
 - **Reviewer:** Claude
-- **PR:** https://github.com/BeamLabEU/phoenix_kit_comments/pull/14
-- **Branch:** `alexdont:main` → `BeamLabEU:main`
-- **State:** Merged 2026-05-12 (review is post-hoc)
-- **Diff size:** +7 / −3, 1 file
+- **PR:** https://github.com/BeamLabEU/phoenix_kit_comments/pull/17
+- **Branch:** `mdon:main` → `BeamLabEU:main`
+- **State:** Merged 2026-06-06 (review is post-hoc)
+- **Diff size:** +90 / −0, 1 new file (`lib/phoenix_kit_comments/embed.ex`)
 
 ## Summary
 
-Adds two DOM data attributes to the outermost wrapper of `render_comment/1` in
-`lib/phoenix_kit_comments/web/comments_component.ex:525`:
-
-- `data-comment-uuid={@comment.uuid}` — always present.
-- `data-annotation-uuid={get_in(@comment.metadata || %{}, ["annotation_uuid"])}` —
-  read from JSONB metadata; omitted when nil.
-
-Goal (per PR body): let sibling components on the host page (PhoenixKit's
-Etcher annotation overlay) correlate DOM nodes with comment + linked-resource
-UUIDs so they can highlight + scroll-to the comment(s) tied to a pinned image
-annotation, without reaching into render internals.
+Adds `PhoenixKitComments.Embed`, a `use`-able macro for host LiveViews that
+hard-depend on `phoenix_kit_comments`. It wires the host to forward the Leaf
+composer's `{:leaf_changed, …}` process message into
+`CommentsComponent.forward_leaf_event/2`. Without this hop the rich-text
+editor's content never reaches the `LiveComponent` (which has no `handle_info`
+of its own), so "Post comment" silently posts an empty body. Implemented as an
+`on_mount` + `attach_hook(:handle_info)` lifecycle hook delegating to the
+existing public `forward_leaf_event/2`. Purely additive.
 
 ## Verdict
 
-**Approve.** Small, focused, behaviorally safe. A couple of minor observations
-below, none blocking.
+**Approve.** Correct, focused, well-documented. No blocking issues. A couple of
+minor/optional notes below.
 
 ## What's good
 
-- **Minimal surface area.** One render site, two new attributes, no schema or
-  API changes. Nothing else in the codebase grepped for the new attribute names,
-  so there's no parallel write-up to keep in sync.
-- **HEEx handles the nil-omission contract correctly.** Phoenix.HTML drops
-  attributes whose value is `nil`, so non-annotation comments render with no
-  `data-annotation-uuid` at all — matches the PR description.
-- **Attribute escaping is safe.** HEEx escapes attribute values, so even if
-  `metadata["annotation_uuid"]` contains odd characters, there's no injection
-  risk on the rendered page.
-- **Key choice matches the rest of the file.** `metadata` is stored as JSONB
-  with string keys (`"giphy"`, `"box_color"`, etc. per the moduledoc at
-  `comments_component.ex:31` and usages around lines 122–136), so
-  `["annotation_uuid"]` is consistent — not atom-vs-string-key drift.
+- **Right pattern.** Lifecycle hook (`attach_hook(:handle_info)`) instead of
+  injected `handle_info` clauses, so it composes with a host that already
+  defines its own `handle_info` — no "clauses should be grouped" warning, no
+  clobbering. The moduledoc explains the non-obvious process-message hop well.
+- **Routing by `editor_id`, not clause order.** `forward_leaf_event/2` only
+  handles `"pk-comments:"`-prefixed editors and returns `:pass` otherwise; the
+  hook maps `{:noreply, _} → {:halt}` and `:pass`/anything-else → `{:cont}`. A
+  host with its own unrelated Leaf editor still receives those events. This is
+  more robust than `MediaBrowser.Embed`'s `@before_compile` clause-injection
+  approach, which depends on the user's clause being defined first.
+- **Hook mechanics are valid.** `:handle_info` is a real `attach_hook` stage;
+  `:halt` correctly suppresses the host's own `handle_info` for comments
+  editors (the component handles them via `send_update`), and `:cont` passes
+  everything else through.
+- **`on_mount(:default, …)` matches.** `on_mount(PhoenixKitComments.Embed)`
+  expands to `{Module, :default}`; the callback head is `on_mount(:default, …)`.
+- **No double-forward when combined with `MediaBrowser.Embed`.** If a host uses
+  both, the comments hook runs first and `:halt`s our editors before
+  MediaBrowser's injected `{:leaf_changed, _}` fallback can re-forward them.
+- **Compiles clean** (`mix compile` green).
 
 ## Minor observations (non-blocking)
 
-1. **The `|| %{}` guard is redundant.** `Comment.metadata` is declared
-   `field(:metadata, :map, default: %{})` at
-   `lib/phoenix_kit_comments/schemas/comment.ex:69`, so a freshly loaded
-   comment will never have `nil` metadata. Harmless belt-and-suspenders, but
-   if you want to match the rest of the file's style,
-   `get_in(@comment.metadata, ["annotation_uuid"])` would also work.
-   I'd leave it — defensive code at a render site is cheap.
+1. **Soft-dep doc example swallows unrelated `:leaf_changed`.** ✅ **Fixed** (see
+   Post-review fixes). The moduledoc's runtime example for soft-dep hosts mapped
+   `forward_leaf_event/2`'s `:pass` return to `{:noreply, socket}` via a
+   wildcard, i.e. it consumed *every* `{:leaf_changed, …}` — including a host's
+   own non-comments editor. The hard-dep hook in this same file gets this right
+   (`:pass → {:cont}`). For the cited `phoenix_kit_staff` `PersonShowLive`
+   (comments is the only Leaf editor) it was fine, but the example reads as the
+   canonical soft-dep recipe, so it now matches `:pass` explicitly and documents
+   that the bare `{:noreply, socket}` only fits a host whose only Leaf editor is
+   the comments composer.
 
-2. **Upstream-concept leakage.** The schema describes `metadata` as
-   "Arbitrary JSONB data" — generic by design. Hard-coding the
-   `"annotation_uuid"` key here bakes a specific Etcher-integration convention
-   into the library's render path. For one attribute it's pragmatic, but if a
-   second or third such key shows up (`"thread_uuid"`, `"pin_uuid"`, …) it
-   would be worth promoting to a small generic mechanism — e.g. an optional
-   `:data_attrs` assign that the host LiveView passes through, or a render
-   slot — rather than continuing to enumerate keys inside the component. Not
-   for this PR; just flagging the slippery-slope direction.
+2. **No test coverage.** Consistent with the repo (only
+   `phoenix_kit_comments_test.exs` exists), so not a regression. A small test
+   that `on_mount/4` attaches the hook and that `__forward_leaf__/2` returns
+   `{:halt}` on a `{:noreply}` and `{:cont}` on `:pass` would lock in the
+   routing contract cheaply. Optional.
 
-3. **No test coverage for the new attributes.** A render snapshot or a single
-   `Floki.attribute/2` assertion in whatever component test already exists
-   would lock in the contract for downstream code that depends on the
-   attribute being there. Cheap to add later.
-
-4. **Attribute ordering inside the tag is now alphabetical-ish-but-not-quite**
-   (`data-comment-uuid`, `data-annotation-uuid`, `class`). Pure nit; HTML
-   doesn't care. Mention it only because formatters sometimes do.
+3. **`__forward_leaf__/2` is `@doc false` but public.** Double-underscore
+   naming makes accidental external use unlikely and it's intentional as a
+   lifecycle-hook body — acceptable, just noting it's technically callable.
 
 ## Things I checked and ruled out
 
-- **N+1 / preload regression** — none; the change reads fields already on the
-  struct (`uuid`, `metadata`).
-- **Public API change** — none.
-- **Migration / schema impact** — none.
-- **CSP / XSS surface** — none; HEEx attribute escaping covers it, and the
-  values originate from server-side JSONB, not user-typed HTML.
-- **Other call sites** — grep for `data-comment-uuid`/`data-annotation-uuid`
-  shows the component is the sole producer; no consumer code in this repo
-  (consumers live in PhoenixKit/Etcher per PR body).
+- **Iron-law (no queries in mount)** — N/A; `on_mount` only attaches a hook.
+- **Double registration across remounts** — `attach_hook` runs once per mount;
+  hook name `:phoenix_kit_comments_leaf` is fixed and fine for single use.
+- **Message-swallowing of non-comments info messages** — none; the catch-all
+  `__forward_leaf__(_msg, socket) → {:cont, socket}` passes everything through.
+- **Public API / schema / migration impact** — none; purely additive.
+
+## Post-review fixes applied
+
+Committed to `main` after this review:
+
+- **Tightened the soft-dep moduledoc example** (note 1) — match `:pass`
+  explicitly instead of a wildcard, and document that the bare
+  `{:noreply, socket}` only fits a host whose only Leaf editor is the comments
+  composer. Doc-only, no behavior change. (`1d92352`)
+- **Aliased `CommentsComponent` in `__forward_leaf__/2`** to satisfy
+  `credo --strict` (`Design.AliasUsage`), which flagged the fully-qualified
+  reference. Safe here because the hook body runs in this module, not injected
+  into the caller. (`9af5e67`)
+- `mix precommit` (compile `--warnings-as-errors`, `deps.unlock --check-unused`,
+  `format --check-formatted`, `credo --strict`, `dialyzer`) now passes green.
 
 ## Suggested follow-ups (optional)
 
-- Add a one-line test asserting both attributes render (or are omitted) under
-  the expected conditions.
-- If more "linked resource" keys land in `metadata`, refactor to a generic
-  `:data_attrs` slot/assign rather than enumerating keys inside
-  `render_comment/1`.
+- Add a one-line test for the hook attach + the `{:halt}`/`{:cont}` routing.

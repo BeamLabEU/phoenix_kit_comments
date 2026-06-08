@@ -190,12 +190,7 @@
                 liked_comment_uuids={@liked_comment_uuids}
                 disliked_comment_uuids={@disliked_comment_uuids}
                 reply_to={@reply_to}
-                new_comment={@new_comment}
-                max_length={@max_length}
-                uploads={@uploads}
-                attachments_enabled?={@attachments_enabled?}
-                max_attachments={@max_attachments}
-                max_attachment_size_mb={@max_attachment_size_mb}
+                ctx={assigns}
               />
             <% end %>
           </div>

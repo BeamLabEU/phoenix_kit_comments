@@ -1209,12 +1209,23 @@ defmodule PhoenixKitComments do
   defp empty_deleted?(%{status: "deleted", children: []}), do: true
   defp empty_deleted?(_), do: false
 
+  # Insert a like/dislike via the changeset, then bump the counter.
+  #
+  # NOTE: we deliberately do NOT use `insert_all` with
+  # `on_conflict: :nothing, conflict_target: [:comment_uuid, :user_uuid]`.
+  # The likes/dislikes tables have no composite unique index on
+  # (comment_uuid, user_uuid) — the original UNIQUE(comment_id, user_id)
+  # was dropped when the integer `user_id` column was removed during the
+  # uuid-FK migration, and nothing recreates it on `user_uuid`. With no
+  # matching index, `ON CONFLICT (comment_uuid, user_uuid)` raises
+  # Postgrex "no unique or exclusion constraint matching" on every
+  # insert. The `reaction_exists?/3` precheck is therefore the dedup.
   defp insert_reaction(schema, comment_uuid, user_uuid, counter_field) do
     if reaction_exists?(schema, comment_uuid, user_uuid) do
       false
     else
-      %{}
-      |> then(&struct(schema, &1))
+      schema
+      |> struct()
       |> schema.changeset(%{comment_uuid: comment_uuid, user_uuid: user_uuid})
       |> repo().insert()
       |> case do
