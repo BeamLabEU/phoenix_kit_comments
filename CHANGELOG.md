@@ -2,7 +2,7 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
-## 0.2.7 — Unreleased
+## 0.2.7 — 2026-06-08
 
 ### Added
 
@@ -14,7 +14,10 @@ All notable changes to PhoenixKitComments will be documented in this file.
 - Scoped CSS (`.pk-comment-md`) restores list / blockquote / heading / code
   styling that Tailwind's preflight resets, without depending on the
   `@tailwindcss/typography` (`prose`) plugin being present in the host — so
-  lists render with bullets/numbers even where prose isn't configured.
+  lists render with bullets/numbers even where prose isn't configured. Inline
+  `` `code` `` gets a chip background, fenced `<pre>` blocks get a backdrop, and
+  links render in the theme primary color so they're distinguishable from
+  emphasized text.
 
 ### Changed
 
