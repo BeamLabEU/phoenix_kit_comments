@@ -2,6 +2,40 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.7 — Unreleased
+
+### Added
+
+- Comment bodies now render their markdown (authored in the Leaf editor) to
+  sanitized HTML on display via core's `<.markdown>` component (Earmark +
+  `HtmlSanitizer`), so bold / italics / lists / quotes / links / code show
+  formatted instead of as raw markdown. Previously the raw content string was
+  shown verbatim.
+- Scoped CSS (`.pk-comment-md`) restores list / blockquote / heading / code
+  styling that Tailwind's preflight resets, without depending on the
+  `@tailwindcss/typography` (`prose`) plugin being present in the host — so
+  lists render with bullets/numbers even where prose isn't configured.
+
+### Changed
+
+- `leaf` is now a required dependency at `~> 0.2.22` (was `optional: true`,
+  `~> 0.2`). The comment composer is built on the Leaf editor, and phoenix_kit
+  core already hard-depends on leaf, so it's always present wherever comments
+  runs — the optional declaration described an unreachable leaf-free build. The
+  `0.2.22` minimum pulls in Leaf's markdown-link round-trip fix (editing a
+  comment with a link no longer doubles it into `[[label](url)](url)`). The
+  `leaf_available?/0` textarea fallback stays as defensive code.
+
+### Fixed
+
+- `CommentsComponent` no longer flips to "Sign in to post a comment" for a
+  logged-in user on a partial `send_update`. `can_post?` was derived from
+  the incoming `assigns[:current_user]` (nil on any update that omits it,
+  e.g. a parent poking `loaded?: false` to refresh the thread — as
+  PhoenixKit's MediaCanvasViewer does when an annotation is drawn). It now
+  reads the resolved socket value (kept across updates by `assign_new`),
+  so the composer stays available.
+
 ## 0.2.6 — 2026-06-07
 
 ### Features

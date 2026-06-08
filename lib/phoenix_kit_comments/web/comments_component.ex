@@ -46,6 +46,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   use PhoenixKitWeb, :live_component
 
   import PhoenixKitWeb.Components.Core.Icon
+  # Renders a comment's markdown (authored in the Leaf editor) to sanitized
+  # HTML on display, so bold/italics/lists/etc. show formatted instead of raw
+  # markdown. Earmark + HtmlSanitizer live in core (always present).
+  import PhoenixKitWeb.Components.Core.Markdown, only: [markdown: 1]
 
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
@@ -187,7 +191,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       #       label: <new string>}
       |> assign_new(:parent_module, fn -> nil end)
       |> assign_new(:parent_id, fn -> nil end)
-      |> assign(:can_post?, assigns[:current_user] != nil)
+      # Derive from the RESOLVED socket value (kept across updates by the
+      # assign_new above), NOT the incoming `assigns`. A partial
+      # `send_update` that omits `:current_user` — e.g. a parent poking
+      # `loaded?: false` to refresh the thread (MediaCanvasViewer does this
+      # when an annotation is drawn) — would otherwise read nil and flip
+      # the composer to "Sign in to post a comment" for a logged-in user.
+      |> then(&assign(&1, :can_post?, &1.assigns.current_user != nil))
       |> assign(:giphy_enabled?, PhoenixKitComments.giphy_enabled?())
       |> assign(:attachments_enabled?, PhoenixKitComments.attachments_enabled?())
       |> assign(:max_length, PhoenixKitComments.get_max_length())
@@ -1144,8 +1154,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           </.form>
         <% else %>
           <%= if @comment.content && @comment.content != "" do %>
-            <div class="text-base-content break-words">
-              {@comment.content}
+            <div class="text-base-content break-words pk-comment-md">
+              <.markdown content={@comment.content} compact />
             </div>
           <% end %>
           <%= if gif = comment_gif(@comment) do %>
