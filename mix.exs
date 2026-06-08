@@ -69,7 +69,7 @@ defmodule PhoenixKitComments.MixProject do
       # handle_info to `PhoenixKitComments.Web.CommentsComponent.forward_leaf_event/2`
       # for content sync to work (Leaf sends to `self()` which is the
       # parent LV process, not the comments LiveComponent).
-      {:leaf, "~> 0.2"},
+      {:leaf, "~> 0.2.22"},
 
       # Optional: add ex_doc for generating documentation
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},

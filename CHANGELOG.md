@@ -18,10 +18,12 @@ All notable changes to PhoenixKitComments will be documented in this file.
 
 ### Changed
 
-- `leaf` is now a required dependency (was `optional: true`). The comment
-  composer is built on the Leaf editor, and phoenix_kit core already
-  hard-depends on leaf, so it's always present wherever comments runs — the
-  optional declaration described an unreachable leaf-free build. The
+- `leaf` is now a required dependency at `~> 0.2.22` (was `optional: true`,
+  `~> 0.2`). The comment composer is built on the Leaf editor, and phoenix_kit
+  core already hard-depends on leaf, so it's always present wherever comments
+  runs — the optional declaration described an unreachable leaf-free build. The
+  `0.2.22` minimum pulls in Leaf's markdown-link round-trip fix (editing a
+  comment with a link no longer doubles it into `[[label](url)](url)`). The
   `leaf_available?/0` textarea fallback stays as defensive code.
 
 ### Fixed
