@@ -61,6 +61,28 @@
               />
             </label>
           </div>
+
+          <div class="form-control">
+            <label class="cursor-pointer flex flex-col sm:flex-row sm:items-center gap-3 p-2">
+              <span class="flex-1 min-w-0">
+                <span class="font-semibold text-lg">Rich-Text Editor</span>
+                <div class="text-sm text-base-content/70 mt-1">
+                  Use the Leaf rich-text editor in the comment composer. Turn off to
+                  fall back to a plain textarea — do this if the host app hasn't
+                  registered Leaf's JS hook (otherwise the editor hangs on its
+                  loading text).
+                </div>
+              </span>
+              <input type="hidden" name="settings[comments_rich_text]" value="false" />
+              <input
+                type="checkbox"
+                name="settings[comments_rich_text]"
+                value="true"
+                class="toggle toggle-primary shrink-0"
+                checked={@comments_rich_text == "true"}
+              />
+            </label>
+          </div>
         </div>
       </div>
 

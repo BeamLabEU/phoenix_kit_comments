@@ -2,6 +2,35 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.8 — 2026-06-09
+
+### Added
+
+- **Cross-session live updates over `Phoenix.PubSub`** (#20). Comment create,
+  delete, and reaction changes now broadcast `{:comments_updated, %{resource_type,
+  resource_uuid, action}}` (`action` is `:created | :deleted | :reaction`) on a
+  per-resource topic. Hosts subscribe with `PhoenixKitComments.subscribe/2` (and
+  `unsubscribe/2`) so other connected users — count badges, open threads — update
+  without a reload. The payload mirrors the existing self-message the component
+  sends its own host, so there's one message contract for local and remote
+  updates. Broadcasts are best-effort and never break the write path; the PubSub
+  server is resolved via `PhoenixKit.PubSubHelper`.
+- **Batch comment counting** (#19). `count_comments/3` now accepts a **list** of
+  `resource_uuid`s and returns a `uuid => count` map from a single grouped query
+  (with a `0` entry for every requested uuid), avoiding the N+1 a host hit when
+  rendering one count badge per row. Honors the same `:status` / `:include_deleted`
+  options as the scalar form.
+
+### Changed
+
+- **Rich-text editor is now opt-out** (#18). The Leaf editor requires the host to
+  register Leaf's JS hook; when it's missing the composer silently hangs on its
+  loading text. Hosts can now fall back to the always-working plain `<textarea>`
+  via the new `comments_rich_text` setting (default `true`) or a `rich_text`
+  attr on `CommentsComponent`. Added an admin settings toggle and a "JavaScript
+  wiring" + troubleshooting section to the README documenting which hooks the
+  host must register.
+
 ## 0.2.7 — 2026-06-08
 
 ### Added

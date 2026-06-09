@@ -146,6 +146,41 @@ defmodule PhoenixKitCommentsTest do
     end
   end
 
+  describe "rich-text editor configuration" do
+    test "rich_text_enabled?/0 returns a boolean" do
+      assert is_boolean(PhoenixKitComments.rich_text_enabled?())
+    end
+  end
+
+  describe "batch count_comments/3" do
+    test "empty uuid list returns an empty map" do
+      assert PhoenixKitComments.count_comments("post", []) == %{}
+    end
+
+    test "returns a uuid => count map with a zero entry for every requested uuid" do
+      # No repo is configured in these unit tests, so the grouped query
+      # falls through to the rescue clause — which still must return the
+      # zero-filled, deduped shape callers rely on for uniform rendering.
+      uuid_a = "018e3c4a-9f6b-7890-abcd-ef1234567890"
+      uuid_b = "018e3c4a-1234-5678-abcd-ef1234567890"
+
+      assert PhoenixKitComments.count_comments("post", [uuid_a, uuid_b, uuid_a]) ==
+               %{uuid_a => 0, uuid_b => 0}
+    end
+  end
+
+  describe "live updates (PubSub)" do
+    test "topic/2 builds a per-resource topic string" do
+      assert PhoenixKitComments.topic("order", "abc-123") ==
+               "phoenix_kit_comments:order:abc-123"
+    end
+
+    test "subscribe/2 and unsubscribe/2 are exported" do
+      assert function_exported?(PhoenixKitComments, :subscribe, 2)
+      assert function_exported?(PhoenixKitComments, :unsubscribe, 2)
+    end
+  end
+
   describe "Comment.changeset content/media validation" do
     alias PhoenixKitComments.Comment
 

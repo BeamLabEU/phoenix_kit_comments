@@ -56,6 +56,7 @@ defmodule PhoenixKitComments do
   require Logger
 
   alias PhoenixKit.Dashboard.Tab
+  alias PhoenixKit.PubSubHelper
   alias PhoenixKit.Settings
   alias PhoenixKit.Utils.Routes
   alias PhoenixKit.Utils.UUID, as: UUIDUtils
@@ -116,6 +117,30 @@ defmodule PhoenixKitComments do
       {n, _} -> n
       :error -> 10_000
     end
+  end
+
+  # ============================================================================
+  # Composer / editor configuration
+  # ============================================================================
+
+  @doc """
+  Returns `true` when the rich-text (Leaf) editor should be used in the
+  comment composer.
+
+  The Leaf editor requires the host application to register Leaf's JS hook in
+  its `LiveSocket`. When the hook is missing the editor hangs on its loading
+  text with no server error — so hosts that haven't wired the JS (or simply
+  don't want rich text) can fall back to the always-working plain `<textarea>`
+  by setting `comments_rich_text` to `false`, or by passing
+  `rich_text={false}` to `CommentsComponent`.
+
+  Defaults to `true` (Leaf is a required dependency).
+  """
+  @spec rich_text_enabled?() :: boolean()
+  def rich_text_enabled? do
+    Settings.get_boolean_setting("comments_rich_text", true)
+  rescue
+    _ -> true
   end
 
   # ============================================================================
@@ -383,6 +408,7 @@ defmodule PhoenixKitComments do
          :ok <- validate_file_uuid_format(file_uuids),
          {:ok, comment} <- insert_comment_with_attachments(attrs, file_uuids) do
       notify_resource_handler(:on_comment_created, resource_type, resource_uuid, comment)
+      broadcast_change(resource_type, resource_uuid, :created)
       {:ok, comment}
     end
   end
@@ -517,6 +543,8 @@ defmodule PhoenixKitComments do
           deleted
         )
 
+        broadcast_change(comment.resource_type, comment.resource_uuid, :deleted)
+
         {:ok, deleted}
 
       error ->
@@ -604,12 +632,50 @@ defmodule PhoenixKitComments do
   end
 
   @doc """
-  Counts comments for a resource.
+  Counts comments for a resource, or a batch of resources.
+
+  When `resource_uuid` is a single UUID, returns the integer count for that
+  resource. When a **list** of UUIDs is given, returns a `uuid => count` map
+  in a single grouped query — including a `0` entry for every requested UUID
+  with no comments, so callers can render every row uniformly without an
+  N+1 (see `count_comments/3` with a list below).
 
   Mirrors `list_comments/3`: deleted rows are excluded unless `:status` is
   set explicitly or `include_deleted: true` is passed.
+
+  ## Examples
+
+      iex> count_comments("order", order_uuid)
+      3
+
+      iex> count_comments("order", [uuid_a, uuid_b, uuid_c])
+      %{uuid_a => 3, uuid_b => 0, uuid_c => 7}
   """
-  def count_comments(resource_type, resource_uuid, opts \\ []) do
+  @spec count_comments(String.t(), Ecto.UUID.t() | [Ecto.UUID.t()], keyword()) ::
+          non_neg_integer() | %{optional(Ecto.UUID.t()) => non_neg_integer()}
+  def count_comments(resource_type, resource_uuid_or_uuids, opts \\ [])
+
+  def count_comments(resource_type, resource_uuids, opts) when is_list(resource_uuids) do
+    status = Keyword.get(opts, :status)
+    include_deleted = Keyword.get(opts, :include_deleted, false)
+    uuids = Enum.uniq(resource_uuids)
+
+    counts =
+      from(c in Comment,
+        where: c.resource_type == ^resource_type and c.resource_uuid in ^uuids,
+        group_by: c.resource_uuid,
+        select: {c.resource_uuid, count(c.uuid)}
+      )
+      |> apply_status_filter(status, include_deleted)
+      |> repo().all()
+      |> Map.new()
+
+    Map.new(uuids, fn uuid -> {uuid, Map.get(counts, uuid, 0)} end)
+  rescue
+    _ -> Map.new(Enum.uniq(resource_uuids), &{&1, 0})
+  end
+
+  def count_comments(resource_type, resource_uuid, opts) do
     status = Keyword.get(opts, :status)
     include_deleted = Keyword.get(opts, :include_deleted, false)
 
@@ -1052,15 +1118,19 @@ defmodule PhoenixKitComments do
   `{:ok, :already_liked}` when the user had already liked the comment.
   """
   def like_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
-    repo().transaction(fn ->
-      maybe_remove_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count)
+    result =
+      repo().transaction(fn ->
+        maybe_remove_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count)
 
-      if insert_reaction(CommentLike, comment_uuid, user_uuid, :like_count) do
-        :liked
-      else
-        :already_liked
-      end
-    end)
+        if insert_reaction(CommentLike, comment_uuid, user_uuid, :like_count) do
+          :liked
+        else
+          :already_liked
+        end
+      end)
+
+    maybe_broadcast_reaction(result, comment_uuid)
+    result
   end
 
   @doc """
@@ -1069,7 +1139,9 @@ defmodule PhoenixKitComments do
   """
   def unlike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
     if maybe_remove_reaction(CommentLike, comment_uuid, user_uuid, :like_count) do
-      {:ok, :unliked}
+      result = {:ok, :unliked}
+      maybe_broadcast_reaction(result, comment_uuid)
+      result
     else
       {:error, :not_found}
     end
@@ -1115,15 +1187,19 @@ defmodule PhoenixKitComments do
   `{:ok, :already_disliked}` when the user had already disliked the comment.
   """
   def dislike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
-    repo().transaction(fn ->
-      maybe_remove_reaction(CommentLike, comment_uuid, user_uuid, :like_count)
+    result =
+      repo().transaction(fn ->
+        maybe_remove_reaction(CommentLike, comment_uuid, user_uuid, :like_count)
 
-      if insert_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count) do
-        :disliked
-      else
-        :already_disliked
-      end
-    end)
+        if insert_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count) do
+          :disliked
+        else
+          :already_disliked
+        end
+      end)
+
+    maybe_broadcast_reaction(result, comment_uuid)
+    result
   end
 
   @doc """
@@ -1133,7 +1209,9 @@ defmodule PhoenixKitComments do
   """
   def undislike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
     if maybe_remove_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count) do
-      {:ok, :undisliked}
+      result = {:ok, :undisliked}
+      maybe_broadcast_reaction(result, comment_uuid)
+      result
     else
       {:error, :not_found}
     end
@@ -1339,6 +1417,92 @@ defmodule PhoenixKitComments do
     |> String.replace("\\", "\\\\")
     |> String.replace("%", "\\%")
     |> String.replace("_", "\\_")
+  end
+
+  # ============================================================================
+  # Live updates (Phoenix.PubSub)
+  # ============================================================================
+
+  @doc """
+  Returns the PubSub topic for a resource's comment activity.
+
+  Hosts rarely need this directly — use `subscribe/2` — but it's exposed so
+  callers can match or build topics themselves.
+  """
+  @spec topic(String.t(), term()) :: String.t()
+  def topic(resource_type, resource_uuid),
+    do: "phoenix_kit_comments:#{resource_type}:#{resource_uuid}"
+
+  @doc """
+  Subscribes the calling process to a resource's comment activity.
+
+  Call this from a LiveView's `mount/3` (in the connected branch) so the
+  view receives cross-session updates when *any* user comments on, deletes
+  from, or reacts to the resource:
+
+      def mount(_params, _session, socket) do
+        if connected?(socket), do: PhoenixKitComments.subscribe("order", order_uuid)
+        {:ok, socket}
+      end
+
+      def handle_info({:comments_updated, %{action: action}}, socket) do
+        # action is :created | :deleted | :reaction
+        {:noreply, refresh_comment_badges(socket)}
+      end
+
+  The broadcast payload mirrors the `{:comments_updated, …}` message the
+  `CommentsComponent` already sends to its own host on create/delete, so a
+  host has one message contract for both local and remote updates.
+
+  The PubSub server is resolved via `PhoenixKit.PubSubHelper` (configurable
+  with `config :phoenix_kit, pubsub: MyApp.PubSub`).
+  """
+  @spec subscribe(String.t(), term()) :: :ok | {:error, term()}
+  def subscribe(resource_type, resource_uuid) do
+    PubSubHelper.subscribe(topic(resource_type, resource_uuid))
+  end
+
+  @doc "Unsubscribes the calling process from a resource's comment activity."
+  @spec unsubscribe(String.t(), term()) :: :ok
+  def unsubscribe(resource_type, resource_uuid) do
+    Phoenix.PubSub.unsubscribe(PubSubHelper.pubsub(), topic(resource_type, resource_uuid))
+  end
+
+  # Best-effort broadcast of a comment change. Never lets a missing/unstarted
+  # PubSub server break the write path that triggered it.
+  defp broadcast_change(resource_type, resource_uuid, action) do
+    PubSubHelper.broadcast(
+      topic(resource_type, resource_uuid),
+      {:comments_updated,
+       %{resource_type: resource_type, resource_uuid: resource_uuid, action: action}}
+    )
+  rescue
+    error ->
+      Logger.debug("Comment change broadcast skipped: #{inspect(error)}")
+      :ok
+  end
+
+  # Reaction toggles only carry the comment_uuid; look up its resource so the
+  # broadcast lands on the same per-resource topic as create/delete. Only
+  # fires when the reaction state actually changed.
+  defp maybe_broadcast_reaction({:ok, action}, comment_uuid)
+       when action in [:liked, :unliked, :disliked, :undisliked] do
+    case comment_resource(comment_uuid) do
+      {resource_type, resource_uuid} -> broadcast_change(resource_type, resource_uuid, :reaction)
+      _ -> :ok
+    end
+  end
+
+  defp maybe_broadcast_reaction(_result, _comment_uuid), do: :ok
+
+  defp comment_resource(comment_uuid) do
+    from(c in Comment,
+      where: c.uuid == ^comment_uuid,
+      select: {c.resource_type, c.resource_uuid}
+    )
+    |> repo().one()
+  rescue
+    _ -> nil
   end
 
   defp notify_resource_handler(callback, resource_type, resource_uuid, comment) do

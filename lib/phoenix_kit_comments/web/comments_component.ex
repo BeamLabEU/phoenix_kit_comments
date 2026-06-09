@@ -24,6 +24,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   - `enabled` - Whether comments are enabled (default: true)
   - `show_likes` - Show like/dislike buttons (default: true)
   - `title` - Section title (default: "Comments")
+  - `rich_text` - Use the rich-text (Leaf) editor in the composer
+    (default: the `comments_rich_text` setting, which defaults to `true`).
+    Pass `false` to force the plain `<textarea>` — useful when the host
+    hasn't registered Leaf's JS hook, since the Leaf editor otherwise hangs
+    on its loading text with no server-side error. See the README's
+    "JavaScript wiring" section.
 
   ## Slots
 
@@ -132,6 +138,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> assign_new(:enabled, fn -> true end)
       |> assign_new(:show_likes, fn -> true end)
       |> assign_new(:title, fn -> gettext("Comments") end)
+      # Rich-text (Leaf) editor opt-out. Host attr wins; otherwise the
+      # `comments_rich_text` setting (default true). The effective
+      # `:leaf_editor?` below also requires Leaf to actually be loaded.
+      |> assign_new(:rich_text, fn -> PhoenixKitComments.rich_text_enabled?() end)
       # Header presentation. `show_title` renders the
       # "{title} ({count})" line; `collapsible` turns that line into a
       # disclosure toggle for the whole body; `initial_collapsed` is the
@@ -201,6 +211,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> assign(:giphy_enabled?, PhoenixKitComments.giphy_enabled?())
       |> assign(:attachments_enabled?, PhoenixKitComments.attachments_enabled?())
       |> assign(:max_length, PhoenixKitComments.get_max_length())
+      # Effective editor choice: rich text only when the host wants it AND
+      # Leaf is loaded. All composer/edit/submit paths key off this.
+      |> then(&assign(&1, :leaf_editor?, &1.assigns.rich_text and leaf_available?()))
 
     # Seed collapse state once from initial_collapsed, then leave it
     # alone. assign_new only fires when :collapsed? is absent, so the
@@ -245,7 +258,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> Map.get("comment")
       |> case do
         nil ->
-          if leaf_available?(),
+          if socket.assigns.leaf_editor?,
             do: socket.assigns.new_comment,
             else: ""
 
@@ -489,7 +502,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> Map.get("content")
       |> case do
         nil ->
-          if leaf_available?(),
+          if socket.assigns.leaf_editor?,
             do: socket.assigns.editing_content,
             else: ""
 
@@ -725,6 +738,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
              ) do
           {:ok, _comment} ->
             reset_leaf_draft_editor(
+              socket.assigns.leaf_editor?,
               socket.assigns.id,
               socket.assigns.reply_to,
               socket.assigns.composer_open_at
@@ -1116,7 +1130,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             <%!-- a fresh Leaf when the user opens edit on a different     --%>
             <%!-- comment. Save reads from socket.assigns.editing_content   --%>
             <%!-- (kept fresh via forwarded :leaf_changed events).         --%>
-            <%= if leaf_available?() do %>
+            <%= if @ctx.leaf_editor? do %>
               <.live_component
                 module={Leaf}
                 id={edit_editor_id(@component_id, @comment.uuid)}
@@ -1533,7 +1547,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       <%!-- {:leaf_changed, ...} via forward_leaf_event/2 so the       --%>
       <%!-- content syncs to socket.assigns.new_comment for submit.    --%>
       <%!-- Without leaf, fall back to the original plain textarea.     --%>
-      <%= if leaf_available?() do %>
+      <%= if @ctx.leaf_editor? do %>
         <.live_component
           module={Leaf}
           id={@editor_id}
@@ -1911,8 +1925,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   # Clear the Leaf editor that was just submitted. For a reply it's the
   # per-comment reply editor; for a new comment it's the draft editor at
-  # whichever position was open (falls back to :top if unknown).
-  defp reset_leaf_draft_editor(component_id, reply_to, composer_open_at) do
+  # whichever position was open (falls back to :top if unknown). No-op when
+  # the plain-textarea fallback is in use (no Leaf editor to reset).
+  defp reset_leaf_draft_editor(false, _component_id, _reply_to, _composer_open_at), do: :ok
+
+  defp reset_leaf_draft_editor(true, component_id, reply_to, composer_open_at) do
     if leaf_available?() do
       editor_id =
         case reply_to do

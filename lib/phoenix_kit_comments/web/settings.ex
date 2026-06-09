@@ -152,6 +152,7 @@ defmodule PhoenixKitComments.Web.Settings do
         defaults = %{
           "comments_enabled" => "false",
           "comments_moderation" => "false",
+          "comments_rich_text" => "true",
           "comments_max_depth" => "10",
           "comments_max_length" => "10000",
           "comments_giphy_enabled" => "false",
@@ -178,6 +179,7 @@ defmodule PhoenixKitComments.Web.Settings do
   @allowed_settings ~w(
     comments_enabled
     comments_moderation
+    comments_rich_text
     comments_max_depth
     comments_max_length
     comments_giphy_enabled
@@ -325,6 +327,7 @@ defmodule PhoenixKitComments.Web.Settings do
     socket
     |> assign(:comments_enabled, "false")
     |> assign(:comments_moderation, "false")
+    |> assign(:comments_rich_text, "true")
     |> assign(:comments_max_depth, "10")
     |> assign(:comments_max_length, "10000")
     |> assign(:comments_giphy_enabled, "false")
@@ -354,6 +357,7 @@ defmodule PhoenixKitComments.Web.Settings do
     socket
     |> assign(:comments_enabled, Settings.get_setting("comments_enabled", "false"))
     |> assign(:comments_moderation, Settings.get_setting("comments_moderation", "false"))
+    |> assign(:comments_rich_text, Settings.get_setting("comments_rich_text", "true"))
     |> assign(:comments_max_depth, Settings.get_setting("comments_max_depth", "10"))
     |> assign(:comments_max_length, Settings.get_setting("comments_max_length", "10000"))
     |> assign(:comments_giphy_enabled, Settings.get_setting("comments_giphy_enabled", "false"))
