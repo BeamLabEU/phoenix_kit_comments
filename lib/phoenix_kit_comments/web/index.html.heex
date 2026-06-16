@@ -217,6 +217,14 @@
         end
       }
     >
+      <%!-- Toolbar header: the filtered result count (the stats above show the
+           unfiltered totals) shares the row with the grid/list view toggle, so
+           the toggle no longer sits alone on a row of its own. --%>
+      <:toolbar_title>
+        <span class="text-sm font-medium text-base-content/70">
+          {ngettext("%{count} comment", "%{count} comments", @total)}
+        </span>
+      </:toolbar_title>
       <:card_actions :let={comment}>
         <%= case resource_info(@resource_context, comment) do %>
           <% %{path: path, prefixed: true} -> %>
