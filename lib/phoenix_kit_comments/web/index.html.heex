@@ -45,14 +45,25 @@
     <.form for={%{}} phx-change="filter" class="flex gap-4 items-end">
       <div class="form-control flex-1">
         <label class="label"><span class="label-text">{gettext("Search")}</span></label>
-        <input
-          type="text"
-          name="search[query]"
-          value={@search}
-          placeholder={gettext("Search comment content...")}
-          class="input input-bordered input-sm w-full"
-          phx-debounce="300"
-        />
+        <div class="relative">
+          <input
+            type="text"
+            name="search[query]"
+            value={@search}
+            placeholder={gettext("Search comment content...")}
+            class="input input-bordered input-sm w-full pr-8"
+            phx-debounce="300"
+          />
+          <button
+            :if={@search != ""}
+            type="button"
+            phx-click="clear_search"
+            class="absolute right-1.5 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
+            title={gettext("Clear search")}
+          >
+            <.icon name="hero-x-mark" class="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       <div class="form-control w-40">
@@ -101,14 +112,25 @@
     <.form for={%{}} phx-change="filter" class="space-y-3">
       <div class="form-control">
         <label class="label"><span class="label-text">{gettext("Search")}</span></label>
-        <input
-          type="text"
-          name="search[query]"
-          value={@search}
-          placeholder={gettext("Search comment content...")}
-          class="input input-bordered input-sm w-full"
-          phx-debounce="300"
-        />
+        <div class="relative">
+          <input
+            type="text"
+            name="search[query]"
+            value={@search}
+            placeholder={gettext("Search comment content...")}
+            class="input input-bordered input-sm w-full pr-8"
+            phx-debounce="300"
+          />
+          <button
+            :if={@search != ""}
+            type="button"
+            phx-click="clear_search"
+            class="absolute right-1.5 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
+            title={gettext("Clear search")}
+          >
+            <.icon name="hero-x-mark" class="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       <div class="grid grid-cols-2 gap-3">

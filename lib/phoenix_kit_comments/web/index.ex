@@ -79,6 +79,13 @@ defmodule PhoenixKitComments.Web.Index do
     {:noreply, push_patch(socket, to: Routes.path("/admin/comments"))}
   end
 
+  # Clear only the search (keep the resource-type / status filters).
+  @impl true
+  def handle_event("clear_search", _params, socket) do
+    new_params = build_url_params(socket.assigns, %{"page" => "1", "search" => ""})
+    {:noreply, push_patch(socket, to: Routes.path("/admin/comments?#{new_params}"))}
+  end
+
   @impl true
   def handle_event("approve", %{"uuid" => uuid}, socket) do
     with :ok <- check_authorization(socket),
