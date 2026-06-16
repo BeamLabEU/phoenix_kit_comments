@@ -1144,8 +1144,7 @@ defmodule PhoenixKitComments do
         end
       end)
 
-    maybe_broadcast_reaction(result, comment_uuid)
-    maybe_notify_on_reaction(result, comment_uuid, user_uuid, :on_comment_liked, :liked)
+    after_reaction(result, comment_uuid, user_uuid)
     result
   end
 
@@ -1156,8 +1155,7 @@ defmodule PhoenixKitComments do
   def unlike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
     if maybe_remove_reaction(CommentLike, comment_uuid, user_uuid, :like_count) do
       result = {:ok, :unliked}
-      maybe_broadcast_reaction(result, comment_uuid)
-      maybe_notify_on_reaction(result, comment_uuid, user_uuid, :on_comment_unliked, :unliked)
+      after_reaction(result, comment_uuid, user_uuid)
       result
     else
       {:error, :not_found}
@@ -1215,8 +1213,7 @@ defmodule PhoenixKitComments do
         end
       end)
 
-    maybe_broadcast_reaction(result, comment_uuid)
-    maybe_notify_on_reaction(result, comment_uuid, user_uuid, :on_comment_disliked, :disliked)
+    after_reaction(result, comment_uuid, user_uuid)
     result
   end
 
@@ -1228,16 +1225,7 @@ defmodule PhoenixKitComments do
   def undislike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
     if maybe_remove_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count) do
       result = {:ok, :undisliked}
-      maybe_broadcast_reaction(result, comment_uuid)
-
-      maybe_notify_on_reaction(
-        result,
-        comment_uuid,
-        user_uuid,
-        :on_comment_undisliked,
-        :undisliked
-      )
-
+      after_reaction(result, comment_uuid, user_uuid)
       result
     else
       {:error, :not_found}
@@ -1509,29 +1497,22 @@ defmodule PhoenixKitComments do
       :ok
   end
 
-  # Reaction toggles only carry the comment_uuid; look up its resource so the
-  # broadcast lands on the same per-resource topic as create/delete. Only
-  # fires when the reaction state actually changed.
-  defp maybe_broadcast_reaction({:ok, action}, comment_uuid)
+  # After a reaction toggle that actually changed state, broadcast the change
+  # and dispatch the matching resource-handler callback (`on_comment_liked/3`
+  # and siblings) — both off a single comment lookup. The head only matches the
+  # four real actions, so `{:ok, :already_liked}` (etc.) no-ops, `{:error, _}`,
+  # and rollbacks fall through to the no-op clause and never touch the DB. The
+  # callback payload carries `liker_uuid` because the comment row holds the
+  # author, not the reacting user; self-action skipping is the host's call. The
+  # whole thing is best-effort: a DB error here must not fail the (already
+  # committed) reaction, so it's rescued and logged.
+  defp after_reaction({:ok, action}, comment_uuid, liker_uuid)
        when action in [:liked, :unliked, :disliked, :undisliked] do
-    case comment_resource(comment_uuid) do
-      {resource_type, resource_uuid} -> broadcast_change(resource_type, resource_uuid, :reaction)
-      _ -> :ok
-    end
-  end
-
-  defp maybe_broadcast_reaction(_result, _comment_uuid), do: :ok
-
-  # Fire the per-resource reaction callback (`on_comment_liked/3` and siblings)
-  # only when the reaction state actually changed — the head binds the tuple's
-  # action to the expected 5th arg, so `{:ok, :already_liked}` (etc.) and error
-  # results fall through to the no-op clause. Mirrors `notify_resource_handler/4`
-  # but passes a `%{comment, liker_uuid}` payload, since the comment row doesn't
-  # carry the reacting user's uuid. Self-action skipping is the host's call.
-  defp maybe_notify_on_reaction({:ok, action}, comment_uuid, liker_uuid, callback, action) do
     case get_comment(comment_uuid) do
       %Comment{resource_type: resource_type, resource_uuid: resource_uuid} = comment ->
-        notify_resource_handler(callback, resource_type, resource_uuid, %{
+        broadcast_change(resource_type, resource_uuid, :reaction)
+
+        notify_resource_handler(reaction_callback(action), resource_type, resource_uuid, %{
           comment: comment,
           liker_uuid: liker_uuid
         })
@@ -1539,19 +1520,18 @@ defmodule PhoenixKitComments do
       nil ->
         :ok
     end
-  end
-
-  defp maybe_notify_on_reaction(_result, _comment_uuid, _liker_uuid, _callback, _action), do: :ok
-
-  defp comment_resource(comment_uuid) do
-    from(c in Comment,
-      where: c.uuid == ^comment_uuid,
-      select: {c.resource_type, c.resource_uuid}
-    )
-    |> repo().one()
   rescue
-    _ -> nil
+    error ->
+      Logger.warning("Reaction broadcast/notify skipped: #{inspect(error)}")
+      :ok
   end
+
+  defp after_reaction(_result, _comment_uuid, _liker_uuid), do: :ok
+
+  defp reaction_callback(:liked), do: :on_comment_liked
+  defp reaction_callback(:unliked), do: :on_comment_unliked
+  defp reaction_callback(:disliked), do: :on_comment_disliked
+  defp reaction_callback(:undisliked), do: :on_comment_undisliked
 
   defp notify_resource_handler(callback, resource_type, resource_uuid, comment) do
     handlers = resource_handlers()

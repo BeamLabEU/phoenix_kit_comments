@@ -21,9 +21,10 @@ Purely additive.
 
 ## Verdict
 
-**Approve.** Correct and well-scoped. The only substantive note is an
-efficiency one (#1): the change adds a second, unconditional DB read per
-reaction toggle on a hot path. Worth a follow-up but not blocking.
+**Approve.** Correct and well-scoped. The one substantive note was an
+efficiency item (#1) — a second, unconditional DB read per reaction toggle on a
+hot path. That has now been **fixed** in a follow-up commit (see
+[Post-review fixes](#post-review-fixes)).
 
 ## What's good
 
@@ -55,6 +56,7 @@ reaction toggle on a hot path. Worth a follow-up but not blocking.
 ## Findings
 
 1. **(Medium — efficiency) Unconditional extra full-row `SELECT` per reaction.**
+   ✅ **Fixed** (see [Post-review fixes](#post-review-fixes)).
    `maybe_notify_on_reaction/5` calls `get_comment/1` (a `SELECT *`)
    *unconditionally* on every successful toggle, regardless of whether any
    handler is registered for the resource. Combined with
@@ -91,9 +93,42 @@ reaction toggle on a hot path. Worth a follow-up but not blocking.
    behaviour with `@optional_callbacks` would give hosts compile-time names and a
    single place to read the contract. A future-cleanup item, not for this PR.
 
+## Post-review fixes
+
+Applied directly to `main` after the post-hoc review (finding #1):
+
+- **Folded `maybe_broadcast_reaction/2` + `maybe_notify_on_reaction/5` into one
+  `after_reaction/3`** sharing a single `get_comment/1` lookup. Each reaction
+  toggle now issues **one** comment read instead of two (the full row is a
+  superset of the `{resource_type, resource_uuid}` the broadcast needed), and
+  the no-op clause touches the DB **zero** times — so hosts that don't register
+  reaction callbacks pay nothing beyond what they paid before the feature, and
+  even registered hosts drop from two reads to one.
+- **Dropped the now-unused `comment_resource/1` helper** (its only caller was the
+  old broadcast helper).
+- **Derive the callback from the action** via `reaction_callback/1` instead of
+  threading both `callback` and the expected `action` through every call site.
+  The four call sites collapse to `after_reaction(result, comment_uuid,
+  user_uuid)`; the head's `action in [:liked, :unliked, :disliked, :undisliked]`
+  guard preserves the exact "only on real state change" gating (`:already_liked`
+  etc. still no-op).
+- **Made the side-effect genuinely best-effort.** `after_reaction/3` is now
+  `rescue`-wrapped and logs on failure. Previously the broadcast path swallowed
+  DB errors (via the rescued `comment_resource/1`) but the notify path's
+  `get_comment/1` did **not** — a transient read error there would have raised
+  out of the already-committed `like_comment/2`, surfacing a committed reaction
+  as a failure. The unified helper closes that gap.
+
+Behavior is otherwise unchanged: same callbacks, same `%{comment, liker_uuid}`
+payload, same broadcast-then-notify ordering, same fire-only-on-state-change
+semantics. `mix compile --warnings-as-errors` is green. Version left at 0.2.9
+(internal refactor, no API change). Findings #2 (tests) and #3 (behaviour
+declaration) remain open as noted.
+
 ## Conclusion
 
 Additive, correct, and faithful to the existing resource-handler conventions.
-The lone actionable item is the redundant per-reaction read in finding #1;
-folding the broadcast and notify lookups into a single fetch would restore the
-original one-query cost while keeping the new callbacks. Approve as merged.
+The one actionable item — the redundant per-reaction read in finding #1 — has
+been fixed by folding the broadcast and notify lookups into a single fetch,
+restoring the original one-query cost while keeping the new callbacks (and
+tightening their best-effort error handling). Approve as merged.
