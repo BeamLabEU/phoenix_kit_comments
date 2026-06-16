@@ -12,7 +12,7 @@ defmodule PhoenixKitComments.Web.Index do
 
   use PhoenixKitWeb, :live_view
 
-  import PhoenixKitComments.Web.Markdown, only: [comment_markdown: 1]
+  import PhoenixKitComments.Web.Markdown, only: [comment_markdown: 1, comment_markdown_styles: 1]
 
   alias PhoenixKit.Settings
   alias PhoenixKit.Users.Auth.Scope
@@ -32,6 +32,7 @@ defmodule PhoenixKitComments.Web.Index do
         |> assign(:total, 0)
         |> assign(:total_pages, 1)
         |> assign(:resource_context, %{})
+        |> assign(:viewing_comment, nil)
         |> assign(:stats, empty_stats())
         |> assign(:selected_uuids, [])
         |> assign(:resource_types, [])
@@ -84,6 +85,19 @@ defmodule PhoenixKitComments.Web.Index do
   def handle_event("clear_search", _params, socket) do
     new_params = build_url_params(socket.assigns, %{"page" => "1", "search" => ""})
     {:noreply, push_patch(socket, to: Routes.path("/admin/comments?#{new_params}"))}
+  end
+
+  # Open / close the full-comment modal (the list view only shows a truncated
+  # preview; this shows the whole comment in formatted prose).
+  @impl true
+  def handle_event("view_comment", %{"uuid" => uuid}, socket) do
+    {:noreply,
+     assign(socket, :viewing_comment, PhoenixKitComments.get_comment(uuid, preload: [:user]))}
+  end
+
+  @impl true
+  def handle_event("close_comment", _params, socket) do
+    {:noreply, assign(socket, :viewing_comment, nil)}
   end
 
   @impl true
@@ -257,6 +271,9 @@ defmodule PhoenixKitComments.Web.Index do
     |> assign(:total, result.total)
     |> assign(:total_pages, result.total_pages)
     |> assign(:resource_context, resource_context)
+    # Reloading the list (an action, filter, or navigation) closes the open
+    # full-comment modal so it never shows stale content.
+    |> assign(:viewing_comment, nil)
   end
 
   defp reload_stats(socket) do

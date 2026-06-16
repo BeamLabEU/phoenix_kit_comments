@@ -1,4 +1,5 @@
 <div class="container flex flex-col mx-auto px-4 py-6">
+  <.comment_markdown_styles />
   <%!-- Title + subtitle now live in the top navbar (set via the page_title /
        page_subtitle assigns); the Settings shortcut lives in the filter
        toolbar below so it doesn't claim a row of its own. --%>
@@ -242,11 +243,14 @@
           <.resource_chip comment={comment} resource_context={@resource_context} />
         </div>
         <.reply_indicator comment={comment} />
-        <.comment_markdown
-          content={comment.content}
-          compact
-          class="text-sm max-h-40 overflow-y-auto"
-        />
+        <div
+          class="cursor-pointer"
+          phx-click="view_comment"
+          phx-value-uuid={comment.uuid}
+          title={gettext("Click to read the full comment")}
+        >
+          <.comment_markdown content={comment.content} compact class="text-sm line-clamp-1" />
+        </div>
       </:card_header>
       <:card_actions :let={comment}>
         <%!-- Distinct id from the table menu: both views are in the DOM. --%>
@@ -279,14 +283,16 @@
             </.table_default_cell>
             <.table_default_cell class="max-w-xs">
               <.reply_indicator comment={comment} />
-              <%!-- Render the markdown so bold/italics/lists/etc. show
-                   formatted; cap the height so long comments don't blow up the
-                   row (scroll within the cell instead). --%>
-              <.comment_markdown
-                content={comment.content}
-                compact
-                class="text-sm max-h-32 overflow-y-auto"
-              />
+              <%!-- Truncated formatted preview; click opens the full comment in
+                   a modal so long comments don't blow up the row. --%>
+              <div
+                class="cursor-pointer"
+                phx-click="view_comment"
+                phx-value-uuid={comment.uuid}
+                title={gettext("Click to read the full comment")}
+              >
+                <.comment_markdown content={comment.content} compact class="text-sm line-clamp-1" />
+              </div>
             </.table_default_cell>
             <.table_default_cell class="text-sm">
               <%= if comment.user do %>
@@ -337,6 +343,56 @@
           </.link>
         <% end %>
       </div>
+    </div>
+  <% end %>
+
+  <%!-- Full-comment modal — opened by clicking a truncated comment in the list.
+       Shows the whole comment in formatted prose plus context and the same
+       status-aware action menu. --%>
+  <%= if @viewing_comment do %>
+    <div class="modal modal-open" phx-window-keydown="close_comment" phx-key="Escape">
+      <div class="modal-box max-w-2xl">
+        <div class="flex items-start justify-between gap-3 mb-3">
+          <h3 class="font-bold text-lg">{gettext("Comment")}</h3>
+          <div class="flex items-center gap-1">
+            <.comment_actions_menu
+              comment={@viewing_comment}
+              id={"comment-menu-modal-#{@viewing_comment.uuid}"}
+            />
+            <button
+              phx-click="close_comment"
+              class="btn btn-sm btn-circle btn-ghost"
+              title={gettext("Close")}
+            >
+              <.icon name="hero-x-mark" class="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 mb-3 text-sm text-base-content/70">
+          <span>
+            {if @viewing_comment.user,
+              do: @viewing_comment.user.email,
+              else: gettext("Deleted user")}
+          </span>
+          <span class="text-base-content/30">·</span>
+          <span>{Calendar.strftime(@viewing_comment.inserted_at, "%b %d, %Y")}</span>
+          <span class={status_badge_class(@viewing_comment.status)}>{@viewing_comment.status}</span>
+        </div>
+
+        <div class="mb-3">
+          <.resource_chip comment={@viewing_comment} resource_context={@resource_context} />
+        </div>
+
+        <div class="rounded-lg bg-base-200 p-4 max-h-[60vh] overflow-y-auto">
+          <.comment_markdown content={@viewing_comment.content} />
+        </div>
+
+        <div class="modal-action">
+          <button phx-click="close_comment" class="btn btn-ghost">{gettext("Close")}</button>
+        </div>
+      </div>
+      <div class="modal-backdrop" phx-click="close_comment"></div>
     </div>
   <% end %>
 </div>
