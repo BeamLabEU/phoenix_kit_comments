@@ -1,15 +1,15 @@
 <div class="container flex flex-col mx-auto px-4 py-6">
   <.admin_page_header
     back={Routes.path("/admin")}
-    title="Comments"
-    subtitle="Moderate comments across all content"
+    title={gettext("Comments")}
+    subtitle={gettext("Moderate comments across all content")}
   >
     <:actions>
       <.link
         navigate={Routes.path("/admin/settings/comments")}
         class="btn btn-ghost btn-sm"
       >
-        <.icon name="hero-cog-6-tooth" class="w-4 h-4" /> Settings
+        <.icon name="hero-cog-6-tooth" class="w-4 h-4" /> {gettext("Settings")}
       </.link>
     </:actions>
   </.admin_page_header>
@@ -17,23 +17,23 @@
   <%!-- Statistics --%>
   <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
     <div class="stat bg-base-200 rounded-xl">
-      <div class="stat-title">Total</div>
+      <div class="stat-title">{gettext("Total")}</div>
       <div class="stat-value text-primary text-2xl">{@stats.total}</div>
     </div>
     <div class="stat bg-base-200 rounded-xl">
-      <div class="stat-title">Published</div>
+      <div class="stat-title">{gettext("Published")}</div>
       <div class="stat-value text-success text-2xl">{@stats.published}</div>
     </div>
     <div class="stat bg-base-200 rounded-xl">
-      <div class="stat-title">Pending</div>
+      <div class="stat-title">{gettext("Pending")}</div>
       <div class="stat-value text-warning text-2xl">{@stats.pending}</div>
     </div>
     <div class="stat bg-base-200 rounded-xl">
-      <div class="stat-title">Hidden</div>
+      <div class="stat-title">{gettext("Hidden")}</div>
       <div class="stat-value text-info text-2xl">{@stats.hidden}</div>
     </div>
     <div class="stat bg-base-200 rounded-xl">
-      <div class="stat-title">Deleted</div>
+      <div class="stat-title">{gettext("Deleted")}</div>
       <div class="stat-value text-error text-2xl">{@stats.deleted}</div>
     </div>
   </div>
@@ -42,22 +42,22 @@
   <div class="hidden md:block bg-base-200 rounded-lg p-4 mb-6">
     <.form for={%{}} phx-change="filter" class="flex gap-4 items-end">
       <div class="form-control flex-1">
-        <label class="label"><span class="label-text">Search</span></label>
+        <label class="label"><span class="label-text">{gettext("Search")}</span></label>
         <input
           type="text"
           name="search[query]"
           value={@search}
-          placeholder="Search comment content..."
+          placeholder={gettext("Search comment content...")}
           class="input input-bordered input-sm w-full"
           phx-debounce="300"
         />
       </div>
 
       <div class="form-control w-40">
-        <label class="label"><span class="label-text">Resource Type</span></label>
+        <label class="label"><span class="label-text">{gettext("Resource Type")}</span></label>
         <label class="select select-sm w-full">
           <select name="filter[resource_type]">
-            <option value="">All Types</option>
+            <option value="">{gettext("All Types")}</option>
             <%= for rt <- @resource_types do %>
               <option value={rt} selected={@filter_resource_type == rt}>
                 {String.capitalize(rt)}
@@ -68,20 +68,28 @@
       </div>
 
       <div class="form-control w-36">
-        <label class="label"><span class="label-text">Status</span></label>
+        <label class="label"><span class="label-text">{gettext("Status")}</span></label>
         <label class="select select-sm w-full">
           <select name="filter[status]">
-            <option value="">All Statuses</option>
-            <option value="published" selected={@filter_status == "published"}>Published</option>
-            <option value="pending" selected={@filter_status == "pending"}>Pending</option>
-            <option value="hidden" selected={@filter_status == "hidden"}>Hidden</option>
-            <option value="deleted" selected={@filter_status == "deleted"}>Deleted</option>
+            <option value="">{gettext("All Statuses")}</option>
+            <option value="published" selected={@filter_status == "published"}>
+              {gettext("Published")}
+            </option>
+            <option value="pending" selected={@filter_status == "pending"}>
+              {gettext("Pending")}
+            </option>
+            <option value="hidden" selected={@filter_status == "hidden"}>
+              {gettext("Hidden")}
+            </option>
+            <option value="deleted" selected={@filter_status == "deleted"}>
+              {gettext("Deleted")}
+            </option>
           </select>
         </label>
       </div>
 
       <button type="button" phx-click="clear_filters" class="btn btn-ghost btn-sm shrink-0">
-        Clear
+        {gettext("Clear")}
       </button>
     </.form>
   </div>
@@ -90,12 +98,12 @@
   <div class="md:hidden bg-base-200 rounded-lg p-4 mb-6">
     <.form for={%{}} phx-change="filter" class="space-y-3">
       <div class="form-control">
-        <label class="label"><span class="label-text">Search</span></label>
+        <label class="label"><span class="label-text">{gettext("Search")}</span></label>
         <input
           type="text"
           name="search[query]"
           value={@search}
-          placeholder="Search comment content..."
+          placeholder={gettext("Search comment content...")}
           class="input input-bordered input-sm w-full"
           phx-debounce="300"
         />
@@ -103,10 +111,10 @@
 
       <div class="grid grid-cols-2 gap-3">
         <div class="form-control">
-          <label class="label"><span class="label-text">Resource Type</span></label>
+          <label class="label"><span class="label-text">{gettext("Resource Type")}</span></label>
           <label class="select select-sm w-full">
             <select name="filter[resource_type]">
-              <option value="">All Types</option>
+              <option value="">{gettext("All Types")}</option>
               <%= for rt <- @resource_types do %>
                 <option value={rt} selected={@filter_resource_type == rt}>
                   {String.capitalize(rt)}
@@ -117,21 +125,29 @@
         </div>
 
         <div class="form-control">
-          <label class="label"><span class="label-text">Status</span></label>
+          <label class="label"><span class="label-text">{gettext("Status")}</span></label>
           <label class="select select-sm w-full">
             <select name="filter[status]">
-              <option value="">All Statuses</option>
-              <option value="published" selected={@filter_status == "published"}>Published</option>
-              <option value="pending" selected={@filter_status == "pending"}>Pending</option>
-              <option value="hidden" selected={@filter_status == "hidden"}>Hidden</option>
-              <option value="deleted" selected={@filter_status == "deleted"}>Deleted</option>
+              <option value="">{gettext("All Statuses")}</option>
+              <option value="published" selected={@filter_status == "published"}>
+                {gettext("Published")}
+              </option>
+              <option value="pending" selected={@filter_status == "pending"}>
+                {gettext("Pending")}
+              </option>
+              <option value="hidden" selected={@filter_status == "hidden"}>
+                {gettext("Hidden")}
+              </option>
+              <option value="deleted" selected={@filter_status == "deleted"}>
+                {gettext("Deleted")}
+              </option>
             </select>
           </label>
         </div>
       </div>
 
       <button type="button" phx-click="clear_filters" class="btn btn-ghost btn-sm w-full">
-        Clear
+        {gettext("Clear")}
       </button>
     </.form>
   </div>
@@ -139,20 +155,22 @@
   <%!-- Bulk Actions --%>
   <%= if length(@selected_uuids) > 0 do %>
     <div class="flex gap-2 mb-4 items-center">
-      <span class="text-sm text-base-content/70">{length(@selected_uuids)} selected</span>
+      <span class="text-sm text-base-content/70">
+        {ngettext("%{count} selected", "%{count} selected", length(@selected_uuids))}
+      </span>
       <button phx-click="bulk_action" phx-value-action="approve" class="btn btn-success btn-xs">
-        Approve
+        {gettext("Approve")}
       </button>
       <button phx-click="bulk_action" phx-value-action="hide" class="btn btn-warning btn-xs">
-        Hide
+        {gettext("Hide")}
       </button>
       <button
         phx-click="bulk_action"
         phx-value-action="delete"
         class="btn btn-error btn-xs"
-        data-confirm="Delete selected comments?"
+        data-confirm={gettext("Delete selected comments?")}
       >
-        Delete
+        {gettext("Delete")}
       </button>
     </div>
   <% end %>
@@ -172,7 +190,7 @@
           fields = [
             %{
               label: gettext("Author"),
-              value: if(comment.user, do: comment.user.email, else: "Deleted user")
+              value: if(comment.user, do: comment.user.email, else: gettext("Deleted user"))
             },
             %{label: gettext("Resource"), value: comment.resource_type}
           ]
@@ -231,7 +249,7 @@
           phx-click="delete"
           phx-value-uuid={comment.uuid}
           class="btn btn-sm btn-outline btn-error"
-          data-confirm="Delete this comment?"
+          data-confirm={gettext("Delete this comment?")}
         >
           {gettext("Delete")}
         </button>
@@ -240,12 +258,12 @@
       <.table_default_header>
         <.table_default_row hover={false}>
           <.table_default_header_cell class="w-8"></.table_default_header_cell>
-          <.table_default_header_cell>Content</.table_default_header_cell>
-          <.table_default_header_cell>Author</.table_default_header_cell>
-          <.table_default_header_cell>Resource</.table_default_header_cell>
-          <.table_default_header_cell>Status</.table_default_header_cell>
-          <.table_default_header_cell>Date</.table_default_header_cell>
-          <.table_default_header_cell>Actions</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Content")}</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Author")}</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Resource")}</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Status")}</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Date")}</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Actions")}</.table_default_header_cell>
         </.table_default_row>
       </.table_default_header>
 
@@ -265,21 +283,28 @@
               <%= if comment.depth > 0 do %>
                 <div class="flex items-center gap-1 text-base-content/50 text-xs mb-0.5">
                   <.icon name="hero-arrow-uturn-right-mini" class="size-3" />
-                  <span>Reply</span>
+                  <span>{gettext("Reply")}</span>
                   <%= if comment.parent do %>
                     <span class="truncate max-w-[200px]">
-                      — Re: {String.slice(comment.parent.content, 0..39)}
+                      {gettext("— Re: %{snippet}", snippet: String.slice(comment.parent.content, 0..39))}
                     </span>
                   <% end %>
                 </div>
               <% end %>
-              <div class="truncate text-sm">{String.slice(comment.content, 0..99)}</div>
+              <%!-- Render the markdown so bold/italics/lists/etc. show
+                   formatted; cap the height so long comments don't blow up the
+                   row (scroll within the cell instead). --%>
+              <.comment_markdown
+                content={comment.content}
+                compact
+                class="text-sm max-h-32 overflow-y-auto"
+              />
             </.table_default_cell>
             <.table_default_cell class="text-sm">
               <%= if comment.user do %>
                 {comment.user.email}
               <% else %>
-                <span class="text-base-content/50">Deleted user</span>
+                <span class="text-base-content/50">{gettext("Deleted user")}</span>
               <% end %>
             </.table_default_cell>
             <.table_default_cell>
@@ -365,7 +390,7 @@
                   phx-value-uuid={comment.uuid}
                   class="btn btn-xs btn-outline btn-error tooltip tooltip-bottom"
                   data-tip={gettext("Delete")}
-                  data-confirm="Delete this comment?"
+                  data-confirm={gettext("Delete this comment?")}
                 >
                   <.icon name="hero-trash" class="w-4 h-4 hidden sm:inline" />
                   <span class="sm:hidden whitespace-nowrap">{gettext("Delete")}</span>
@@ -379,7 +404,7 @@
   <% else %>
     <div class="text-center py-12 text-base-content/60">
       <.icon name="hero-chat-bubble-left" class="w-12 h-12 mx-auto mb-2 opacity-50" />
-      <p>No comments found</p>
+      <p>{gettext("No comments found")}</p>
     </div>
   <% end %>
 

@@ -12,6 +12,8 @@ defmodule PhoenixKitComments.Web.Index do
 
   use PhoenixKitWeb, :live_view
 
+  import PhoenixKitComments.Web.Markdown, only: [comment_markdown: 1]
+
   alias PhoenixKit.Settings
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Utils.Routes
@@ -23,7 +25,7 @@ defmodule PhoenixKitComments.Web.Index do
     if PhoenixKitComments.enabled?() do
       socket =
         socket
-        |> assign(:page_title, "Comments")
+        |> assign(:page_title, gettext("Comments"))
         |> assign(:project_title, "")
         |> assign(:comments, [])
         |> assign(:total, 0)
@@ -39,7 +41,7 @@ defmodule PhoenixKitComments.Web.Index do
     else
       {:ok,
        socket
-       |> put_flash(:error, "Comments module is not enabled")
+       |> put_flash(:error, gettext("Comments module is not enabled"))
        |> push_navigate(to: Routes.path("/admin"))}
     end
   end
@@ -83,10 +85,13 @@ defmodule PhoenixKitComments.Web.Index do
       PhoenixKitComments.approve_comment(comment)
 
       {:noreply,
-       socket |> load_comments() |> reload_stats() |> put_flash(:info, "Comment approved")}
+       socket
+       |> load_comments()
+       |> reload_stats()
+       |> put_flash(:info, gettext("Comment approved"))}
     else
-      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, "Not authorized")}
-      nil -> {:noreply, put_flash(socket, :error, "Comment not found")}
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+      nil -> {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
     end
   end
 
@@ -97,10 +102,13 @@ defmodule PhoenixKitComments.Web.Index do
       PhoenixKitComments.hide_comment(comment)
 
       {:noreply,
-       socket |> load_comments() |> reload_stats() |> put_flash(:info, "Comment hidden")}
+       socket
+       |> load_comments()
+       |> reload_stats()
+       |> put_flash(:info, gettext("Comment hidden"))}
     else
-      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, "Not authorized")}
-      nil -> {:noreply, put_flash(socket, :error, "Comment not found")}
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+      nil -> {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
     end
   end
 
@@ -111,10 +119,13 @@ defmodule PhoenixKitComments.Web.Index do
       PhoenixKitComments.delete_comment(comment)
 
       {:noreply,
-       socket |> load_comments() |> reload_stats() |> put_flash(:info, "Comment deleted")}
+       socket
+       |> load_comments()
+       |> reload_stats()
+       |> put_flash(:info, gettext("Comment deleted"))}
     else
-      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, "Not authorized")}
-      nil -> {:noreply, put_flash(socket, :error, "Comment not found")}
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+      nil -> {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
     end
   end
 
@@ -134,7 +145,7 @@ defmodule PhoenixKitComments.Web.Index do
   def handle_event("bulk_action", %{"action" => action}, socket) do
     case check_authorization(socket) do
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Not authorized")}
+        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
 
       :ok ->
         do_bulk_action(action, socket)
@@ -145,7 +156,7 @@ defmodule PhoenixKitComments.Web.Index do
     uuids = socket.assigns.selected_uuids
 
     if uuids == [] do
-      {:noreply, put_flash(socket, :error, "No comments selected")}
+      {:noreply, put_flash(socket, :error, gettext("No comments selected"))}
     else
       case action do
         "approve" ->
@@ -156,7 +167,7 @@ defmodule PhoenixKitComments.Web.Index do
            |> assign(:selected_uuids, [])
            |> load_comments()
            |> reload_stats()
-           |> put_flash(:info, "Comments approved")}
+           |> put_flash(:info, gettext("Comments approved"))}
 
         "hide" ->
           PhoenixKitComments.bulk_update_status(uuids, "hidden")
@@ -166,7 +177,7 @@ defmodule PhoenixKitComments.Web.Index do
            |> assign(:selected_uuids, [])
            |> load_comments()
            |> reload_stats()
-           |> put_flash(:info, "Comments hidden")}
+           |> put_flash(:info, gettext("Comments hidden"))}
 
         "delete" ->
           PhoenixKitComments.bulk_update_status(uuids, "deleted")
@@ -176,7 +187,7 @@ defmodule PhoenixKitComments.Web.Index do
            |> assign(:selected_uuids, [])
            |> load_comments()
            |> reload_stats()
-           |> put_flash(:info, "Comments deleted")}
+           |> put_flash(:info, gettext("Comments deleted"))}
 
         _ ->
           {:noreply, socket}
