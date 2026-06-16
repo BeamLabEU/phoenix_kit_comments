@@ -26,6 +26,7 @@ defmodule PhoenixKitComments.Web.Index do
       socket =
         socket
         |> assign(:page_title, gettext("Comments"))
+        |> assign(:page_subtitle, gettext("Moderate comments across all content"))
         |> assign(:project_title, "")
         |> assign(:comments, [])
         |> assign(:total, 0)
