@@ -2,6 +2,26 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.9 — 2026-06-16
+
+### Added
+
+- **Reaction resource-handler callbacks** so hosts can surface "X liked your
+  comment" notifications, symmetric with the existing
+  `on_comment_created/3` / `on_comment_deleted/3` pair. `like_comment/2`,
+  `unlike_comment/2`, `dislike_comment/2`, and `undislike_comment/2` now
+  dispatch (best-effort, after the existing PubSub broadcast) to the registered
+  resource handler's optional callback:
+  - `on_comment_liked/3`, `on_comment_unliked/3`, `on_comment_disliked/3`,
+    `on_comment_undisliked/3`
+  - Third arg is a `%{comment: %Comment{}, liker_uuid: binary}` payload (the
+    comment row carries the author, not the reacting user). The map shape keeps
+    the existing 3-arity handler contract and stays extensible.
+  - Each callback is optional (`function_exported?/3` guard) and fires only when
+    the reaction state actually changed — never on `:already_liked` no-ops or
+    `{:error, _}` results. Self-action skipping is left to the host. Purely
+    additive: existing handlers are unaffected.
+
 ## 0.2.8 — 2026-06-09
 
 ### Added
