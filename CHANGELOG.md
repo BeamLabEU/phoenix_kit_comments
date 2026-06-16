@@ -22,6 +22,16 @@ All notable changes to PhoenixKitComments will be documented in this file.
     `{:error, _}` results. Self-action skipping is left to the host. Purely
     additive: existing handlers are unaffected.
 
+### Changed
+
+- **Comment markdown now renders with MDEx (comrak) instead of Earmark** on
+  display. Comments are authored as markdown in the Leaf composer, which already
+  renders with MDEx; using the same engine and `render` options (`hardbreaks`,
+  `unsafe`) on display makes the rendered comment match what was typed. Output
+  still passes through core's `HtmlSanitizer`, so XSS protection and the
+  surrounding `prose` markup are unchanged. Adds `{:mdex, "~> 0.13.0"}` (already
+  present transitively via `leaf`).
+
 ## 0.2.8 — 2026-06-09
 
 ### Added

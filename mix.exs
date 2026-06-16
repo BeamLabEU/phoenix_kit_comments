@@ -75,6 +75,12 @@ defmodule PhoenixKitComments.MixProject do
       # parent LV process, not the comments LiveComponent).
       {:leaf, "~> 0.2.22"},
 
+      # Markdown → HTML for the comment display. Comments are authored as
+      # markdown in the Leaf composer (which renders with MDEx), so rendering
+      # with the same engine on display keeps the two consistent. Output is
+      # still passed through core's HtmlSanitizer for XSS protection.
+      {:mdex, "~> 0.13.0"},
+
       # Optional: add ex_doc for generating documentation
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
 
