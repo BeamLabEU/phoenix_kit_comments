@@ -52,12 +52,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   use PhoenixKitWeb, :live_component
 
   import PhoenixKitWeb.Components.Core.Icon
-  import Phoenix.HTML, only: [raw: 1]
+  import PhoenixKitComments.Web.Markdown, only: [comment_markdown: 1]
 
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Users.Roles
-  alias PhoenixKit.Utils.HtmlSanitizer
 
   # Leaf is an optional dep. When present, the comment form swaps
   # textareas for `<.live_component module={Leaf}>`. Without leaf
@@ -66,38 +65,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # dialyzer / compiler quiet in the leaf-absent build; runtime
   # behavior is guarded by `leaf_available?/0`.
   @compile {:no_warn_undefined, [Leaf]}
-
-  # Renders a comment's markdown (authored in the Leaf composer) to sanitized
-  # HTML on display, so bold/italics/lists/etc. show formatted instead of raw
-  # markdown. Uses MDEx (comrak) — the same engine and `render` options the
-  # Leaf composer uses — so the rendered comment matches what was typed. Raw
-  # HTML in the source is parsed (`unsafe: true`) then stripped by core's
-  # HtmlSanitizer, which keeps the same XSS posture as the prior Earmark path.
-  attr(:content, :string, required: true, doc: "The markdown content to render")
-  attr(:class, :string, default: "", doc: "Additional CSS classes")
-  attr(:compact, :boolean, default: false, doc: "Use compact styling for previews")
-  attr(:sanitize, :boolean, default: true, doc: "Enable HTML sanitization")
-
-  def comment_markdown(assigns) do
-    assigns = assign(assigns, :html_content, render_markdown(assigns.content, assigns.sanitize))
-
-    ~H"""
-    <div class={[if(@compact, do: "prose prose-sm", else: "prose"), "max-w-none", @class]}>
-      {raw(@html_content)}
-    </div>
-    """
-  end
-
-  defp render_markdown(content, _sanitize) when content in [nil, ""], do: ""
-
-  defp render_markdown(content, sanitize) when is_binary(content) do
-    case MDEx.to_html(content, render: [hardbreaks: true, unsafe: true]) do
-      {:ok, html} -> if sanitize, do: HtmlSanitizer.sanitize(html), else: html
-      {:error, _reason} -> content |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
-    end
-  end
-
-  defp render_markdown(_other, _sanitize), do: ""
 
   @impl true
   def mount(socket) do
