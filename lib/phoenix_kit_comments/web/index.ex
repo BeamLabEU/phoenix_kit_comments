@@ -304,6 +304,55 @@ defmodule PhoenixKitComments.Web.Index do
     link_with_annotation(base, comment)
   end
 
+  # The resource shown as a compact clickable chip — a thumbnail for image
+  # files (else the type badge) + the truncated title. Shared by the desktop
+  # table cell and the mobile card view.
+  attr(:comment, :map, required: true)
+  attr(:resource_context, :map, required: true)
+  attr(:class, :string, default: "")
+
+  defp resource_chip(assigns) do
+    assigns = assign(assigns, :info, resource_info(assigns.resource_context, assigns.comment))
+
+    ~H"""
+    <%= if @info do %>
+      <.link
+        navigate={resource_url(@comment, @info)}
+        class={[
+          "inline-flex items-center gap-1.5 max-w-[240px] py-0.5 pl-1 pr-2.5 rounded-full bg-base-200 hover:bg-base-300 transition-colors no-underline align-middle",
+          @class
+        ]}
+        title={@info[:full_title] || @info.title}
+      >
+        <img
+          :if={@info[:thumb_url]}
+          src={@info.thumb_url}
+          alt=""
+          class="w-5 h-5 rounded-full object-cover bg-base-300 shrink-0"
+          onerror="this.style.display='none'"
+        />
+        <span :if={!@info[:thumb_url]} class="badge badge-ghost badge-xs shrink-0">
+          {@comment.resource_type}
+        </span>
+        <span class="truncate text-sm min-w-0">{@info.title}</span>
+      </.link>
+    <% else %>
+      <div
+        class={[
+          "inline-flex items-center gap-1.5 max-w-[200px] py-0.5 px-2.5 rounded-full bg-base-200 align-middle",
+          @class
+        ]}
+        title={to_string(@comment.resource_uuid)}
+      >
+        <span class="badge badge-ghost badge-xs shrink-0">{@comment.resource_type}</span>
+        <span class="truncate text-xs font-mono text-base-content/50 min-w-0">
+          {String.slice(to_string(@comment.resource_uuid), 0..7)}
+        </span>
+      </div>
+    <% end %>
+    """
+  end
+
   # Appends `?annotation=<uuid>` to a file comment's resource link so the media
   # page can select the Etcher shape the comment is anchored to (annotation
   # comments carry the back-reference in `metadata["annotation_uuid"]`).
