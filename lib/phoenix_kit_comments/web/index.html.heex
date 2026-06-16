@@ -1,18 +1,10 @@
 <div class="container flex flex-col mx-auto px-4 py-6">
   <%!-- Title + subtitle now live in the top navbar (set via the page_title /
-       page_subtitle assigns), so the in-content header is dropped to reclaim
-       the vertical space — only the Settings shortcut stays. --%>
-  <div class="flex justify-end mb-4">
-    <.link
-      navigate={Routes.path("/admin/settings/comments")}
-      class="btn btn-ghost btn-sm"
-    >
-      <.icon name="hero-cog-6-tooth" class="w-4 h-4" /> {gettext("Settings")}
-    </.link>
-  </div>
+       page_subtitle assigns); the Settings shortcut lives in the filter
+       toolbar below so it doesn't claim a row of its own. --%>
 
   <%!-- Statistics --%>
-  <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+  <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
     <div class="stat bg-base-200 rounded-xl">
       <div class="stat-title">{gettext("Total")}</div>
       <div class="stat-value text-primary text-2xl">{@stats.total}</div>
@@ -32,6 +24,19 @@
     <div class="stat bg-base-200 rounded-xl">
       <div class="stat-title">{gettext("Deleted")}</div>
       <div class="stat-value text-error text-2xl">{@stats.deleted}</div>
+    </div>
+    <%!-- Actions tile — sits with the counts instead of claiming a row of its
+         own. Settings is the first action; more will be added here later. --%>
+    <div class="stat bg-base-200 rounded-xl">
+      <div class="stat-title">{gettext("Actions")}</div>
+      <div class="flex flex-wrap items-center gap-1.5 mt-1">
+        <.link
+          navigate={Routes.path("/admin/settings/comments")}
+          class="btn btn-sm btn-ghost gap-1.5"
+        >
+          <.icon name="hero-cog-6-tooth" class="w-4 h-4" /> {gettext("Settings")}
+        </.link>
+      </div>
     </div>
   </div>
 
