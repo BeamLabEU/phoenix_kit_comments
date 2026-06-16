@@ -22,6 +22,18 @@ All notable changes to PhoenixKitComments will be documented in this file.
     `{:error, _}` results. Self-action skipping is left to the host. Purely
     additive: existing handlers are unaffected.
 
+### Changed
+
+- Reaction broadcasts and resource-handler callbacks now share a single comment
+  lookup instead of two, restoring the original one-query cost per reaction
+  toggle. No-op results (`:already_liked`, `:already_disliked`, errors) issue
+  zero extra reads, and the post-commit side-effect is fully rescue-wrapped so a
+  transient read failure cannot fail an already-committed reaction.
+- Removed `leaf` as a direct dependency. PhoenixKit already requires `leaf`, so
+  the package remains available transitively; the comments module still detects
+  its presence at runtime and falls back to a plain `<textarea>` when it is
+  absent or not wired by the host.
+
 ## 0.2.8 — 2026-06-09
 
 ### Added

@@ -149,7 +149,8 @@ defmodule PhoenixKitComments do
   by setting `comments_rich_text` to `false`, or by passing
   `rich_text={false}` to `CommentsComponent`.
 
-  Defaults to `true` (Leaf is a required dependency).
+  Defaults to `true`. Leaf is provided transitively by PhoenixKit; the module
+  still falls back to a plain `<textarea>` whenever Leaf is unavailable.
   """
   @spec rich_text_enabled?() :: boolean()
   def rich_text_enabled? do
