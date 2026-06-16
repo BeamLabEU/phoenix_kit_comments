@@ -422,6 +422,41 @@ defmodule PhoenixKitComments.Web.Index do
     """
   end
 
+  # One-line clickable comment preview. When the comment is longer than the line
+  # (multi-line or long), a "Read more" cue makes it obvious it's truncated;
+  # clicking anywhere opens the full-comment modal. Shared by table + card.
+  attr(:comment, :map, required: true)
+
+  defp comment_content_preview(assigns) do
+    ~H"""
+    <div
+      class="group flex items-center gap-2 cursor-pointer"
+      phx-click="view_comment"
+      phx-value-uuid={@comment.uuid}
+      title={gettext("Click to read the full comment")}
+    >
+      <div class="min-w-0 flex-1">
+        <.comment_markdown content={@comment.content} compact class="text-sm line-clamp-1" />
+      </div>
+      <span
+        :if={preview_truncated?(@comment.content)}
+        class="shrink-0 inline-flex items-center gap-0.5 text-xs font-medium text-primary group-hover:underline"
+      >
+        {gettext("Read more")} <.icon name="hero-chevron-right-mini" class="w-3.5 h-3.5" />
+      </span>
+    </div>
+    """
+  end
+
+  # Heuristic for "the one-line preview is truncated": multi-line content, or a
+  # single line long enough to overflow the narrow content column.
+  defp preview_truncated?(content) when is_binary(content) do
+    trimmed = String.trim(content)
+    String.contains?(trimmed, "\n") or String.length(trimmed) > 50
+  end
+
+  defp preview_truncated?(_content), do: false
+
   # Status-aware row-action menu. The offered actions depend on the comment's
   # status: a deleted comment can only be Restored (not approved/hidden/deleted
   # again); otherwise Approve (unless already published), Hide (unless already

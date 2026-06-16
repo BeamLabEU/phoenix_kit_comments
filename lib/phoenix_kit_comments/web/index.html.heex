@@ -243,14 +243,7 @@
           <.resource_chip comment={comment} resource_context={@resource_context} />
         </div>
         <.reply_indicator comment={comment} />
-        <div
-          class="cursor-pointer"
-          phx-click="view_comment"
-          phx-value-uuid={comment.uuid}
-          title={gettext("Click to read the full comment")}
-        >
-          <.comment_markdown content={comment.content} compact class="text-sm line-clamp-1" />
-        </div>
+        <.comment_content_preview comment={comment} />
       </:card_header>
       <:card_actions :let={comment}>
         <%!-- Distinct id from the table menu: both views are in the DOM. --%>
@@ -283,16 +276,7 @@
             </.table_default_cell>
             <.table_default_cell class="max-w-xs">
               <.reply_indicator comment={comment} />
-              <%!-- Truncated formatted preview; click opens the full comment in
-                   a modal so long comments don't blow up the row. --%>
-              <div
-                class="cursor-pointer"
-                phx-click="view_comment"
-                phx-value-uuid={comment.uuid}
-                title={gettext("Click to read the full comment")}
-              >
-                <.comment_markdown content={comment.content} compact class="text-sm line-clamp-1" />
-              </div>
+              <.comment_content_preview comment={comment} />
             </.table_default_cell>
             <.table_default_cell class="text-sm">
               <%= if comment.user do %>
