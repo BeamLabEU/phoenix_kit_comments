@@ -186,7 +186,6 @@
       class="w-full"
       toggleable={true}
       items={@comments}
-      card_title={fn comment -> String.slice(comment.content, 0..99) end}
       card_fields={
         fn comment ->
           fields = [
@@ -225,6 +224,25 @@
           {ngettext("%{count} comment", "%{count} comments", @total)}
         </span>
       </:toolbar_title>
+      <%!-- Card header renders the content as markdown (like the table cell),
+           so the grid view shows formatting instead of raw markdown. --%>
+      <:card_header :let={comment}>
+        <div
+          :if={comment.depth > 0}
+          class="flex items-center gap-1 text-base-content/50 text-xs mb-0.5"
+        >
+          <.icon name="hero-arrow-uturn-right-mini" class="size-3" />
+          <span>{gettext("Reply")}</span>
+          <span :if={comment.parent} class="truncate max-w-[200px]">
+            {gettext("— Re: %{snippet}", snippet: String.slice(comment.parent.content, 0..39))}
+          </span>
+        </div>
+        <.comment_markdown
+          content={comment.content}
+          compact
+          class="text-sm max-h-40 overflow-y-auto"
+        />
+      </:card_header>
       <:card_actions :let={comment}>
         <%= case resource_info(@resource_context, comment) do %>
           <% %{path: path, prefixed: true} -> %>
