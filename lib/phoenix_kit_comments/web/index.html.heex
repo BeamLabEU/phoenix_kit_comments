@@ -249,32 +249,34 @@
         />
       </:card_header>
       <:card_actions :let={comment}>
-        <%= if comment.status != "published" do %>
-          <button
+        <%!-- Distinct id from the table menu: both views are in the DOM. --%>
+        <.table_row_menu id={"comment-menu-card-#{comment.uuid}"} label={gettext("Comment actions")}>
+          <.table_row_menu_button
+            :if={comment.status != "published"}
             phx-click="approve"
             phx-value-uuid={comment.uuid}
-            class="btn btn-sm btn-outline btn-success"
-          >
-            {gettext("Approve")}
-          </button>
-        <% end %>
-        <%= if comment.status != "hidden" do %>
-          <button
+            icon="hero-check"
+            label={gettext("Approve")}
+            variant="success"
+          />
+          <.table_row_menu_button
+            :if={comment.status != "hidden"}
             phx-click="hide"
             phx-value-uuid={comment.uuid}
-            class="btn btn-sm btn-outline btn-warning"
-          >
-            {gettext("Hide")}
-          </button>
-        <% end %>
-        <button
-          phx-click="delete"
-          phx-value-uuid={comment.uuid}
-          class="btn btn-sm btn-outline btn-error"
-          data-confirm={gettext("Delete this comment?")}
-        >
-          {gettext("Delete")}
-        </button>
+            icon="hero-eye-slash"
+            label={gettext("Hide")}
+            variant="warning"
+          />
+          <.table_row_menu_divider />
+          <.table_row_menu_button
+            phx-click="delete"
+            phx-value-uuid={comment.uuid}
+            data-confirm={gettext("Delete this comment?")}
+            icon="hero-trash"
+            label={gettext("Delete")}
+            variant="error"
+          />
+        </.table_row_menu>
       </:card_actions>
 
       <.table_default_header>
@@ -331,40 +333,36 @@
               {Calendar.strftime(comment.inserted_at, "%b %d, %Y")}
             </.table_default_cell>
             <.table_default_cell>
-              <div class="flex gap-1">
-                <%= if comment.status != "published" do %>
-                  <button
-                    phx-click="approve"
-                    phx-value-uuid={comment.uuid}
-                    class="btn btn-xs btn-outline btn-success tooltip tooltip-bottom"
-                    data-tip={gettext("Approve")}
-                  >
-                    <.icon name="hero-check" class="w-4 h-4 hidden sm:inline" />
-                    <span class="sm:hidden whitespace-nowrap">{gettext("Approve")}</span>
-                  </button>
-                <% end %>
-                <%= if comment.status != "hidden" do %>
-                  <button
-                    phx-click="hide"
-                    phx-value-uuid={comment.uuid}
-                    class="btn btn-xs btn-outline btn-warning tooltip tooltip-bottom"
-                    data-tip={gettext("Hide")}
-                  >
-                    <.icon name="hero-eye-slash" class="w-4 h-4 hidden sm:inline" />
-                    <span class="sm:hidden whitespace-nowrap">{gettext("Hide")}</span>
-                  </button>
-                <% end %>
-                <button
+              <.table_row_menu
+                id={"comment-menu-#{comment.uuid}"}
+                label={gettext("Comment actions")}
+              >
+                <.table_row_menu_button
+                  :if={comment.status != "published"}
+                  phx-click="approve"
+                  phx-value-uuid={comment.uuid}
+                  icon="hero-check"
+                  label={gettext("Approve")}
+                  variant="success"
+                />
+                <.table_row_menu_button
+                  :if={comment.status != "hidden"}
+                  phx-click="hide"
+                  phx-value-uuid={comment.uuid}
+                  icon="hero-eye-slash"
+                  label={gettext("Hide")}
+                  variant="warning"
+                />
+                <.table_row_menu_divider />
+                <.table_row_menu_button
                   phx-click="delete"
                   phx-value-uuid={comment.uuid}
-                  class="btn btn-xs btn-outline btn-error tooltip tooltip-bottom"
-                  data-tip={gettext("Delete")}
                   data-confirm={gettext("Delete this comment?")}
-                >
-                  <.icon name="hero-trash" class="w-4 h-4 hidden sm:inline" />
-                  <span class="sm:hidden whitespace-nowrap">{gettext("Delete")}</span>
-                </button>
-              </div>
+                  icon="hero-trash"
+                  label={gettext("Delete")}
+                  variant="error"
+                />
+              </.table_row_menu>
             </.table_default_cell>
           </.table_default_row>
         <% end %>
