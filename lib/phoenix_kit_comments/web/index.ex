@@ -297,6 +297,13 @@ defmodule PhoenixKitComments.Web.Index do
     Map.get(resource_context, {comment.resource_type, comment.resource_uuid})
   end
 
+  # Final navigable URL for a resolved resource: prefixes phoenix_kit paths and
+  # appends the annotation deep-link param for file comments.
+  defp resource_url(comment, %{path: path} = info) do
+    base = if info[:prefixed], do: Routes.path(path), else: path
+    link_with_annotation(base, comment)
+  end
+
   # Appends `?annotation=<uuid>` to a file comment's resource link so the media
   # page can select the Etcher shape the comment is anchored to (annotation
   # comments carry the back-reference in `metadata["annotation_uuid"]`).

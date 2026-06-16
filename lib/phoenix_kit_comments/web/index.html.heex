@@ -336,49 +336,41 @@
               <% end %>
             </.table_default_cell>
             <.table_default_cell>
-              <span class="badge badge-ghost badge-sm h-auto">
-                {comment.resource_type}
-              </span>
-              <%= case resource_info(@resource_context, comment) do %>
-                <% %{title: title, full_title: full_title, path: path, prefixed: true} -> %>
-                  <.link
-                    navigate={link_with_annotation(Routes.path(path), comment)}
-                    class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
-                    title={full_title}
-                  >
-                    {String.slice(title, 0..49)}
-                  </.link>
-                <% %{title: title, full_title: full_title, path: path} -> %>
-                  <.link
-                    navigate={link_with_annotation(path, comment)}
-                    class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
-                    title={full_title}
-                  >
-                    {String.slice(title, 0..49)}
-                  </.link>
-                <% %{title: title, path: path, prefixed: true} -> %>
-                  <.link
-                    navigate={link_with_annotation(Routes.path(path), comment)}
-                    class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
-                    title={title}
-                  >
-                    {String.slice(title, 0..49)}
-                  </.link>
-                <% %{title: title, path: path} -> %>
-                  <.link
-                    navigate={link_with_annotation(path, comment)}
-                    class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
-                    title={title}
-                  >
-                    {String.slice(title, 0..49)}
-                  </.link>
-                <% _ -> %>
-                  <span
-                    class="text-base-content/40 text-xs ml-1"
-                    title={to_string(comment.resource_uuid)}
-                  >
+              <% info = resource_info(@resource_context, comment) %>
+              <%!-- Resource shown as a compact clickable chip: a thumbnail for
+                   image files (else the type badge) + the truncated title. --%>
+              <%= if info do %>
+                <.link
+                  navigate={resource_url(comment, info)}
+                  class="inline-flex items-center gap-1.5 max-w-[240px] py-0.5 pl-1 pr-2.5 rounded-full bg-base-200 hover:bg-base-300 transition-colors no-underline align-middle"
+                  title={info[:full_title] || info.title}
+                >
+                  <%= if info[:thumb_url] do %>
+                    <img
+                      src={info.thumb_url}
+                      alt=""
+                      class="w-5 h-5 rounded-full object-cover bg-base-300 shrink-0"
+                      onerror="this.style.display='none'"
+                    />
+                  <% else %>
+                    <span class="badge badge-ghost badge-xs shrink-0">
+                      {comment.resource_type}
+                    </span>
+                  <% end %>
+                  <span class="truncate text-sm min-w-0">{info.title}</span>
+                </.link>
+              <% else %>
+                <div
+                  class="inline-flex items-center gap-1.5 max-w-[200px] py-0.5 px-2.5 rounded-full bg-base-200 align-middle"
+                  title={to_string(comment.resource_uuid)}
+                >
+                  <span class="badge badge-ghost badge-xs shrink-0">
+                    {comment.resource_type}
+                  </span>
+                  <span class="truncate text-xs font-mono text-base-content/50 min-w-0">
                     {String.slice(to_string(comment.resource_uuid), 0..7)}
                   </span>
+                </div>
               <% end %>
             </.table_default_cell>
             <.table_default_cell>
