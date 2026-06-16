@@ -1,98 +1,99 @@
-# PR #17 Review — `PhoenixKitComments.Embed` macro for host Leaf-event forwarding
+# PR #23 Review — Reaction resource-handler callbacks for comment notifications
 
-- **Author:** Max Don (`mdon`)
+- **Author:** Alexander Don (`alexdont`)
 - **Reviewer:** Claude
-- **PR:** https://github.com/BeamLabEU/phoenix_kit_comments/pull/17
-- **Branch:** `mdon:main` → `BeamLabEU:main`
-- **State:** Merged 2026-06-06 (review is post-hoc)
-- **Diff size:** +90 / −0, 1 new file (`lib/phoenix_kit_comments/embed.ex`)
+- **PR:** https://github.com/BeamLabEU/phoenix_kit_comments/pull/23
+- **Branch:** `alexdont:main` → `BeamLabEU:main`
+- **State:** Merged 2026-06-16 (review is post-hoc)
+- **Diff size:** +70 / −2, 3 files (`lib/phoenix_kit_comments.ex`, `CHANGELOG.md`, `mix.exs`); bump 0.2.8 → 0.2.9
 
 ## Summary
 
-Adds `PhoenixKitComments.Embed`, a `use`-able macro for host LiveViews that
-hard-depend on `phoenix_kit_comments`. It wires the host to forward the Leaf
-composer's `{:leaf_changed, …}` process message into
-`CommentsComponent.forward_leaf_event/2`. Without this hop the rich-text
-editor's content never reaches the `LiveComponent` (which has no `handle_info`
-of its own), so "Post comment" silently posts an empty body. Implemented as an
-`on_mount` + `attach_hook(:handle_info)` lifecycle hook delegating to the
-existing public `forward_leaf_event/2`. Purely additive.
+Adds four optional, duck-typed resource-handler callbacks symmetric with the
+existing `on_comment_created/3` / `on_comment_deleted/3` pair:
+`on_comment_liked/3`, `on_comment_unliked/3`, `on_comment_disliked/3`,
+`on_comment_undisliked/3`. `like_comment/2` and its three siblings now dispatch
+(best-effort, after the existing PubSub broadcast) to the registered handler
+with a `%{comment: %Comment{}, liker_uuid: binary}` payload. The new private
+`maybe_notify_on_reaction/5` mirrors `notify_resource_handler/4`, guards on
+`function_exported?/3`, and fires only when the reaction state actually changed.
+Purely additive.
 
 ## Verdict
 
-**Approve.** Correct, focused, well-documented. No blocking issues. A couple of
-minor/optional notes below.
+**Approve.** Correct and well-scoped. The only substantive note is an
+efficiency one (#1): the change adds a second, unconditional DB read per
+reaction toggle on a hot path. Worth a follow-up but not blocking.
 
 ## What's good
 
-- **Right pattern.** Lifecycle hook (`attach_hook(:handle_info)`) instead of
-  injected `handle_info` clauses, so it composes with a host that already
-  defines its own `handle_info` — no "clauses should be grouped" warning, no
-  clobbering. The moduledoc explains the non-obvious process-message hop well.
-- **Routing by `editor_id`, not clause order.** `forward_leaf_event/2` only
-  handles `"pk-comments:"`-prefixed editors and returns `:pass` otherwise; the
-  hook maps `{:noreply, _} → {:halt}` and `:pass`/anything-else → `{:cont}`. A
-  host with its own unrelated Leaf editor still receives those events. This is
-  more robust than `MediaBrowser.Embed`'s `@before_compile` clause-injection
-  approach, which depends on the user's clause being defined first.
-- **Hook mechanics are valid.** `:handle_info` is a real `attach_hook` stage;
-  `:halt` correctly suppresses the host's own `handle_info` for comments
-  editors (the component handles them via `send_update`), and `:cont` passes
-  everything else through.
-- **`on_mount(:default, …)` matches.** `on_mount(PhoenixKitComments.Embed)`
-  expands to `{Module, :default}`; the callback head is `on_mount(:default, …)`.
-- **No double-forward when combined with `MediaBrowser.Embed`.** If a host uses
-  both, the comments hook runs first and `:halt`s our editors before
-  MediaBrowser's injected `{:leaf_changed, _}` fallback can re-forward them.
+- **State-change gating is exactly right.** The head
+  `maybe_notify_on_reaction({:ok, action}, comment_uuid, liker_uuid, callback, action)`
+  reuses `action` as a non-linear pattern, so the callback fires only when the
+  result's action equals the expected action passed by the caller. `{:ok,
+  :already_liked}`, `{:error, :not_found}`, and rollbacks all fall through to
+  the no-op clause. This matches the gating already used by
+  `maybe_broadcast_reaction/2` and reads cleanly.
+- **Fires after commit, never inside the transaction.** For `like`/`dislike`
+  the dispatch happens after `repo().transaction/1` returns; for
+  `unlike`/`undislike` after `maybe_remove_reaction/4`. A slow or throwing host
+  handler can't poison the DB write.
+- **Defensive dispatch.** `notify_resource_handler/4` is `rescue`-wrapped and
+  `Logger.warning`s, and the `get_comment/1 == nil` branch is handled (comment
+  deleted between the toggle and the lookup → `:ok`). Best-effort semantics are
+  honest.
+- **Payload shape is the correct call.** Passing `%{comment, liker_uuid}` rather
+  than the bare comment is necessary — the comment row carries the *author*, not
+  the *reactor* — and keeping it a map preserves the 3-arity contract and stays
+  extensible. The asymmetry vs. create/deleted is documented in both the
+  moduledoc and CHANGELOG.
+- **Docs match behavior.** Moduledoc, commit message, and CHANGELOG all
+  correctly state the "only on actual state change," "optional," and
+  "self-action skipping is the host's job" semantics.
 - **Compiles clean** (`mix compile` green).
 
-## Minor observations (non-blocking)
+## Findings
 
-1. **Soft-dep doc example swallows unrelated `:leaf_changed`.** ✅ **Fixed** (see
-   Post-review fixes). The moduledoc's runtime example for soft-dep hosts mapped
-   `forward_leaf_event/2`'s `:pass` return to `{:noreply, socket}` via a
-   wildcard, i.e. it consumed *every* `{:leaf_changed, …}` — including a host's
-   own non-comments editor. The hard-dep hook in this same file gets this right
-   (`:pass → {:cont}`). For the cited `phoenix_kit_staff` `PersonShowLive`
-   (comments is the only Leaf editor) it was fine, but the example reads as the
-   canonical soft-dep recipe, so it now matches `:pass` explicitly and documents
-   that the bare `{:noreply, socket}` only fits a host whose only Leaf editor is
-   the comments composer.
+1. **(Medium — efficiency) Unconditional extra full-row `SELECT` per reaction.**
+   `maybe_notify_on_reaction/5` calls `get_comment/1` (a `SELECT *`)
+   *unconditionally* on every successful toggle, regardless of whether any
+   handler is registered for the resource. Combined with
+   `maybe_broadcast_reaction/2`, which independently runs `comment_resource/1`
+   (a lightweight `SELECT {resource_type, resource_uuid}`) for the same row,
+   every like/dislike now issues **two reads of the same comment** where the
+   pre-PR path issued one. Because these callbacks are brand-new, *no existing
+   host registers them* — so today this is pure overhead on the most
+   frequently-called write path in the library.
 
-2. **No test coverage.** Consistent with the repo (only
-   `phoenix_kit_comments_test.exs` exists), so not a regression. A small test
-   that `on_mount/4` attaches the hook and that `__forward_leaf__/2` returns
-   `{:halt}` on a `{:noreply}` and `{:cont}` on `:pass` would lock in the
-   routing contract cheaply. Optional.
+   Suggested follow-up: fetch once and serve both. `maybe_notify_on_reaction`
+   already loads the full comment, which is a superset of what
+   `maybe_broadcast_reaction` needs (`resource_type` / `resource_uuid`).
+   Collapsing the two helpers into a single `after_reaction/4` that does one
+   lookup, broadcasts, then notifies would bring the query count back to one.
+   (`get_comment/1` doesn't `rescue` where `comment_resource/1` does, so preserve
+   that guard when merging.) Cheaper still would be to gate the lookup on handler
+   presence, but that needs `resource_type` first, so the single-fetch unification
+   is the clean win.
 
-3. **`__forward_leaf__/2` is `@doc false` but public.** Double-underscore
-   naming makes accidental external use unlikely and it's intentional as a
-   lifecycle-hook body — acceptable, just noting it's technically callable.
+2. **(Low) No test coverage for the new dispatch.** Consistent with the existing
+   suite — `phoenix_kit_comments_test.exs` exercises behaviour/config callbacks
+   and changesets but has no DB-backed reaction tests — so this isn't a
+   regression. Still, the state-change gating in #1's head and the
+   `:already_liked`/`{:error, :not_found}` no-op cases are exactly the kind of
+   branch logic a small test (with a stub handler module + sandbox repo) would
+   pin down cheaply. Worth adding alongside the #1 refactor.
 
-## Things I checked and ruled out
+3. **(Nit) Callbacks remain undeclared.** Like create/deleted before them, the
+   reaction callbacks are duck-typed via `function_exported?/3` with no
+   `@callback` / `@optional_callbacks` behaviour anywhere. This PR is correctly
+   consistent with the established pattern, so no change is requested — but the
+   handler contract (now six optional callbacks) is large enough that a documented
+   behaviour with `@optional_callbacks` would give hosts compile-time names and a
+   single place to read the contract. A future-cleanup item, not for this PR.
 
-- **Iron-law (no queries in mount)** — N/A; `on_mount` only attaches a hook.
-- **Double registration across remounts** — `attach_hook` runs once per mount;
-  hook name `:phoenix_kit_comments_leaf` is fixed and fine for single use.
-- **Message-swallowing of non-comments info messages** — none; the catch-all
-  `__forward_leaf__(_msg, socket) → {:cont, socket}` passes everything through.
-- **Public API / schema / migration impact** — none; purely additive.
+## Conclusion
 
-## Post-review fixes applied
-
-Committed to `main` after this review:
-
-- **Tightened the soft-dep moduledoc example** (note 1) — match `:pass`
-  explicitly instead of a wildcard, and document that the bare
-  `{:noreply, socket}` only fits a host whose only Leaf editor is the comments
-  composer. Doc-only, no behavior change. (`1d92352`)
-- **Aliased `CommentsComponent` in `__forward_leaf__/2`** to satisfy
-  `credo --strict` (`Design.AliasUsage`), which flagged the fully-qualified
-  reference. Safe here because the hook body runs in this module, not injected
-  into the caller. (`9af5e67`)
-- `mix precommit` (compile `--warnings-as-errors`, `deps.unlock --check-unused`,
-  `format --check-formatted`, `credo --strict`, `dialyzer`) now passes green.
-
-## Suggested follow-ups (optional)
-
-- Add a one-line test for the hook attach + the `{:halt}`/`{:cont}` routing.
+Additive, correct, and faithful to the existing resource-handler conventions.
+The lone actionable item is the redundant per-reaction read in finding #1;
+folding the broadcast and notify lookups into a single fetch would restore the
+original one-query cost while keeping the new callbacks. Approve as merged.
