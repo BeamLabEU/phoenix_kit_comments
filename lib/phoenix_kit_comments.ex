@@ -19,7 +19,22 @@ defmodule PhoenixKitComments do
         "post" => PhoenixKitPosts
       }
 
-  Handler modules should implement `on_comment_created/3` and `on_comment_deleted/3`.
+  Handler modules may implement any of these optional callbacks (each guarded
+  by `function_exported?/3`, so implement only what you need):
+
+  * `on_comment_created(resource_type, resource_uuid, comment)` — new comment
+    (check `comment.parent_uuid` to distinguish a reply).
+  * `on_comment_deleted(resource_type, resource_uuid, comment)` — comment removed.
+  * `on_comment_liked(resource_type, resource_uuid, %{comment: comment, liker_uuid: uuid})`
+  * `on_comment_unliked(resource_type, resource_uuid, %{comment: comment, liker_uuid: uuid})`
+  * `on_comment_disliked(resource_type, resource_uuid, %{comment: comment, liker_uuid: uuid})`
+  * `on_comment_undisliked(resource_type, resource_uuid, %{comment: comment, liker_uuid: uuid})`
+
+  The reaction callbacks fire only when the reaction state actually changed
+  (`{:ok, :liked}` / `{:ok, :unliked}` …), never on `:already_liked` no-ops.
+  Self-action skipping (e.g. don't notify someone who liked their own comment)
+  is left to the host. The `liker_uuid` is in the payload because the comment
+  row carries the author, not the reacting user.
 
   ## Core Functions
 
@@ -1130,6 +1145,7 @@ defmodule PhoenixKitComments do
       end)
 
     maybe_broadcast_reaction(result, comment_uuid)
+    maybe_notify_on_reaction(result, comment_uuid, user_uuid, :on_comment_liked, :liked)
     result
   end
 
@@ -1141,6 +1157,7 @@ defmodule PhoenixKitComments do
     if maybe_remove_reaction(CommentLike, comment_uuid, user_uuid, :like_count) do
       result = {:ok, :unliked}
       maybe_broadcast_reaction(result, comment_uuid)
+      maybe_notify_on_reaction(result, comment_uuid, user_uuid, :on_comment_unliked, :unliked)
       result
     else
       {:error, :not_found}
@@ -1199,6 +1216,7 @@ defmodule PhoenixKitComments do
       end)
 
     maybe_broadcast_reaction(result, comment_uuid)
+    maybe_notify_on_reaction(result, comment_uuid, user_uuid, :on_comment_disliked, :disliked)
     result
   end
 
@@ -1211,6 +1229,15 @@ defmodule PhoenixKitComments do
     if maybe_remove_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count) do
       result = {:ok, :undisliked}
       maybe_broadcast_reaction(result, comment_uuid)
+
+      maybe_notify_on_reaction(
+        result,
+        comment_uuid,
+        user_uuid,
+        :on_comment_undisliked,
+        :undisliked
+      )
+
       result
     else
       {:error, :not_found}
@@ -1494,6 +1521,27 @@ defmodule PhoenixKitComments do
   end
 
   defp maybe_broadcast_reaction(_result, _comment_uuid), do: :ok
+
+  # Fire the per-resource reaction callback (`on_comment_liked/3` and siblings)
+  # only when the reaction state actually changed — the head binds the tuple's
+  # action to the expected 5th arg, so `{:ok, :already_liked}` (etc.) and error
+  # results fall through to the no-op clause. Mirrors `notify_resource_handler/4`
+  # but passes a `%{comment, liker_uuid}` payload, since the comment row doesn't
+  # carry the reacting user's uuid. Self-action skipping is the host's call.
+  defp maybe_notify_on_reaction({:ok, action}, comment_uuid, liker_uuid, callback, action) do
+    case get_comment(comment_uuid) do
+      %Comment{resource_type: resource_type, resource_uuid: resource_uuid} = comment ->
+        notify_resource_handler(callback, resource_type, resource_uuid, %{
+          comment: comment,
+          liker_uuid: liker_uuid
+        })
+
+      nil ->
+        :ok
+    end
+  end
+
+  defp maybe_notify_on_reaction(_result, _comment_uuid, _liker_uuid, _callback, _action), do: :ok
 
   defp comment_resource(comment_uuid) do
     from(c in Comment,
