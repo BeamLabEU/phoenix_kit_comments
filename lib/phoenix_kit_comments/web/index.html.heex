@@ -219,16 +219,7 @@
         <div class="mb-1.5">
           <.resource_chip comment={comment} resource_context={@resource_context} />
         </div>
-        <div
-          :if={comment.depth > 0}
-          class="flex items-center gap-1 text-base-content/50 text-xs mb-0.5"
-        >
-          <.icon name="hero-arrow-uturn-right-mini" class="size-3" />
-          <span>{gettext("Reply")}</span>
-          <span :if={comment.parent} class="truncate max-w-[200px]">
-            {gettext("— Re: %{snippet}", snippet: String.slice(comment.parent.content, 0..39))}
-          </span>
-        </div>
+        <.reply_indicator comment={comment} />
         <.comment_markdown
           content={comment.content}
           compact
@@ -289,17 +280,7 @@
               />
             </.table_default_cell>
             <.table_default_cell class="max-w-xs">
-              <%= if comment.depth > 0 do %>
-                <div class="flex items-center gap-1 text-base-content/50 text-xs mb-0.5">
-                  <.icon name="hero-arrow-uturn-right-mini" class="size-3" />
-                  <span>{gettext("Reply")}</span>
-                  <%= if comment.parent do %>
-                    <span class="truncate max-w-[200px]">
-                      {gettext("— Re: %{snippet}", snippet: String.slice(comment.parent.content, 0..39))}
-                    </span>
-                  <% end %>
-                </div>
-              <% end %>
+              <.reply_indicator comment={comment} />
               <%!-- Render the markdown so bold/italics/lists/etc. show
                    formatted; cap the height so long comments don't blow up the
                    row (scroll within the cell instead). --%>

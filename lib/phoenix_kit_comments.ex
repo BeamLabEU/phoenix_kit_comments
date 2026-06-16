@@ -785,8 +785,16 @@ defmodule PhoenixKitComments do
 
     query =
       if search && String.trim(search) != "" do
-        pattern = "%#{escape_like_pattern(search)}%"
-        where(query, [c], ilike(c.content, ^pattern))
+        trimmed = String.trim(search)
+        pattern = "%#{escape_like_pattern(trimmed)}%"
+
+        # A full comment uuid matches that exact comment (so a reply can deep-link
+        # to its parent by searching its uuid); otherwise it's a content search.
+        if match?({:ok, _}, Ecto.UUID.cast(trimmed)) do
+          where(query, [c], c.uuid == ^trimmed or ilike(c.content, ^pattern))
+        else
+          where(query, [c], ilike(c.content, ^pattern))
+        end
       else
         query
       end

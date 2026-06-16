@@ -353,6 +353,33 @@ defmodule PhoenixKitComments.Web.Index do
     """
   end
 
+  # Reply indicator with a clickable parent preview. Clicking filters the list
+  # to the parent by searching its uuid — so the original comment shows on its
+  # own (full content + its resource chip / shape deep-link).
+  attr(:comment, :map, required: true)
+
+  defp reply_indicator(assigns) do
+    ~H"""
+    <div
+      :if={@comment.depth > 0}
+      class="flex items-center gap-1 text-base-content/50 text-xs mb-0.5"
+    >
+      <.icon name="hero-arrow-uturn-right-mini" class="size-3 shrink-0" />
+      <span class="shrink-0">{gettext("Reply")}</span>
+      <.link
+        :if={@comment.parent}
+        patch={
+          Routes.path("/admin/comments?#{URI.encode_query(%{"search" => @comment.parent.uuid})}")
+        }
+        class="truncate max-w-[240px] text-left hover:text-base-content hover:underline"
+        title={gettext("Show the original comment")}
+      >
+        {gettext("— Re: %{snippet}", snippet: String.slice(@comment.parent.content, 0..39))}
+      </.link>
+    </div>
+    """
+  end
+
   # Appends `?annotation=<uuid>` to a file comment's resource link so the media
   # page can select the Etcher shape the comment is anchored to (annotation
   # comments carry the back-reference in `metadata["annotation_uuid"]`).
