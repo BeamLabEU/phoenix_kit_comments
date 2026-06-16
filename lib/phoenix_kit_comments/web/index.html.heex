@@ -216,11 +216,11 @@
               label: gettext("Author"),
               value: if(comment.user, do: comment.user.email, else: gettext("Deleted user"))
             },
-            %{label: gettext("Status"), value: comment.status},
             %{
               label: gettext("Date"),
               value: Calendar.strftime(comment.inserted_at, "%b %d, %Y")
-            }
+            },
+            %{label: gettext("Status"), value: comment.status}
           ]
         end
       }
@@ -259,8 +259,8 @@
           <.table_default_header_cell>{gettext("Content")}</.table_default_header_cell>
           <.table_default_header_cell>{gettext("Author")}</.table_default_header_cell>
           <.table_default_header_cell>{gettext("Resource")}</.table_default_header_cell>
-          <.table_default_header_cell>{gettext("Status")}</.table_default_header_cell>
           <.table_default_header_cell>{gettext("Date")}</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Status")}</.table_default_header_cell>
           <.table_default_header_cell>{gettext("Actions")}</.table_default_header_cell>
         </.table_default_row>
       </.table_default_header>
@@ -298,13 +298,13 @@
             <.table_default_cell>
               <.resource_chip comment={comment} resource_context={@resource_context} />
             </.table_default_cell>
+            <.table_default_cell class="text-sm text-base-content/70">
+              {Calendar.strftime(comment.inserted_at, "%b %d, %Y")}
+            </.table_default_cell>
             <.table_default_cell>
               <span class={status_badge_class(comment.status)}>
                 {comment.status}
               </span>
-            </.table_default_cell>
-            <.table_default_cell class="text-sm text-base-content/70">
-              {Calendar.strftime(comment.inserted_at, "%b %d, %Y")}
             </.table_default_cell>
             <.table_default_cell>
               <.comment_actions_menu comment={comment} id={"comment-menu-#{comment.uuid}"} />
