@@ -988,6 +988,13 @@ defmodule PhoenixKitComments do
         do: Map.put(handlers, "post", PhoenixKitPosts),
         else: handlers
 
+    # File comments (incl. Etcher annotation discussions) resolve to the file's
+    # media page via phoenix_kit core's Annotations context.
+    handlers =
+      if Code.ensure_loaded?(PhoenixKit.Annotations),
+        do: Map.put(handlers, "file", PhoenixKit.Annotations),
+        else: handlers
+
     handlers
   end
 

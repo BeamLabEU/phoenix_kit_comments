@@ -297,6 +297,23 @@ defmodule PhoenixKitComments.Web.Index do
     Map.get(resource_context, {comment.resource_type, comment.resource_uuid})
   end
 
+  # Appends `?annotation=<uuid>` to a file comment's resource link so the media
+  # page can select the Etcher shape the comment is anchored to (annotation
+  # comments carry the back-reference in `metadata["annotation_uuid"]`).
+  defp link_with_annotation(url, %{resource_type: "file", metadata: metadata})
+       when is_map(metadata) do
+    case Map.get(metadata, "annotation_uuid") do
+      uuid when is_binary(uuid) and uuid != "" ->
+        sep = if String.contains?(url, "?"), do: "&", else: "?"
+        url <> sep <> "annotation=" <> uuid
+
+      _ ->
+        url
+    end
+  end
+
+  defp link_with_annotation(url, _comment), do: url
+
   defp status_badge_class("published"), do: "badge badge-success badge-sm"
   defp status_badge_class("pending"), do: "badge badge-warning badge-sm"
   defp status_badge_class("hidden"), do: "badge badge-info badge-sm"

@@ -246,11 +246,11 @@
       <:card_actions :let={comment}>
         <%= case resource_info(@resource_context, comment) do %>
           <% %{path: path, prefixed: true} -> %>
-            <.link navigate={Routes.path(path)} class="btn btn-sm btn-outline btn-info">
+            <.link navigate={link_with_annotation(Routes.path(path), comment)} class="btn btn-sm btn-outline btn-info">
               <.icon name="hero-arrow-top-right-on-square" class="w-4 h-4" /> {gettext("View")}
             </.link>
           <% %{path: path} -> %>
-            <.link navigate={path} class="btn btn-sm btn-outline btn-info">
+            <.link navigate={link_with_annotation(path, comment)} class="btn btn-sm btn-outline btn-info">
               <.icon name="hero-arrow-top-right-on-square" class="w-4 h-4" /> {gettext("View")}
             </.link>
           <% _ -> %>
@@ -342,7 +342,7 @@
               <%= case resource_info(@resource_context, comment) do %>
                 <% %{title: title, full_title: full_title, path: path, prefixed: true} -> %>
                   <.link
-                    navigate={Routes.path(path)}
+                    navigate={link_with_annotation(Routes.path(path), comment)}
                     class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
                     title={full_title}
                   >
@@ -350,7 +350,7 @@
                   </.link>
                 <% %{title: title, full_title: full_title, path: path} -> %>
                   <.link
-                    navigate={path}
+                    navigate={link_with_annotation(path, comment)}
                     class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
                     title={full_title}
                   >
@@ -358,7 +358,7 @@
                   </.link>
                 <% %{title: title, path: path, prefixed: true} -> %>
                   <.link
-                    navigate={Routes.path(path)}
+                    navigate={link_with_annotation(Routes.path(path), comment)}
                     class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
                     title={title}
                   >
@@ -366,7 +366,7 @@
                   </.link>
                 <% %{title: title, path: path} -> %>
                   <.link
-                    navigate={path}
+                    navigate={link_with_annotation(path, comment)}
                     class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
                     title={title}
                   >
