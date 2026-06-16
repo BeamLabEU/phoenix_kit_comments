@@ -250,33 +250,7 @@
       </:card_header>
       <:card_actions :let={comment}>
         <%!-- Distinct id from the table menu: both views are in the DOM. --%>
-        <.table_row_menu id={"comment-menu-card-#{comment.uuid}"} label={gettext("Comment actions")}>
-          <.table_row_menu_button
-            :if={comment.status != "published"}
-            phx-click="approve"
-            phx-value-uuid={comment.uuid}
-            icon="hero-check"
-            label={gettext("Approve")}
-            variant="success"
-          />
-          <.table_row_menu_button
-            :if={comment.status != "hidden"}
-            phx-click="hide"
-            phx-value-uuid={comment.uuid}
-            icon="hero-eye-slash"
-            label={gettext("Hide")}
-            variant="warning"
-          />
-          <.table_row_menu_divider />
-          <.table_row_menu_button
-            phx-click="delete"
-            phx-value-uuid={comment.uuid}
-            data-confirm={gettext("Delete this comment?")}
-            icon="hero-trash"
-            label={gettext("Delete")}
-            variant="error"
-          />
-        </.table_row_menu>
+        <.comment_actions_menu comment={comment} id={"comment-menu-card-#{comment.uuid}"} />
       </:card_actions>
 
       <.table_default_header>
@@ -333,36 +307,7 @@
               {Calendar.strftime(comment.inserted_at, "%b %d, %Y")}
             </.table_default_cell>
             <.table_default_cell>
-              <.table_row_menu
-                id={"comment-menu-#{comment.uuid}"}
-                label={gettext("Comment actions")}
-              >
-                <.table_row_menu_button
-                  :if={comment.status != "published"}
-                  phx-click="approve"
-                  phx-value-uuid={comment.uuid}
-                  icon="hero-check"
-                  label={gettext("Approve")}
-                  variant="success"
-                />
-                <.table_row_menu_button
-                  :if={comment.status != "hidden"}
-                  phx-click="hide"
-                  phx-value-uuid={comment.uuid}
-                  icon="hero-eye-slash"
-                  label={gettext("Hide")}
-                  variant="warning"
-                />
-                <.table_row_menu_divider />
-                <.table_row_menu_button
-                  phx-click="delete"
-                  phx-value-uuid={comment.uuid}
-                  data-confirm={gettext("Delete this comment?")}
-                  icon="hero-trash"
-                  label={gettext("Delete")}
-                  variant="error"
-                />
-              </.table_row_menu>
+              <.comment_actions_menu comment={comment} id={"comment-menu-#{comment.uuid}"} />
             </.table_default_cell>
           </.table_default_row>
         <% end %>

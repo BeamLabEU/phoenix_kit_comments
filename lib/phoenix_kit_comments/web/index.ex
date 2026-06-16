@@ -137,6 +137,24 @@ defmodule PhoenixKitComments.Web.Index do
     end
   end
 
+  # Revert a soft-deletion — brings the comment back as published.
+  @impl true
+  def handle_event("restore", %{"uuid" => uuid}, socket) do
+    with :ok <- check_authorization(socket),
+         %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
+      PhoenixKitComments.approve_comment(comment)
+
+      {:noreply,
+       socket
+       |> load_comments()
+       |> reload_stats()
+       |> put_flash(:info, gettext("Comment restored"))}
+    else
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+      nil -> {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
+    end
+  end
+
   @impl true
   def handle_event("toggle_select", %{"uuid" => uuid}, socket) do
     selected = socket.assigns.selected_uuids
@@ -384,6 +402,54 @@ defmodule PhoenixKitComments.Web.Index do
         {gettext("— Re: %{snippet}", snippet: String.slice(@comment.parent.content, 0..39))}
       </.link>
     </div>
+    """
+  end
+
+  # Status-aware row-action menu. The offered actions depend on the comment's
+  # status: a deleted comment can only be Restored (not approved/hidden/deleted
+  # again); otherwise Approve (unless already published), Hide (unless already
+  # hidden), and Delete. Shared by the table and card views (distinct ids).
+  attr(:comment, :map, required: true)
+  attr(:id, :string, required: true)
+
+  defp comment_actions_menu(assigns) do
+    ~H"""
+    <.table_row_menu id={@id} label={gettext("Comment actions")}>
+      <.table_row_menu_button
+        :if={@comment.status not in ["published", "deleted"]}
+        phx-click="approve"
+        phx-value-uuid={@comment.uuid}
+        icon="hero-check"
+        label={gettext("Approve")}
+        variant="success"
+      />
+      <.table_row_menu_button
+        :if={@comment.status not in ["hidden", "deleted"]}
+        phx-click="hide"
+        phx-value-uuid={@comment.uuid}
+        icon="hero-eye-slash"
+        label={gettext("Hide")}
+        variant="warning"
+      />
+      <.table_row_menu_button
+        :if={@comment.status == "deleted"}
+        phx-click="restore"
+        phx-value-uuid={@comment.uuid}
+        icon="hero-arrow-uturn-left"
+        label={gettext("Restore")}
+        variant="success"
+      />
+      <.table_row_menu_divider :if={@comment.status != "deleted"} />
+      <.table_row_menu_button
+        :if={@comment.status != "deleted"}
+        phx-click="delete"
+        phx-value-uuid={@comment.uuid}
+        data-confirm={gettext("Delete this comment?")}
+        icon="hero-trash"
+        label={gettext("Delete")}
+        variant="error"
+      />
+    </.table_row_menu>
     """
   end
 
