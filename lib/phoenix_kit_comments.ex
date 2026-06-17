@@ -786,8 +786,16 @@ defmodule PhoenixKitComments do
 
     query =
       if search && String.trim(search) != "" do
-        pattern = "%#{escape_like_pattern(search)}%"
-        where(query, [c], ilike(c.content, ^pattern))
+        trimmed = String.trim(search)
+        pattern = "%#{escape_like_pattern(trimmed)}%"
+
+        # A full comment uuid matches that exact comment (so a reply can deep-link
+        # to its parent by searching its uuid); otherwise it's a content search.
+        if match?({:ok, _}, Ecto.UUID.cast(trimmed)) do
+          where(query, [c], c.uuid == ^trimmed or ilike(c.content, ^pattern))
+        else
+          where(query, [c], ilike(c.content, ^pattern))
+        end
       else
         query
       end
@@ -987,6 +995,13 @@ defmodule PhoenixKitComments do
     handlers =
       if Code.ensure_loaded?(PhoenixKitPosts),
         do: Map.put(handlers, "post", PhoenixKitPosts),
+        else: handlers
+
+    # File comments (incl. Etcher annotation discussions) resolve to the file's
+    # media page via phoenix_kit core's Annotations context.
+    handlers =
+      if Code.ensure_loaded?(PhoenixKit.Annotations),
+        do: Map.put(handlers, "file", PhoenixKit.Annotations),
         else: handlers
 
     handlers

@@ -52,10 +52,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   use PhoenixKitWeb, :live_component
 
   import PhoenixKitWeb.Components.Core.Icon
-  # Renders a comment's markdown (authored in the Leaf editor) to sanitized
-  # HTML on display, so bold/italics/lists/etc. show formatted instead of raw
-  # markdown. Earmark + HtmlSanitizer live in core (always present).
-  import PhoenixKitWeb.Components.Core.Markdown, only: [markdown: 1]
+  import PhoenixKitComments.Web.Markdown, only: [comment_markdown: 1]
 
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
@@ -101,6 +98,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:recording_audio?, false)
      |> assign(:liked_comment_uuids, MapSet.new())
      |> assign(:disliked_comment_uuids, MapSet.new())
+     |> assign(:expanded_comments, MapSet.new())
      |> assign(:max_attachments, max_entries)
      |> assign(:max_attachment_size_mb, max_size_mb)
      |> allow_upload(:attachment,
@@ -340,6 +338,18 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   @impl true
   def handle_event("toggle_collapsed", _params, socket) do
     {:noreply, assign(socket, :collapsed?, not socket.assigns.collapsed?)}
+  end
+
+  # YouTube-style inline expand/collapse of a long comment body.
+  def handle_event("toggle_comment_expanded", %{"uuid" => uuid}, socket) do
+    expanded = socket.assigns.expanded_comments
+
+    expanded =
+      if MapSet.member?(expanded, uuid),
+        do: MapSet.delete(expanded, uuid),
+        else: MapSet.put(expanded, uuid)
+
+    {:noreply, assign(socket, :expanded_comments, expanded)}
   end
 
   @impl true
@@ -967,6 +977,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     MapSet.member?(comment_uuids, comment_uuid)
   end
 
+  # Heuristic for "this comment body is long enough to clamp + offer Read more":
+  # several lines, or a long single block that would wrap past the clamp.
+  defp long_comment?(content) when is_binary(content) do
+    trimmed = String.trim(content)
+    String.length(trimmed) > 280 or length(String.split(trimmed, "\n")) > 4
+  end
+
+  defp long_comment?(_content), do: false
+
   attr(:comment, :map, required: true)
   attr(:current_user, :map, required: true)
   attr(:myself, :any, required: true)
@@ -1168,9 +1187,29 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           </.form>
         <% else %>
           <%= if @comment.content && @comment.content != "" do %>
+            <% expanded = MapSet.member?(@ctx.expanded_comments, @comment.uuid) %>
+            <% is_long = long_comment?(@comment.content) %>
             <div class="text-base-content break-words pk-comment-md">
-              <.markdown content={@comment.content} compact />
+              <.comment_markdown
+                content={@comment.content}
+                compact
+                class={if(is_long and not expanded, do: "line-clamp-4", else: "")}
+              />
             </div>
+            <button
+              :if={is_long}
+              type="button"
+              phx-click="toggle_comment_expanded"
+              phx-value-uuid={@comment.uuid}
+              phx-target={@myself}
+              class="mt-1 inline-flex items-center gap-0.5 text-sm font-semibold text-primary hover:underline"
+            >
+              {if expanded, do: gettext("Show less"), else: gettext("Read more")}
+              <.icon
+                name={if expanded, do: "hero-chevron-up-mini", else: "hero-chevron-down-mini"}
+                class="w-4 h-4"
+              />
+            </button>
           <% end %>
           <%= if gif = comment_gif(@comment) do %>
             <div class="mt-2">

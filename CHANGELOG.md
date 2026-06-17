@@ -2,6 +2,41 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.10 — 2026-06-17
+
+### Added
+
+- **Comments admin moderation overhaul.** Title/subtitle moved into the top
+  navbar (matching the media admin), so they collapse cleanly on mobile and
+  free up vertical space; an Actions tile (Settings shortcut) joined the stats
+  row; the toolbar gained a filtered count and a clear-X on the search field.
+- **Resource chips with thumbnails.** Each comment shows a clickable chip for
+  the resource it belongs to (with an image thumbnail where available), in both
+  the table and the grid/card view. File comments link straight to their media,
+  deep-linking to the corresponding Etcher shape when one exists.
+- **Reply navigation.** A reply can jump to the original comment it answers by
+  filtering the list to that comment's uuid (entered into the search box) — no
+  modal.
+- **Status-aware row actions** in a `…` dropdown that matches the users table:
+  deleted comments offer Restore only; Status now sits next to Actions.
+- **Long-comment handling.** Admin previews truncate to one line with a
+  "Read more ›" cue and open the full, markdown-rendered comment in a modal. In
+  the public `CommentsComponent`, long comments collapse behind a YouTube-style
+  "Read more" / "Show less" toggle.
+
+### Changed
+
+- **Comment markdown now renders with MDEx (comrak) instead of Earmark** on
+  display, in both the public component and the admin grid/card view. Comments
+  are authored as markdown in the Leaf composer, which already renders with
+  MDEx; using the same engine and `render` options (`hardbreaks`, `unsafe`) on
+  display makes the rendered comment match what was typed. Output still passes
+  through core's `HtmlSanitizer`, so XSS protection is unchanged; block spacing
+  is restored via an explicit `.pk-comment-md` stylesheet (no typography plugin
+  required). Uses `{:mdex, "~> 0.13"}`, provided transitively via `leaf`.
+- **i18n sweep** of the comments admin — all user-facing strings now go through
+  `gettext`.
+
 ## 0.2.9 — 2026-06-16
 
 ### Added

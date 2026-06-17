@@ -12,6 +12,8 @@ defmodule PhoenixKitComments.Web.Index do
 
   use PhoenixKitWeb, :live_view
 
+  import PhoenixKitComments.Web.Markdown, only: [comment_markdown: 1, comment_markdown_styles: 1]
+
   alias PhoenixKit.Settings
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Utils.Routes
@@ -23,12 +25,14 @@ defmodule PhoenixKitComments.Web.Index do
     if PhoenixKitComments.enabled?() do
       socket =
         socket
-        |> assign(:page_title, "Comments")
+        |> assign(:page_title, gettext("Comments"))
+        |> assign(:page_subtitle, gettext("Moderate comments across all content"))
         |> assign(:project_title, "")
         |> assign(:comments, [])
         |> assign(:total, 0)
         |> assign(:total_pages, 1)
         |> assign(:resource_context, %{})
+        |> assign(:viewing_comment, nil)
         |> assign(:stats, empty_stats())
         |> assign(:selected_uuids, [])
         |> assign(:resource_types, [])
@@ -39,7 +43,7 @@ defmodule PhoenixKitComments.Web.Index do
     else
       {:ok,
        socket
-       |> put_flash(:error, "Comments module is not enabled")
+       |> put_flash(:error, gettext("Comments module is not enabled"))
        |> push_navigate(to: Routes.path("/admin"))}
     end
   end
@@ -76,6 +80,26 @@ defmodule PhoenixKitComments.Web.Index do
     {:noreply, push_patch(socket, to: Routes.path("/admin/comments"))}
   end
 
+  # Clear only the search (keep the resource-type / status filters).
+  @impl true
+  def handle_event("clear_search", _params, socket) do
+    new_params = build_url_params(socket.assigns, %{"page" => "1", "search" => ""})
+    {:noreply, push_patch(socket, to: Routes.path("/admin/comments?#{new_params}"))}
+  end
+
+  # Open / close the full-comment modal (the list view only shows a truncated
+  # preview; this shows the whole comment in formatted prose).
+  @impl true
+  def handle_event("view_comment", %{"uuid" => uuid}, socket) do
+    {:noreply,
+     assign(socket, :viewing_comment, PhoenixKitComments.get_comment(uuid, preload: [:user]))}
+  end
+
+  @impl true
+  def handle_event("close_comment", _params, socket) do
+    {:noreply, assign(socket, :viewing_comment, nil)}
+  end
+
   @impl true
   def handle_event("approve", %{"uuid" => uuid}, socket) do
     with :ok <- check_authorization(socket),
@@ -83,10 +107,13 @@ defmodule PhoenixKitComments.Web.Index do
       PhoenixKitComments.approve_comment(comment)
 
       {:noreply,
-       socket |> load_comments() |> reload_stats() |> put_flash(:info, "Comment approved")}
+       socket
+       |> load_comments()
+       |> reload_stats()
+       |> put_flash(:info, gettext("Comment approved"))}
     else
-      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, "Not authorized")}
-      nil -> {:noreply, put_flash(socket, :error, "Comment not found")}
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+      nil -> {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
     end
   end
 
@@ -97,10 +124,13 @@ defmodule PhoenixKitComments.Web.Index do
       PhoenixKitComments.hide_comment(comment)
 
       {:noreply,
-       socket |> load_comments() |> reload_stats() |> put_flash(:info, "Comment hidden")}
+       socket
+       |> load_comments()
+       |> reload_stats()
+       |> put_flash(:info, gettext("Comment hidden"))}
     else
-      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, "Not authorized")}
-      nil -> {:noreply, put_flash(socket, :error, "Comment not found")}
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+      nil -> {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
     end
   end
 
@@ -111,10 +141,31 @@ defmodule PhoenixKitComments.Web.Index do
       PhoenixKitComments.delete_comment(comment)
 
       {:noreply,
-       socket |> load_comments() |> reload_stats() |> put_flash(:info, "Comment deleted")}
+       socket
+       |> load_comments()
+       |> reload_stats()
+       |> put_flash(:info, gettext("Comment deleted"))}
     else
-      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, "Not authorized")}
-      nil -> {:noreply, put_flash(socket, :error, "Comment not found")}
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+      nil -> {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
+    end
+  end
+
+  # Revert a soft-deletion — brings the comment back as published.
+  @impl true
+  def handle_event("restore", %{"uuid" => uuid}, socket) do
+    with :ok <- check_authorization(socket),
+         %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
+      PhoenixKitComments.approve_comment(comment)
+
+      {:noreply,
+       socket
+       |> load_comments()
+       |> reload_stats()
+       |> put_flash(:info, gettext("Comment restored"))}
+    else
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+      nil -> {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
     end
   end
 
@@ -134,7 +185,7 @@ defmodule PhoenixKitComments.Web.Index do
   def handle_event("bulk_action", %{"action" => action}, socket) do
     case check_authorization(socket) do
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Not authorized")}
+        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
 
       :ok ->
         do_bulk_action(action, socket)
@@ -145,7 +196,7 @@ defmodule PhoenixKitComments.Web.Index do
     uuids = socket.assigns.selected_uuids
 
     if uuids == [] do
-      {:noreply, put_flash(socket, :error, "No comments selected")}
+      {:noreply, put_flash(socket, :error, gettext("No comments selected"))}
     else
       case action do
         "approve" ->
@@ -156,7 +207,7 @@ defmodule PhoenixKitComments.Web.Index do
            |> assign(:selected_uuids, [])
            |> load_comments()
            |> reload_stats()
-           |> put_flash(:info, "Comments approved")}
+           |> put_flash(:info, gettext("Comments approved"))}
 
         "hide" ->
           PhoenixKitComments.bulk_update_status(uuids, "hidden")
@@ -166,7 +217,7 @@ defmodule PhoenixKitComments.Web.Index do
            |> assign(:selected_uuids, [])
            |> load_comments()
            |> reload_stats()
-           |> put_flash(:info, "Comments hidden")}
+           |> put_flash(:info, gettext("Comments hidden"))}
 
         "delete" ->
           PhoenixKitComments.bulk_update_status(uuids, "deleted")
@@ -176,7 +227,7 @@ defmodule PhoenixKitComments.Web.Index do
            |> assign(:selected_uuids, [])
            |> load_comments()
            |> reload_stats()
-           |> put_flash(:info, "Comments deleted")}
+           |> put_flash(:info, gettext("Comments deleted"))}
 
         _ ->
           {:noreply, socket}
@@ -220,6 +271,9 @@ defmodule PhoenixKitComments.Web.Index do
     |> assign(:total, result.total)
     |> assign(:total_pages, result.total_pages)
     |> assign(:resource_context, resource_context)
+    # Reloading the list (an action, filter, or navigation) closes the open
+    # full-comment modal so it never shows stale content.
+    |> assign(:viewing_comment, nil)
   end
 
   defp reload_stats(socket) do
@@ -284,6 +338,189 @@ defmodule PhoenixKitComments.Web.Index do
   defp resource_info(resource_context, comment) do
     Map.get(resource_context, {comment.resource_type, comment.resource_uuid})
   end
+
+  # Final navigable URL for a resolved resource: prefixes phoenix_kit paths and
+  # appends the annotation deep-link param for file comments.
+  defp resource_url(comment, %{path: path} = info) do
+    base = if info[:prefixed], do: Routes.path(path), else: path
+    link_with_annotation(base, comment)
+  end
+
+  # The resource shown as a compact clickable chip — a thumbnail for image
+  # files (else the type badge) + the truncated title. Shared by the desktop
+  # table cell and the mobile card view.
+  attr(:comment, :map, required: true)
+  attr(:resource_context, :map, required: true)
+  attr(:class, :string, default: "")
+
+  defp resource_chip(assigns) do
+    assigns = assign(assigns, :info, resource_info(assigns.resource_context, assigns.comment))
+
+    ~H"""
+    <%= if @info do %>
+      <.link
+        navigate={resource_url(@comment, @info)}
+        class={[
+          "inline-flex items-center gap-1.5 max-w-[240px] py-0.5 pl-1 pr-2.5 rounded-full bg-base-200 hover:bg-base-300 transition-colors no-underline align-middle",
+          @class
+        ]}
+        title={@info[:full_title] || @info.title}
+      >
+        <img
+          :if={@info[:thumb_url]}
+          src={@info.thumb_url}
+          alt=""
+          class="w-5 h-5 rounded-full object-cover bg-base-300 shrink-0"
+          onerror="this.style.display='none'"
+        />
+        <span :if={!@info[:thumb_url]} class="badge badge-ghost badge-xs shrink-0">
+          {@comment.resource_type}
+        </span>
+        <span class="truncate text-sm min-w-0">{@info.title}</span>
+      </.link>
+    <% else %>
+      <div
+        class={[
+          "inline-flex items-center gap-1.5 max-w-[200px] py-0.5 px-2.5 rounded-full bg-base-200 align-middle",
+          @class
+        ]}
+        title={to_string(@comment.resource_uuid)}
+      >
+        <span class="badge badge-ghost badge-xs shrink-0">{@comment.resource_type}</span>
+        <span class="truncate text-xs font-mono text-base-content/50 min-w-0">
+          {String.slice(to_string(@comment.resource_uuid), 0..7)}
+        </span>
+      </div>
+    <% end %>
+    """
+  end
+
+  # Reply indicator with a clickable parent preview. Clicking filters the list
+  # to the parent by searching its uuid — so the original comment shows on its
+  # own (full content + its resource chip / shape deep-link).
+  attr(:comment, :map, required: true)
+
+  defp reply_indicator(assigns) do
+    ~H"""
+    <div
+      :if={@comment.depth > 0}
+      class="flex items-center gap-1 text-base-content/50 text-xs mb-0.5"
+    >
+      <.icon name="hero-arrow-uturn-right-mini" class="size-3 shrink-0" />
+      <span class="shrink-0">{gettext("Reply")}</span>
+      <.link
+        :if={@comment.parent}
+        patch={
+          Routes.path("/admin/comments?#{URI.encode_query(%{"search" => @comment.parent.uuid})}")
+        }
+        class="truncate max-w-[240px] text-left hover:text-base-content hover:underline"
+        title={gettext("Show the original comment")}
+      >
+        {gettext("— Re: %{snippet}", snippet: String.slice(@comment.parent.content, 0..39))}
+      </.link>
+    </div>
+    """
+  end
+
+  # One-line clickable comment preview. When the comment is longer than the line
+  # (multi-line or long), a "Read more" cue makes it obvious it's truncated;
+  # clicking anywhere opens the full-comment modal. Shared by table + card.
+  attr(:comment, :map, required: true)
+
+  defp comment_content_preview(assigns) do
+    ~H"""
+    <div
+      class="group flex items-center gap-2 cursor-pointer"
+      phx-click="view_comment"
+      phx-value-uuid={@comment.uuid}
+      title={gettext("Click to read the full comment")}
+    >
+      <div class="min-w-0 flex-1">
+        <.comment_markdown content={@comment.content} compact class="text-sm line-clamp-1" />
+      </div>
+      <span
+        :if={preview_truncated?(@comment.content)}
+        class="shrink-0 inline-flex items-center gap-0.5 text-xs font-medium text-primary group-hover:underline"
+      >
+        {gettext("Read more")} <.icon name="hero-chevron-right-mini" class="w-3.5 h-3.5" />
+      </span>
+    </div>
+    """
+  end
+
+  # Heuristic for "the one-line preview is truncated": multi-line content, or a
+  # single line long enough to overflow the narrow content column.
+  defp preview_truncated?(content) when is_binary(content) do
+    trimmed = String.trim(content)
+    String.contains?(trimmed, "\n") or String.length(trimmed) > 50
+  end
+
+  defp preview_truncated?(_content), do: false
+
+  # Status-aware row-action menu. The offered actions depend on the comment's
+  # status: a deleted comment can only be Restored (not approved/hidden/deleted
+  # again); otherwise Approve (unless already published), Hide (unless already
+  # hidden), and Delete. Shared by the table and card views (distinct ids).
+  attr(:comment, :map, required: true)
+  attr(:id, :string, required: true)
+
+  defp comment_actions_menu(assigns) do
+    ~H"""
+    <.table_row_menu id={@id} label={gettext("Comment actions")}>
+      <.table_row_menu_button
+        :if={@comment.status not in ["published", "deleted"]}
+        phx-click="approve"
+        phx-value-uuid={@comment.uuid}
+        icon="hero-check"
+        label={gettext("Approve")}
+        variant="success"
+      />
+      <.table_row_menu_button
+        :if={@comment.status not in ["hidden", "deleted"]}
+        phx-click="hide"
+        phx-value-uuid={@comment.uuid}
+        icon="hero-eye-slash"
+        label={gettext("Hide")}
+        variant="warning"
+      />
+      <.table_row_menu_button
+        :if={@comment.status == "deleted"}
+        phx-click="restore"
+        phx-value-uuid={@comment.uuid}
+        icon="hero-arrow-uturn-left"
+        label={gettext("Restore")}
+        variant="success"
+      />
+      <.table_row_menu_divider :if={@comment.status != "deleted"} />
+      <.table_row_menu_button
+        :if={@comment.status != "deleted"}
+        phx-click="delete"
+        phx-value-uuid={@comment.uuid}
+        data-confirm={gettext("Delete this comment?")}
+        icon="hero-trash"
+        label={gettext("Delete")}
+        variant="error"
+      />
+    </.table_row_menu>
+    """
+  end
+
+  # Appends `?annotation=<uuid>` to a file comment's resource link so the media
+  # page can select the Etcher shape the comment is anchored to (annotation
+  # comments carry the back-reference in `metadata["annotation_uuid"]`).
+  defp link_with_annotation(url, %{resource_type: "file", metadata: metadata})
+       when is_map(metadata) do
+    case Map.get(metadata, "annotation_uuid") do
+      uuid when is_binary(uuid) and uuid != "" ->
+        sep = if String.contains?(url, "?"), do: "&", else: "?"
+        url <> sep <> "annotation=" <> uuid
+
+      _ ->
+        url
+    end
+  end
+
+  defp link_with_annotation(url, _comment), do: url
 
   defp status_badge_class("published"), do: "badge badge-success badge-sm"
   defp status_badge_class("pending"), do: "badge badge-warning badge-sm"

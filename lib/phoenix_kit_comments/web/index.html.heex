@@ -1,40 +1,43 @@
 <div class="container flex flex-col mx-auto px-4 py-6">
-  <.admin_page_header
-    back={Routes.path("/admin")}
-    title="Comments"
-    subtitle="Moderate comments across all content"
-  >
-    <:actions>
-      <.link
-        navigate={Routes.path("/admin/settings/comments")}
-        class="btn btn-ghost btn-sm"
-      >
-        <.icon name="hero-cog-6-tooth" class="w-4 h-4" /> Settings
-      </.link>
-    </:actions>
-  </.admin_page_header>
+  <.comment_markdown_styles />
+  <%!-- Title + subtitle now live in the top navbar (set via the page_title /
+       page_subtitle assigns); the Settings shortcut lives in the filter
+       toolbar below so it doesn't claim a row of its own. --%>
 
   <%!-- Statistics --%>
-  <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+  <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
     <div class="stat bg-base-200 rounded-xl">
-      <div class="stat-title">Total</div>
+      <div class="stat-title">{gettext("Total")}</div>
       <div class="stat-value text-primary text-2xl">{@stats.total}</div>
     </div>
     <div class="stat bg-base-200 rounded-xl">
-      <div class="stat-title">Published</div>
+      <div class="stat-title">{gettext("Published")}</div>
       <div class="stat-value text-success text-2xl">{@stats.published}</div>
     </div>
     <div class="stat bg-base-200 rounded-xl">
-      <div class="stat-title">Pending</div>
+      <div class="stat-title">{gettext("Pending")}</div>
       <div class="stat-value text-warning text-2xl">{@stats.pending}</div>
     </div>
     <div class="stat bg-base-200 rounded-xl">
-      <div class="stat-title">Hidden</div>
+      <div class="stat-title">{gettext("Hidden")}</div>
       <div class="stat-value text-info text-2xl">{@stats.hidden}</div>
     </div>
     <div class="stat bg-base-200 rounded-xl">
-      <div class="stat-title">Deleted</div>
+      <div class="stat-title">{gettext("Deleted")}</div>
       <div class="stat-value text-error text-2xl">{@stats.deleted}</div>
+    </div>
+    <%!-- Actions tile — sits with the counts instead of claiming a row of its
+         own. Settings is the first action; more will be added here later. --%>
+    <div class="stat bg-base-200 rounded-xl">
+      <div class="stat-title">{gettext("Actions")}</div>
+      <div class="flex flex-wrap items-center gap-1.5 mt-1">
+        <.link
+          navigate={Routes.path("/admin/settings/comments")}
+          class="btn btn-sm btn-ghost gap-1.5"
+        >
+          <.icon name="hero-cog-6-tooth" class="w-4 h-4" /> {gettext("Settings")}
+        </.link>
+      </div>
     </div>
   </div>
 
@@ -42,22 +45,33 @@
   <div class="hidden md:block bg-base-200 rounded-lg p-4 mb-6">
     <.form for={%{}} phx-change="filter" class="flex gap-4 items-end">
       <div class="form-control flex-1">
-        <label class="label"><span class="label-text">Search</span></label>
-        <input
-          type="text"
-          name="search[query]"
-          value={@search}
-          placeholder="Search comment content..."
-          class="input input-bordered input-sm w-full"
-          phx-debounce="300"
-        />
+        <label class="label"><span class="label-text">{gettext("Search")}</span></label>
+        <div class="relative">
+          <input
+            type="text"
+            name="search[query]"
+            value={@search}
+            placeholder={gettext("Search comment content...")}
+            class="input input-bordered input-sm w-full pr-8"
+            phx-debounce="300"
+          />
+          <button
+            :if={@search != ""}
+            type="button"
+            phx-click="clear_search"
+            class="absolute right-1.5 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
+            title={gettext("Clear search")}
+          >
+            <.icon name="hero-x-mark" class="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       <div class="form-control w-40">
-        <label class="label"><span class="label-text">Resource Type</span></label>
+        <label class="label"><span class="label-text">{gettext("Resource Type")}</span></label>
         <label class="select select-sm w-full">
           <select name="filter[resource_type]">
-            <option value="">All Types</option>
+            <option value="">{gettext("All Types")}</option>
             <%= for rt <- @resource_types do %>
               <option value={rt} selected={@filter_resource_type == rt}>
                 {String.capitalize(rt)}
@@ -68,20 +82,28 @@
       </div>
 
       <div class="form-control w-36">
-        <label class="label"><span class="label-text">Status</span></label>
+        <label class="label"><span class="label-text">{gettext("Status")}</span></label>
         <label class="select select-sm w-full">
           <select name="filter[status]">
-            <option value="">All Statuses</option>
-            <option value="published" selected={@filter_status == "published"}>Published</option>
-            <option value="pending" selected={@filter_status == "pending"}>Pending</option>
-            <option value="hidden" selected={@filter_status == "hidden"}>Hidden</option>
-            <option value="deleted" selected={@filter_status == "deleted"}>Deleted</option>
+            <option value="">{gettext("All Statuses")}</option>
+            <option value="published" selected={@filter_status == "published"}>
+              {gettext("Published")}
+            </option>
+            <option value="pending" selected={@filter_status == "pending"}>
+              {gettext("Pending")}
+            </option>
+            <option value="hidden" selected={@filter_status == "hidden"}>
+              {gettext("Hidden")}
+            </option>
+            <option value="deleted" selected={@filter_status == "deleted"}>
+              {gettext("Deleted")}
+            </option>
           </select>
         </label>
       </div>
 
       <button type="button" phx-click="clear_filters" class="btn btn-ghost btn-sm shrink-0">
-        Clear
+        {gettext("Clear")}
       </button>
     </.form>
   </div>
@@ -90,23 +112,34 @@
   <div class="md:hidden bg-base-200 rounded-lg p-4 mb-6">
     <.form for={%{}} phx-change="filter" class="space-y-3">
       <div class="form-control">
-        <label class="label"><span class="label-text">Search</span></label>
-        <input
-          type="text"
-          name="search[query]"
-          value={@search}
-          placeholder="Search comment content..."
-          class="input input-bordered input-sm w-full"
-          phx-debounce="300"
-        />
+        <label class="label"><span class="label-text">{gettext("Search")}</span></label>
+        <div class="relative">
+          <input
+            type="text"
+            name="search[query]"
+            value={@search}
+            placeholder={gettext("Search comment content...")}
+            class="input input-bordered input-sm w-full pr-8"
+            phx-debounce="300"
+          />
+          <button
+            :if={@search != ""}
+            type="button"
+            phx-click="clear_search"
+            class="absolute right-1.5 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
+            title={gettext("Clear search")}
+          >
+            <.icon name="hero-x-mark" class="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       <div class="grid grid-cols-2 gap-3">
         <div class="form-control">
-          <label class="label"><span class="label-text">Resource Type</span></label>
+          <label class="label"><span class="label-text">{gettext("Resource Type")}</span></label>
           <label class="select select-sm w-full">
             <select name="filter[resource_type]">
-              <option value="">All Types</option>
+              <option value="">{gettext("All Types")}</option>
               <%= for rt <- @resource_types do %>
                 <option value={rt} selected={@filter_resource_type == rt}>
                   {String.capitalize(rt)}
@@ -117,21 +150,29 @@
         </div>
 
         <div class="form-control">
-          <label class="label"><span class="label-text">Status</span></label>
+          <label class="label"><span class="label-text">{gettext("Status")}</span></label>
           <label class="select select-sm w-full">
             <select name="filter[status]">
-              <option value="">All Statuses</option>
-              <option value="published" selected={@filter_status == "published"}>Published</option>
-              <option value="pending" selected={@filter_status == "pending"}>Pending</option>
-              <option value="hidden" selected={@filter_status == "hidden"}>Hidden</option>
-              <option value="deleted" selected={@filter_status == "deleted"}>Deleted</option>
+              <option value="">{gettext("All Statuses")}</option>
+              <option value="published" selected={@filter_status == "published"}>
+                {gettext("Published")}
+              </option>
+              <option value="pending" selected={@filter_status == "pending"}>
+                {gettext("Pending")}
+              </option>
+              <option value="hidden" selected={@filter_status == "hidden"}>
+                {gettext("Hidden")}
+              </option>
+              <option value="deleted" selected={@filter_status == "deleted"}>
+                {gettext("Deleted")}
+              </option>
             </select>
           </label>
         </div>
       </div>
 
       <button type="button" phx-click="clear_filters" class="btn btn-ghost btn-sm w-full">
-        Clear
+        {gettext("Clear")}
       </button>
     </.form>
   </div>
@@ -139,20 +180,22 @@
   <%!-- Bulk Actions --%>
   <%= if length(@selected_uuids) > 0 do %>
     <div class="flex gap-2 mb-4 items-center">
-      <span class="text-sm text-base-content/70">{length(@selected_uuids)} selected</span>
+      <span class="text-sm text-base-content/70">
+        {ngettext("%{count} selected", "%{count} selected", length(@selected_uuids))}
+      </span>
       <button phx-click="bulk_action" phx-value-action="approve" class="btn btn-success btn-xs">
-        Approve
+        {gettext("Approve")}
       </button>
       <button phx-click="bulk_action" phx-value-action="hide" class="btn btn-warning btn-xs">
-        Hide
+        {gettext("Hide")}
       </button>
       <button
         phx-click="bulk_action"
         phx-value-action="delete"
         class="btn btn-error btn-xs"
-        data-confirm="Delete selected comments?"
+        data-confirm={gettext("Delete selected comments?")}
       >
-        Delete
+        {gettext("Delete")}
       </button>
     </div>
   <% end %>
@@ -166,86 +209,56 @@
       class="w-full"
       toggleable={true}
       items={@comments}
-      card_title={fn comment -> String.slice(comment.content, 0..99) end}
       card_fields={
         fn comment ->
-          fields = [
+          # Resource/Display are shown by the chip in the card header instead.
+          [
             %{
               label: gettext("Author"),
-              value: if(comment.user, do: comment.user.email, else: "Deleted user")
+              value: if(comment.user, do: comment.user.email, else: gettext("Deleted user"))
             },
-            %{label: gettext("Resource"), value: comment.resource_type}
+            %{
+              label: gettext("Date"),
+              value: Calendar.strftime(comment.inserted_at, "%b %d, %Y")
+            },
+            %{label: gettext("Status"), value: comment.status}
           ]
-
-          fields =
-            case resource_info(@resource_context, comment) do
-              %{title: title} ->
-                fields ++ [%{label: gettext("Display"), value: title}]
-
-              _ ->
-                fields
-            end
-
-          fields ++
-            [
-              %{label: gettext("Status"), value: comment.status},
-              %{
-                label: gettext("Date"),
-                value: Calendar.strftime(comment.inserted_at, "%b %d, %Y")
-              }
-            ]
         end
       }
     >
+      <%!-- Toolbar header: the filtered result count (the stats above show the
+           unfiltered totals) shares the row with the grid/list view toggle, so
+           the toggle no longer sits alone on a row of its own. --%>
+      <:toolbar_title>
+        <span class="text-sm font-medium text-base-content/70">
+          {ngettext("%{count} comment", "%{count} comments", @total)}
+        </span>
+      </:toolbar_title>
+      <%!-- Card header renders the content as markdown (like the table cell),
+           so the grid view shows formatting instead of raw markdown. --%>
+      <:card_header :let={comment}>
+        <%!-- Resource chip first, so the card shows what the comment is on (and
+             links to it) — the same clickable thumbnail chip as the table. --%>
+        <div class="mb-1.5">
+          <.resource_chip comment={comment} resource_context={@resource_context} />
+        </div>
+        <.reply_indicator comment={comment} />
+        <.comment_content_preview comment={comment} />
+      </:card_header>
       <:card_actions :let={comment}>
-        <%= case resource_info(@resource_context, comment) do %>
-          <% %{path: path, prefixed: true} -> %>
-            <.link navigate={Routes.path(path)} class="btn btn-sm btn-outline btn-info">
-              <.icon name="hero-arrow-top-right-on-square" class="w-4 h-4" /> {gettext("View")}
-            </.link>
-          <% %{path: path} -> %>
-            <.link navigate={path} class="btn btn-sm btn-outline btn-info">
-              <.icon name="hero-arrow-top-right-on-square" class="w-4 h-4" /> {gettext("View")}
-            </.link>
-          <% _ -> %>
-        <% end %>
-        <%= if comment.status != "published" do %>
-          <button
-            phx-click="approve"
-            phx-value-uuid={comment.uuid}
-            class="btn btn-sm btn-outline btn-success"
-          >
-            {gettext("Approve")}
-          </button>
-        <% end %>
-        <%= if comment.status != "hidden" do %>
-          <button
-            phx-click="hide"
-            phx-value-uuid={comment.uuid}
-            class="btn btn-sm btn-outline btn-warning"
-          >
-            {gettext("Hide")}
-          </button>
-        <% end %>
-        <button
-          phx-click="delete"
-          phx-value-uuid={comment.uuid}
-          class="btn btn-sm btn-outline btn-error"
-          data-confirm="Delete this comment?"
-        >
-          {gettext("Delete")}
-        </button>
+        <%!-- Distinct id from the table menu: both views are in the DOM. --%>
+        <.comment_actions_menu comment={comment} id={"comment-menu-card-#{comment.uuid}"} />
       </:card_actions>
 
       <.table_default_header>
         <.table_default_row hover={false}>
           <.table_default_header_cell class="w-8"></.table_default_header_cell>
-          <.table_default_header_cell>Content</.table_default_header_cell>
-          <.table_default_header_cell>Author</.table_default_header_cell>
-          <.table_default_header_cell>Resource</.table_default_header_cell>
-          <.table_default_header_cell>Status</.table_default_header_cell>
-          <.table_default_header_cell>Date</.table_default_header_cell>
-          <.table_default_header_cell>Actions</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Content")}</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Author")}</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Resource")}</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Date")}</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Status")}</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Actions")}</.table_default_header_cell>
         </.table_default_row>
       </.table_default_header>
 
@@ -262,115 +275,29 @@
               />
             </.table_default_cell>
             <.table_default_cell class="max-w-xs">
-              <%= if comment.depth > 0 do %>
-                <div class="flex items-center gap-1 text-base-content/50 text-xs mb-0.5">
-                  <.icon name="hero-arrow-uturn-right-mini" class="size-3" />
-                  <span>Reply</span>
-                  <%= if comment.parent do %>
-                    <span class="truncate max-w-[200px]">
-                      — Re: {String.slice(comment.parent.content, 0..39)}
-                    </span>
-                  <% end %>
-                </div>
-              <% end %>
-              <div class="truncate text-sm">{String.slice(comment.content, 0..99)}</div>
+              <.reply_indicator comment={comment} />
+              <.comment_content_preview comment={comment} />
             </.table_default_cell>
             <.table_default_cell class="text-sm">
               <%= if comment.user do %>
                 {comment.user.email}
               <% else %>
-                <span class="text-base-content/50">Deleted user</span>
+                <span class="text-base-content/50">{gettext("Deleted user")}</span>
               <% end %>
             </.table_default_cell>
             <.table_default_cell>
-              <span class="badge badge-ghost badge-sm h-auto">
-                {comment.resource_type}
-              </span>
-              <%= case resource_info(@resource_context, comment) do %>
-                <% %{title: title, full_title: full_title, path: path, prefixed: true} -> %>
-                  <.link
-                    navigate={Routes.path(path)}
-                    class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
-                    title={full_title}
-                  >
-                    {String.slice(title, 0..49)}
-                  </.link>
-                <% %{title: title, full_title: full_title, path: path} -> %>
-                  <.link
-                    navigate={path}
-                    class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
-                    title={full_title}
-                  >
-                    {String.slice(title, 0..49)}
-                  </.link>
-                <% %{title: title, path: path, prefixed: true} -> %>
-                  <.link
-                    navigate={Routes.path(path)}
-                    class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
-                    title={title}
-                  >
-                    {String.slice(title, 0..49)}
-                  </.link>
-                <% %{title: title, path: path} -> %>
-                  <.link
-                    navigate={path}
-                    class="link link-hover text-sm ml-1 truncate max-w-[200px] inline-block align-bottom"
-                    title={title}
-                  >
-                    {String.slice(title, 0..49)}
-                  </.link>
-                <% _ -> %>
-                  <span
-                    class="text-base-content/40 text-xs ml-1"
-                    title={to_string(comment.resource_uuid)}
-                  >
-                    {String.slice(to_string(comment.resource_uuid), 0..7)}
-                  </span>
-              <% end %>
+              <.resource_chip comment={comment} resource_context={@resource_context} />
+            </.table_default_cell>
+            <.table_default_cell class="text-sm text-base-content/70">
+              {Calendar.strftime(comment.inserted_at, "%b %d, %Y")}
             </.table_default_cell>
             <.table_default_cell>
               <span class={status_badge_class(comment.status)}>
                 {comment.status}
               </span>
             </.table_default_cell>
-            <.table_default_cell class="text-sm text-base-content/70">
-              {Calendar.strftime(comment.inserted_at, "%b %d, %Y")}
-            </.table_default_cell>
             <.table_default_cell>
-              <div class="flex gap-1">
-                <%= if comment.status != "published" do %>
-                  <button
-                    phx-click="approve"
-                    phx-value-uuid={comment.uuid}
-                    class="btn btn-xs btn-outline btn-success tooltip tooltip-bottom"
-                    data-tip={gettext("Approve")}
-                  >
-                    <.icon name="hero-check" class="w-4 h-4 hidden sm:inline" />
-                    <span class="sm:hidden whitespace-nowrap">{gettext("Approve")}</span>
-                  </button>
-                <% end %>
-                <%= if comment.status != "hidden" do %>
-                  <button
-                    phx-click="hide"
-                    phx-value-uuid={comment.uuid}
-                    class="btn btn-xs btn-outline btn-warning tooltip tooltip-bottom"
-                    data-tip={gettext("Hide")}
-                  >
-                    <.icon name="hero-eye-slash" class="w-4 h-4 hidden sm:inline" />
-                    <span class="sm:hidden whitespace-nowrap">{gettext("Hide")}</span>
-                  </button>
-                <% end %>
-                <button
-                  phx-click="delete"
-                  phx-value-uuid={comment.uuid}
-                  class="btn btn-xs btn-outline btn-error tooltip tooltip-bottom"
-                  data-tip={gettext("Delete")}
-                  data-confirm="Delete this comment?"
-                >
-                  <.icon name="hero-trash" class="w-4 h-4 hidden sm:inline" />
-                  <span class="sm:hidden whitespace-nowrap">{gettext("Delete")}</span>
-                </button>
-              </div>
+              <.comment_actions_menu comment={comment} id={"comment-menu-#{comment.uuid}"} />
             </.table_default_cell>
           </.table_default_row>
         <% end %>
@@ -379,7 +306,7 @@
   <% else %>
     <div class="text-center py-12 text-base-content/60">
       <.icon name="hero-chat-bubble-left" class="w-12 h-12 mx-auto mb-2 opacity-50" />
-      <p>No comments found</p>
+      <p>{gettext("No comments found")}</p>
     </div>
   <% end %>
 
@@ -400,6 +327,56 @@
           </.link>
         <% end %>
       </div>
+    </div>
+  <% end %>
+
+  <%!-- Full-comment modal — opened by clicking a truncated comment in the list.
+       Shows the whole comment in formatted prose plus context and the same
+       status-aware action menu. --%>
+  <%= if @viewing_comment do %>
+    <div class="modal modal-open" phx-window-keydown="close_comment" phx-key="Escape">
+      <div class="modal-box max-w-2xl">
+        <div class="flex items-start justify-between gap-3 mb-3">
+          <h3 class="font-bold text-lg">{gettext("Comment")}</h3>
+          <div class="flex items-center gap-1">
+            <.comment_actions_menu
+              comment={@viewing_comment}
+              id={"comment-menu-modal-#{@viewing_comment.uuid}"}
+            />
+            <button
+              phx-click="close_comment"
+              class="btn btn-sm btn-circle btn-ghost"
+              title={gettext("Close")}
+            >
+              <.icon name="hero-x-mark" class="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 mb-3 text-sm text-base-content/70">
+          <span>
+            {if @viewing_comment.user,
+              do: @viewing_comment.user.email,
+              else: gettext("Deleted user")}
+          </span>
+          <span class="text-base-content/30">·</span>
+          <span>{Calendar.strftime(@viewing_comment.inserted_at, "%b %d, %Y")}</span>
+          <span class={status_badge_class(@viewing_comment.status)}>{@viewing_comment.status}</span>
+        </div>
+
+        <div class="mb-3">
+          <.resource_chip comment={@viewing_comment} resource_context={@resource_context} />
+        </div>
+
+        <div class="rounded-lg bg-base-200 p-4 max-h-[60vh] overflow-y-auto">
+          <.comment_markdown content={@viewing_comment.content} />
+        </div>
+
+        <div class="modal-action">
+          <button phx-click="close_comment" class="btn btn-ghost">{gettext("Close")}</button>
+        </div>
+      </div>
+      <div class="modal-backdrop" phx-click="close_comment"></div>
     </div>
   <% end %>
 </div>
