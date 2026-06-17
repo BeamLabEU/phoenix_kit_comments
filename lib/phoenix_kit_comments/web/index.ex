@@ -416,11 +416,19 @@ defmodule PhoenixKitComments.Web.Index do
         class="truncate max-w-[240px] text-left hover:text-base-content hover:underline"
         title={gettext("Show the original comment")}
       >
-        {gettext("— Re: %{snippet}", snippet: String.slice(@comment.parent.content, 0..39))}
+        {gettext("— Re: %{snippet}", snippet: parent_snippet(@comment.parent))}
       </.link>
     </div>
     """
   end
+
+  # A short preview of the parent comment for the "— Re: …" reply label.
+  # Parents can be GIF/attachment-only, so `content` may be nil/blank — fall
+  # back to a placeholder instead of crashing on `String.slice(nil, _)`.
+  defp parent_snippet(%{content: content}) when is_binary(content) and content != "",
+    do: String.slice(content, 0..39)
+
+  defp parent_snippet(_parent), do: gettext("[no text]")
 
   # One-line clickable comment preview. When the comment is longer than the line
   # (multi-line or long), a "Read more" cue makes it obvious it's truncated;

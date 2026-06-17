@@ -52,7 +52,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   use PhoenixKitWeb, :live_component
 
   import PhoenixKitWeb.Components.Core.Icon
-  import PhoenixKitComments.Web.Markdown, only: [comment_markdown: 1]
+  import PhoenixKitComments.Web.Markdown, only: [comment_markdown: 1, comment_markdown_styles: 1]
 
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner

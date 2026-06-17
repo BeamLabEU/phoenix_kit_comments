@@ -37,6 +37,19 @@ All notable changes to PhoenixKitComments will be documented in this file.
 - **i18n sweep** of the comments admin — all user-facing strings now go through
   `gettext`.
 
+### Fixed
+
+- **Reply indicator no longer crashes on media-only parents.** The
+  `/admin/comments` "— Re: …" reply label sliced `parent.content` directly, but a
+  comment can have blank content when it carries only a GIF or attachment — so a
+  reply to such a comment raised `String.slice(nil, _)` and crashed the
+  moderation page. Blank parents now show a `[no text]` placeholder.
+- **Unified the comment-markdown styles.** The public `CommentsComponent` shipped
+  its own inline `.pk-comment-md` `<style>` copy that had drifted from the shared
+  `comment_markdown_styles/1` helper the admin uses (different paragraph/heading
+  spacing). The component now renders the shared helper, so public and admin
+  render identical markdown from a single source of truth.
+
 ## 0.2.9 — 2026-06-16
 
 ### Added
