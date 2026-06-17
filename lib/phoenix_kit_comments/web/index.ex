@@ -92,7 +92,11 @@ defmodule PhoenixKitComments.Web.Index do
   @impl true
   def handle_event("view_comment", %{"uuid" => uuid}, socket) do
     {:noreply,
-     assign(socket, :viewing_comment, PhoenixKitComments.get_comment(uuid, preload: [:user]))}
+     assign(
+       socket,
+       :viewing_comment,
+       PhoenixKitComments.get_comment(uuid, preload: [:user, media: :file])
+     )}
   end
 
   @impl true
@@ -358,25 +362,25 @@ defmodule PhoenixKitComments.Web.Index do
 
     ~H"""
     <%= if @info do %>
+      <%!-- Prefixed paths are phoenix_kit LiveView routes, so SPA-navigate.
+           Non-prefixed paths come from host-configured templates and may point
+           at a plain controller page or an external URL — use a real href there,
+           since live navigation only works between LiveViews in the session. --%>
       <.link
+        :if={@info[:prefixed]}
         navigate={resource_url(@comment, @info)}
-        class={[
-          "inline-flex items-center gap-1.5 max-w-[240px] py-0.5 pl-1 pr-2.5 rounded-full bg-base-200 hover:bg-base-300 transition-colors no-underline align-middle",
-          @class
-        ]}
+        class={[chip_class(), @class]}
         title={@info[:full_title] || @info.title}
       >
-        <img
-          :if={@info[:thumb_url]}
-          src={@info.thumb_url}
-          alt=""
-          class="w-5 h-5 rounded-full object-cover bg-base-300 shrink-0"
-          onerror="this.style.display='none'"
-        />
-        <span :if={!@info[:thumb_url]} class="badge badge-ghost badge-xs shrink-0">
-          {@comment.resource_type}
-        </span>
-        <span class="truncate text-sm min-w-0">{@info.title}</span>
+        <.resource_chip_body comment={@comment} info={@info} />
+      </.link>
+      <.link
+        :if={!@info[:prefixed]}
+        href={resource_url(@comment, @info)}
+        class={[chip_class(), @class]}
+        title={@info[:full_title] || @info.title}
+      >
+        <.resource_chip_body comment={@comment} info={@info} />
       </.link>
     <% else %>
       <div
@@ -392,6 +396,31 @@ defmodule PhoenixKitComments.Web.Index do
         </span>
       </div>
     <% end %>
+    """
+  end
+
+  defp chip_class do
+    "inline-flex items-center gap-1.5 max-w-[240px] py-0.5 pl-1 pr-2.5 rounded-full bg-base-200 hover:bg-base-300 transition-colors no-underline align-middle"
+  end
+
+  # The chip's inner content. The thumbnail is a CSS background rather than an
+  # `<img onerror=…>`: inline JS is blocked by a strict `script-src` CSP (and
+  # AGENTS.md mandates hooks register on `window.PhoenixKitHooks`), and a missing
+  # background image simply falls back to the placeholder colour — no handler.
+  attr(:comment, :map, required: true)
+  attr(:info, :map, required: true)
+
+  defp resource_chip_body(assigns) do
+    ~H"""
+    <span
+      :if={@info[:thumb_url]}
+      class="w-5 h-5 rounded-full bg-base-300 bg-cover bg-center shrink-0"
+      style={"background-image: url('#{@info.thumb_url}')"}
+    />
+    <span :if={!@info[:thumb_url]} class="badge badge-ghost badge-xs shrink-0">
+      {@comment.resource_type}
+    </span>
+    <span class="truncate text-sm min-w-0">{@info.title}</span>
     """
   end
 
@@ -439,12 +468,30 @@ defmodule PhoenixKitComments.Web.Index do
     ~H"""
     <div
       class="group flex items-center gap-2 cursor-pointer"
+      role="button"
+      tabindex="0"
       phx-click="view_comment"
+      phx-keydown="view_comment"
+      phx-key="Enter"
       phx-value-uuid={@comment.uuid}
       title={gettext("Click to read the full comment")}
     >
       <div class="min-w-0 flex-1">
-        <.comment_markdown content={@comment.content} compact class="text-sm line-clamp-1" />
+        <%!-- Media-only comments (GIF / attachment, no text) would render an
+             empty preview; show a placeholder so the row isn't invisible. --%>
+        <span
+          :if={blank_content?(@comment.content)}
+          class="inline-flex items-center gap-1 text-sm italic text-base-content/50"
+        >
+          <.icon name={media_icon(@comment)} class="w-4 h-4 shrink-0" />
+          {media_placeholder(@comment)}
+        </span>
+        <.comment_markdown
+          :if={not blank_content?(@comment.content)}
+          content={@comment.content}
+          compact
+          class="text-sm line-clamp-1"
+        />
       </div>
       <span
         :if={preview_truncated?(@comment.content)}
@@ -464,6 +511,30 @@ defmodule PhoenixKitComments.Web.Index do
   end
 
   defp preview_truncated?(_content), do: false
+
+  # Comments may carry only a GIF or attachment, leaving `content` blank (see
+  # `Comment.do_validate_content_or_media/2`). These helpers let the preview and
+  # modal surface the media instead of an empty body.
+  defp blank_content?(content), do: String.trim(to_string(content)) == ""
+
+  defp comment_gif_url(%{metadata: %{"giphy" => %{"url" => url}}})
+       when is_binary(url) and url != "",
+       do: url
+
+  defp comment_gif_url(_comment), do: nil
+
+  # `media` is only preloaded for the modal's single comment; list rows leave it
+  # unloaded (an `Ecto.Association.NotLoaded`), which falls through to 0.
+  defp attachment_count(%{media: media}) when is_list(media), do: length(media)
+  defp attachment_count(_comment), do: 0
+
+  defp media_placeholder(comment) do
+    if comment_gif_url(comment), do: gettext("GIF"), else: gettext("Attachment")
+  end
+
+  defp media_icon(comment) do
+    if comment_gif_url(comment), do: "hero-photo", else: "hero-paper-clip"
+  end
 
   # Status-aware row-action menu. The offered actions depend on the comment's
   # status: a deleted comment can only be Restored (not approved/hidden/deleted

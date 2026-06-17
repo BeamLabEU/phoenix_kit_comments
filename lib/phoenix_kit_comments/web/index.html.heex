@@ -317,9 +317,7 @@
         <%= for page <- max(1, @page - 2)..min(@total_pages, @page + 2) do %>
           <.link
             patch={
-              Routes.path(
-                "/admin/comments?#{URI.encode_query(%{"page" => page, "search" => @search || "", "resource_type" => @filter_resource_type || "", "status" => @filter_status || ""})}"
-              )
+              Routes.path("/admin/comments?#{build_url_params(assigns, %{"page" => to_string(page)})}")
             }
             class={["join-item btn btn-sm", if(page == @page, do: "btn-active", else: "")]}
           >
@@ -368,8 +366,24 @@
           <.resource_chip comment={@viewing_comment} resource_context={@resource_context} />
         </div>
 
-        <div class="rounded-lg bg-base-200 p-4 max-h-[60vh] overflow-y-auto">
-          <.comment_markdown content={@viewing_comment.content} />
+        <div class="rounded-lg bg-base-200 p-4 max-h-[60vh] overflow-y-auto space-y-2">
+          <.comment_markdown
+            :if={not blank_content?(@viewing_comment.content)}
+            content={@viewing_comment.content}
+          />
+          <%!-- Media-only comments have no text body — render the GIF / list the
+               attachments so the modal isn't blank. --%>
+          <%= if gif_url = comment_gif_url(@viewing_comment) do %>
+            <img src={gif_url} alt="" class="max-h-64 rounded-lg" />
+          <% end %>
+          <div
+            :if={attachment_count(@viewing_comment) > 0}
+            class="flex items-center gap-1.5 text-sm text-base-content/70"
+          >
+            <.icon name="hero-paper-clip" class="w-4 h-4 shrink-0" />
+            {ngettext("%{count} attachment", "%{count} attachments",
+              attachment_count(@viewing_comment))}
+          </div>
         </div>
 
         <div class="modal-action">

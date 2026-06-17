@@ -111,6 +111,45 @@ Applied directly to `main` after the post-hoc review:
 `mix compile --warnings-as-errors` is green; the full suite (42 tests) passes.
 Version left at 0.2.10 (bug/consistency fixes, no API change).
 
+## Response to Kimi's review
+
+Kimi's independent review (`KIMI_REVIEW.md` in this directory) raised seven
+further items. After verifying each against the code, five were addressed on
+`main`; two are noted below.
+
+- **Kimi #1 — media-only comments invisible in admin preview/modal.** ✅ Fixed.
+  Same root cause as my finding #1 (blank `content` for GIF/attachment-only
+  comments). The list preview now shows a "GIF"/"Attachment" placeholder, and the
+  full-comment modal renders the GIF (from `metadata`) plus an attachment count
+  (`view_comment` now preloads `media: :file`).
+- **Kimi #2 — inline `onerror` on the resource-chip thumbnail.** ✅ Fixed.
+  Confirmed against `AGENTS.md` ("JavaScript hooks must be inline `<script>`
+  tags; register on `window.PhoenixKitHooks`") — the inline handler also dies
+  under a strict `script-src` CSP. Replaced the `<img onerror=…>` with a CSS
+  `background-image` element, so a missing thumbnail falls back to the
+  placeholder colour with no JS.
+- **Kimi #3 — `navigate` for possibly-external resource URLs.** ✅ Fixed.
+  Non-prefixed paths come from host-configured templates (controller pages or
+  external URLs); they now use `href`. Prefixed (phoenix_kit LiveView) paths keep
+  `navigate`. The existing `prefixed` flag distinguishes them, so no URL parsing
+  is needed.
+- **Kimi #4 — pagination links carry empty filter params.** ✅ Fixed. Pagination
+  now reuses `build_url_params/2` (which strips blank values), matching the rest
+  of the page.
+- **Kimi #5 — clickable preview not keyboard-focusable.** ✅ Fixed. The preview
+  is now `role="button"`, `tabindex="0"`, with `phx-keydown="view_comment"` /
+  `phx-key="Enter"`.
+- **Kimi #6 — card status as raw string, not a badge.** ⏸️ Not done. `card_fields`
+  renders plain-text values by design (the core table card has no markup slot for
+  field values); a badge would need restructuring the card. Cosmetic, low value —
+  left as-is.
+- **Kimi #7 — editing a comment to empty text fails even with media.** ⏸️ Noted,
+  not done. Real, but pre-existing and on a different surface
+  (`CommentsComponent.do_save_edit/2`, the public composer), not part of PR #24's
+  display work. Worth a separate, focused change.
+
+`mix compile --warnings-as-errors` green; 42 tests pass.
+
 ## Conclusion
 
 A large but well-structured PR; the engine swap, uuid-deep-link search, and
@@ -118,4 +157,6 @@ status-aware moderation UI are correct and faithful to the existing admin
 conventions. The two actionable items — a render crash on media-only-parent
 replies (#1) and the half-finished shared-styles extraction (#2) — have been
 fixed on `main`, completing the PR's own "shared markdown helper" intent and
-closing the crash. Approve as merged.
+closing the crash. Five of Kimi's seven follow-ups were also fixed (see above);
+the remaining two are a cosmetic card-badge tweak and a pre-existing composer
+bug. Approve as merged.

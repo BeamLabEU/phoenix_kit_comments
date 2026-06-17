@@ -49,6 +49,21 @@ All notable changes to PhoenixKitComments will be documented in this file.
   `comment_markdown_styles/1` helper the admin uses (different paragraph/heading
   spacing). The component now renders the shared helper, so public and admin
   render identical markdown from a single source of truth.
+- **Media-only comments are no longer invisible in the admin.** A GIF- or
+  attachment-only comment (blank text) used to render an empty preview row and an
+  empty full-comment modal. The list now shows a "GIF" / "Attachment" placeholder,
+  and the modal renders the GIF and an attachment count.
+- **Resource-chip thumbnails dropped the inline `onerror` handler** in favour of
+  a CSS background image, so a missing thumbnail degrades gracefully without inline
+  JS (consistent with the `window.PhoenixKitHooks` convention and strict CSPs).
+- **Resource chips link correctly to host/external pages.** Non-prefixed resource
+  paths (host controller pages or external URLs) now use a plain `href` instead of
+  LiveView `navigate`, which only works between LiveViews in the session.
+- **Keyboard access for the admin comment preview.** The clickable one-line
+  preview is now a focusable `role="button"` that opens the full-comment modal on
+  Enter.
+- **Pagination links** no longer carry empty `search=`/`resource_type=`/`status=`
+  query params; they reuse `build_url_params/2`, which strips blanks.
 
 ## 0.2.9 — 2026-06-16
 
