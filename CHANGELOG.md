@@ -2,6 +2,17 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.11 — 2026-06-17
+
+### Changed
+
+- **Dropped the direct `mdex` dependency.** `phoenix_kit` core now declares
+  `mdex` directly (as of 1.7.160), so comments no longer needs its own dep —
+  `lib/phoenix_kit_comments/web/markdown.ex` calls `MDEx` and resolves it
+  transitively through `phoenix_kit`, keeping a single shared version across all
+  modules and eliminating version-mismatch risk. Mirrors the existing `leaf`
+  arrangement.
+
 ## 0.2.10 — 2026-06-17
 
 ### Added
@@ -33,8 +44,8 @@ All notable changes to PhoenixKitComments will be documented in this file.
   display makes the rendered comment match what was typed. Output still passes
   through core's `HtmlSanitizer`, so XSS protection is unchanged; block spacing
   is restored via an explicit `.pk-comment-md` stylesheet (no typography plugin
-  required). `mdex` is not declared as a dependency here — it is provided by
-  `phoenix_kit` core, so every module shares one resolved version.
+  required). Adds `{:mdex, "~> 0.13"}` as a direct dependency (dropped again in
+  0.2.11 once `phoenix_kit` core began providing it transitively).
 - **i18n sweep** of the comments admin — all user-facing strings now go through
   `gettext`.
 
