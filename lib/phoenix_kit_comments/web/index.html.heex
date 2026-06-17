@@ -221,7 +221,7 @@
               label: gettext("Date"),
               value: Calendar.strftime(comment.inserted_at, "%b %d, %Y")
             },
-            %{label: gettext("Status"), value: comment.status}
+            %{label: gettext("Status"), value: status_badge_value(comment.status)}
           ]
         end
       }

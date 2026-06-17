@@ -68,6 +68,8 @@ All notable changes to PhoenixKitComments will be documented in this file.
   The composer's `save_edit` rejected blank content unconditionally; it now allows
   it for GIF/attachment-only comments (which the changeset already considers valid),
   and only blocks a truly empty edit.
+- **Admin grid/card view shows the status as a badge** (matching the table column)
+  instead of a bare string.
 
 ## 0.2.9 — 2026-06-16
 

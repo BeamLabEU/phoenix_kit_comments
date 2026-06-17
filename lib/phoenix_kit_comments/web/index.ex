@@ -606,4 +606,13 @@ defmodule PhoenixKitComments.Web.Index do
   defp status_badge_class("hidden"), do: "badge badge-info badge-sm"
   defp status_badge_class("deleted"), do: "badge badge-error badge-sm"
   defp status_badge_class(_), do: "badge badge-ghost badge-sm"
+
+  # The core card renders a `card_fields` entry's `value` as safe HTML, so the
+  # grid view can show the same status badge as the table column instead of a
+  # bare string. `status` is a fixed enum, but escape the label defensively.
+  defp status_badge_value(status) do
+    status = to_string(status)
+    text = status |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
+    Phoenix.HTML.raw(~s(<span class="#{status_badge_class(status)}">#{text}</span>))
+  end
 end

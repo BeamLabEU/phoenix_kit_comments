@@ -114,8 +114,8 @@ Version left at 0.2.10 (bug/consistency fixes, no API change).
 ## Response to Kimi's review
 
 Kimi's independent review (`KIMI_REVIEW.md` in this directory) raised seven
-further items. After verifying each against the code, five were addressed on
-`main`; two are noted below.
+further items. After verifying each against the code, all seven were addressed
+on `main` (the order they were fixed in is reflected in the commits).
 
 - **Kimi #1 — media-only comments invisible in admin preview/modal.** ✅ Fixed.
   Same root cause as my finding #1 (blank `content` for GIF/attachment-only
@@ -139,10 +139,12 @@ further items. After verifying each against the code, five were addressed on
 - **Kimi #5 — clickable preview not keyboard-focusable.** ✅ Fixed. The preview
   is now `role="button"`, `tabindex="0"`, with `phx-keydown="view_comment"` /
   `phx-key="Enter"`.
-- **Kimi #6 — card status as raw string, not a badge.** ⏸️ Not done (only open
-  item). `card_fields` renders plain-text values by design (the core table card
-  has no markup slot for field values); a badge would need restructuring the card.
-  Cosmetic, low value — left as-is.
+- **Kimi #6 — card status as raw string, not a badge.** ✅ Fixed. My earlier read
+  was wrong: the core card renders a `card_fields` entry's `value` as **safe HTML**
+  (`table_default.ex` `{field.value}`), not plain text. So a new `status_badge_value/1`
+  returns the same badge (`Phoenix.HTML.raw` of a `<span>` using `status_badge_class/1`,
+  status text escaped defensively) and the card grid now matches the table column —
+  no card restructuring needed.
 - **Kimi #7 — editing a comment to empty text fails even with media.** ✅ Fixed.
   Pre-existing (in the public composer, `CommentsComponent.do_save_edit/2`), but
   fixed since it's a real correctness bug. `save_edit` now fetches the comment with
@@ -173,9 +175,9 @@ commits (find them with `git log --grep "PR #24"` / `--grep "Kimi"`):
 | **Pagination URL hygiene** (Kimi #4) | Pagination links built raw `URI.encode_query` with empty `search=`/`resource_type=`/`status=`; now reuse `build_url_params/2`, which strips blanks. | `web/index.html.heex` |
 | **Keyboard a11y** (Kimi #5) | The clickable one-line preview was a bare `<div phx-click>`; now `role="button"`, `tabindex="0"`, opens the modal on Enter (`phx-keydown`/`phx-key`). | `web/index.ex` |
 | **Edit-to-empty with media** (Kimi #7) | `do_save_edit` rejected `content == ""` unconditionally; now allowed when a GIF/attachment is present (`save_edit` preloads `:media`; guard checks `comment_gif/1` + `comment_media/1`). | `web/comments_component.ex` |
+| **Card status badge** (Kimi #6) | The grid/card status was a bare string while the table used a badge. Added `status_badge_value/1` (safe HTML via `Phoenix.HTML.raw` + `status_badge_class/1`); the core card renders `card_fields` values as safe HTML, so no restructuring was needed. | `web/index.ex`, `web/index.html.heex` |
 
-**Not addressed:** Kimi #6 (card status as raw string vs badge) — cosmetic; `card_fields`
-renders plain-text values by design, so a badge needs restructuring the core table card.
+**Not addressed:** none — all of my findings and all seven of Kimi's are fixed.
 
 All CHANGELOG entries are under `0.2.10` → `### Fixed`. No version bump (these fix that
 release's own changes / pre-existing behavior, no public API change).
@@ -185,6 +187,6 @@ release's own changes / pre-existing behavior, no public API change).
 A large but well-structured PR; the engine swap, uuid-deep-link search, and
 status-aware moderation UI are correct and faithful to the existing admin
 conventions. The two items from my own pass — a render crash on media-only-parent
-replies (#1) and the half-finished shared-styles extraction (#2) — and six of
-Kimi's seven follow-ups have all been fixed on `main`. Only Kimi #6 (a cosmetic
-card-badge tweak) remains open by choice. Approve as merged.
+replies (#1) and the half-finished shared-styles extraction (#2) — and all seven
+of Kimi's follow-ups have been fixed on `main`. Nothing from either review remains
+open. Approve as merged.
