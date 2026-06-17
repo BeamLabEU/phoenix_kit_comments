@@ -65,12 +65,10 @@ defmodule PhoenixKitComments.MixProject do
       # Giphy API client used by the optional Giphy picker in the comment form.
       {:giphy_api, "~> 0.1.1"},
 
-      # Markdown → HTML for the comment display. Comments are authored as
-      # markdown in the Leaf composer (which renders with MDEx), so rendering
-      # with the same engine on display keeps the two consistent. Output is
-      # still passed through core's HtmlSanitizer for XSS protection. (leaf
-      # itself is provided by phoenix_kit core, so it isn't declared here.)
-      {:mdex, "~> 0.13"},
+      # NOTE: markdown rendering uses MDEx (lib/.../web/markdown.ex calls it
+      # directly), but mdex is NOT declared here — phoenix_kit core depends on
+      # it and provides it transitively, so every module shares one resolved
+      # version. Same arrangement as leaf. Don't re-add a direct mdex dep.
 
       # Optional: add ex_doc for generating documentation
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
