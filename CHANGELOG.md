@@ -64,6 +64,10 @@ All notable changes to PhoenixKitComments will be documented in this file.
   Enter.
 - **Pagination links** no longer carry empty `search=`/`resource_type=`/`status=`
   query params; they reuse `build_url_params/2`, which strips blanks.
+- **Editing a comment to empty text now works when it has a GIF or attachment.**
+  The composer's `save_edit` rejected blank content unconditionally; it now allows
+  it for GIF/attachment-only comments (which the changeset already considers valid),
+  and only blocks a truly empty edit.
 
 ## 0.2.9 — 2026-06-16
 

@@ -520,7 +520,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           text
       end
 
-    case PhoenixKitComments.get_comment(comment_uuid) do
+    # Preload :media so `do_save_edit` can tell a genuinely-empty edit apart
+    # from clearing the text of a GIF/attachment comment (which is allowed).
+    case PhoenixKitComments.get_comment(comment_uuid, preload: [:media]) do
       nil ->
         {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
 
@@ -824,7 +826,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     content = String.trim(content)
 
     cond do
-      content == "" ->
+      # Empty text is only rejected when there's nothing else to the comment.
+      # A GIF- or attachment-only comment is valid (the changeset agrees), so
+      # clearing its text must be allowed.
+      content == "" and is_nil(comment_gif(comment)) and comment_media(comment) == [] ->
         {:noreply, put_flash(socket, :error, gettext("Comment cannot be empty"))}
 
       String.length(content) > max_length ->
