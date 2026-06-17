@@ -33,7 +33,8 @@ All notable changes to PhoenixKitComments will be documented in this file.
   display makes the rendered comment match what was typed. Output still passes
   through core's `HtmlSanitizer`, so XSS protection is unchanged; block spacing
   is restored via an explicit `.pk-comment-md` stylesheet (no typography plugin
-  required). Uses `{:mdex, "~> 0.13"}`, provided transitively via `leaf`.
+  required). `mdex` is not declared as a dependency here — it is provided by
+  `phoenix_kit` core, so every module shares one resolved version.
 - **i18n sweep** of the comments admin — all user-facing strings now go through
   `gettext`.
 
