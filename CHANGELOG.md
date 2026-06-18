@@ -7,7 +7,7 @@ All notable changes to PhoenixKitComments will be documented in this file.
 ### Changed
 
 - **Dropped the direct `mdex` dependency.** `phoenix_kit` core now declares
-  `mdex` directly (as of 1.7.160), so comments no longer needs its own dep —
+  `mdex` directly, so comments no longer needs its own dep —
   `lib/phoenix_kit_comments/web/markdown.ex` calls `MDEx` and resolves it
   transitively through `phoenix_kit`, keeping a single shared version across all
   modules and eliminating version-mismatch risk. Mirrors the existing `leaf`
