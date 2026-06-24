@@ -1004,6 +1004,13 @@ defmodule PhoenixKitComments do
         do: Map.put(handlers, "file", PhoenixKit.Annotations),
         else: handlers
 
+    # User comments resolve to the user's admin detail page (with avatar) via
+    # phoenix_kit core's Users context.
+    handlers =
+      if Code.ensure_loaded?(PhoenixKit.Users.CommentResources),
+        do: Map.put(handlers, "user", PhoenixKit.Users.CommentResources),
+        else: handlers
+
     handlers
   end
 

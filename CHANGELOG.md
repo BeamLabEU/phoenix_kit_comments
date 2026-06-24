@@ -2,6 +2,22 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.12 — 2026-06-24
+
+### Added
+- **`user` resource chips link to the user's admin page.** Registered the
+  built-in `"user"` handler (`PhoenixKit.Users.CommentResources` in core), so a
+  comment attached to a user resolves to `/admin/users/view/:uuid` with the
+  user's name + avatar — joining the existing `"file"` (media) and `"post"`
+  handlers.
+
+### Changed
+- **Friendlier fallback chip for unconfigured resource types.** A comment whose
+  `resource_type` has no handler and no path template now renders a neutral chip
+  (tag icon + humanized type label + short uuid) instead of a bare uuid badge.
+  Hosts can make any such type clickable without code via Settings → Comments →
+  Resource Paths.
+
 ## 0.2.11 — 2026-06-17
 
 ### Changed
