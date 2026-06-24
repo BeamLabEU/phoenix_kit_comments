@@ -383,16 +383,23 @@ defmodule PhoenixKitComments.Web.Index do
         <.resource_chip_body comment={@comment} info={@info} />
       </.link>
     <% else %>
+      <%!-- No handler and no path template for this resource_type — render a
+           neutral, intentional-looking chip (humanized type + short uuid)
+           rather than a bare uuid. Hosts can make it clickable without code by
+           adding a path template in Settings → Comments → Resource Paths. --%>
       <div
         class={[
           "inline-flex items-center gap-1.5 max-w-[200px] py-0.5 px-2.5 rounded-full bg-base-200 align-middle",
           @class
         ]}
-        title={to_string(@comment.resource_uuid)}
+        title={"#{@comment.resource_type}: #{@comment.resource_uuid}"}
       >
-        <span class="badge badge-ghost badge-xs shrink-0">{@comment.resource_type}</span>
-        <span class="truncate text-xs font-mono text-base-content/50 min-w-0">
-          {String.slice(to_string(@comment.resource_uuid), 0..7)}
+        <.icon name="hero-tag" class="w-3.5 h-3.5 text-base-content/40 shrink-0" />
+        <span class="truncate text-xs text-base-content/70 min-w-0">
+          {humanize_resource_type(@comment.resource_type)}
+        </span>
+        <span class="text-xs font-mono text-base-content/40 shrink-0">
+          {String.slice(to_string(@comment.resource_uuid), 0..5)}
         </span>
       </div>
     <% end %>
@@ -423,6 +430,16 @@ defmodule PhoenixKitComments.Web.Index do
     <span class="truncate text-sm min-w-0">{@info.title}</span>
     """
   end
+
+  # "test_page" -> "Test page". Used for the no-handler fallback chip so an
+  # unconfigured resource type reads as a label, not a raw key.
+  defp humanize_resource_type(type) when is_binary(type) and type != "" do
+    type
+    |> String.replace(["_", "-"], " ")
+    |> String.capitalize()
+  end
+
+  defp humanize_resource_type(_), do: gettext("Resource")
 
   # Reply indicator with a clickable parent preview. Clicking filters the list
   # to the parent by searching its uuid — so the original comment shows on its
