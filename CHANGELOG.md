@@ -2,6 +2,27 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.12 — 2026-06-24
+
+### Added
+
+- **User comments link to the user's admin page.** Registers
+  `PhoenixKit.Users.CommentResources` as the `"user"` resource handler (gated on
+  the module being present in `phoenix_kit` core, alongside the existing
+  `"post"`/`"file"` handlers). A comment attached to a user
+  (`resource_type: "user"`) now resolves to that user's display name and
+  `/admin/users/view/:uuid` detail page, with their avatar as the chip
+  thumbnail, instead of rendering a bare uuid in the moderation dashboard.
+  Gracefully no-ops on older core versions that don't ship the module.
+
+### Changed
+
+- **Friendlier no-handler fallback resource chip.** When a comment's
+  `resource_type` has neither a registered handler nor a host-configured path
+  template, the moderation-dashboard chip now renders a tag icon, a humanized
+  type label (`"test_page"` → `"Test page"`), and a short uuid, with a
+  `"<type>: <uuid>"` tooltip — instead of a raw type badge plus a bare uuid.
+
 ## 0.2.11 — 2026-06-17
 
 ### Changed
