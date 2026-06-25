@@ -50,6 +50,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   """
 
   use PhoenixKitWeb, :live_component
+  # Rebind gettext macros to the comments module's own catalogs (priv/gettext).
+  use Gettext, backend: PhoenixKitComments.Gettext
 
   import PhoenixKitWeb.Components.Core.Icon
   import PhoenixKitComments.Web.Markdown, only: [comment_markdown: 1, comment_markdown_styles: 1]
