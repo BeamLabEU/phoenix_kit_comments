@@ -2,6 +2,28 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.13 — 2026-06-25
+
+### Added
+
+- **Russian and Estonian translations for the comments UI.** The comment
+  moderation dashboard (`Web.Index`) and the embeddable comment LiveComponent
+  (`Web.CommentsComponent`) now ship a dedicated `PhoenixKitComments.Gettext`
+  backend with its own `priv/gettext` catalogs, fully translated to `ru` and
+  `et` (English remains the source). The strings follow the host's global locale
+  automatically — no extra wiring — so a Russian- or Estonian-locale session
+  sees those screens in that language; any other locale falls back to English.
+  The catalogs now ship with the package (`priv` added to the Hex `files` list).
+
+### Fixed
+
+- **`mix dialyzer` no longer fails on the Russian plural catalog.** The new
+  gettext backend's generated code passes an opaque `%Expo.PluralForms{}` (the
+  `ru` `nplurals=3` plural form) to `Gettext.Plural.plural/2`, which Dialyzer
+  reported as an opaqueness violation and broke the `quality.ci` / `precommit`
+  gate. Added a targeted `.dialyzer_ignore.exs` filter (the value is correct at
+  runtime; the suite exercises it).
+
 ## 0.2.12 — 2026-06-24
 
 ### Added
