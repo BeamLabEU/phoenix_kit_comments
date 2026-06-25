@@ -54,10 +54,23 @@ defmodule PhoenixKitComments.MixProject do
     ]
   end
 
+  # phoenix_kit resolves from Hex by default. For cross-repo work against a
+  # local checkout, export PHOENIX_KIT_PATH=../phoenix_kit. Unset => the
+  # published pin, so mix hex.publish / CI are unaffected.
+  defp pk_dep(app, requirement, opts \\ []) do
+    env_var = String.upcase(Atom.to_string(app)) <> "_PATH"
+
+    case System.get_env(env_var) do
+      nil when opts == [] -> {app, requirement}
+      nil -> {app, requirement, opts}
+      path -> {app, [path: path, override: true] ++ opts}
+    end
+  end
+
   defp deps do
     [
       # PhoenixKit provides the Module behaviour and Settings API.
-      {:phoenix_kit, "~> 1.7"},
+      pk_dep(:phoenix_kit, "~> 1.7"),
 
       # LiveView is needed for the admin pages.
       {:phoenix_live_view, "~> 1.1"},
@@ -83,7 +96,7 @@ defmodule PhoenixKitComments.MixProject do
     [
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url},
-      files: ~w(lib .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
+      files: ~w(lib priv .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 

@@ -11,6 +11,8 @@ defmodule PhoenixKitComments.Web.Index do
   """
 
   use PhoenixKitWeb, :live_view
+  # Rebind gettext macros to the comments module's own catalogs (priv/gettext).
+  use Gettext, backend: PhoenixKitComments.Gettext
 
   import PhoenixKitComments.Web.Markdown, only: [comment_markdown: 1, comment_markdown_styles: 1]
 
