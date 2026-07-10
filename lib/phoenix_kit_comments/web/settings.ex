@@ -14,6 +14,8 @@ defmodule PhoenixKitComments.Web.Settings do
   """
 
   use PhoenixKitWeb, :live_view
+  # Rebind gettext macros to the comments module's own catalogs (priv/gettext).
+  use Gettext, backend: PhoenixKitComments.Gettext
 
   alias PhoenixKit.Settings
   alias PhoenixKit.Users.Auth.Scope
@@ -49,7 +51,7 @@ defmodule PhoenixKitComments.Web.Settings do
     # Verify authorization before saving
     case check_authorization(socket) do
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Not authorized")}
+        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
 
       :ok ->
         do_save_settings(params, socket)
@@ -60,7 +62,7 @@ defmodule PhoenixKitComments.Web.Settings do
   def handle_event("add_resource_path", %{"resource_path" => params}, socket) do
     case check_authorization(socket) do
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Not authorized")}
+        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
 
       :ok ->
         do_add_resource_path(socket, params)
@@ -71,7 +73,7 @@ defmodule PhoenixKitComments.Web.Settings do
   def handle_event("remove_resource_path", %{"type" => resource_type}, socket) do
     case check_authorization(socket) do
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Not authorized")}
+        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
 
       :ok ->
         templates = Map.delete(socket.assigns.resource_paths, resource_type)
@@ -79,7 +81,7 @@ defmodule PhoenixKitComments.Web.Settings do
 
         {:noreply,
          socket
-         |> put_flash(:info, "Removed path for \"#{resource_type}\"")
+         |> put_flash(:info, gettext("Removed path for \"%{type}\"", type: resource_type))
          |> load_settings()}
     end
   end
@@ -133,7 +135,7 @@ defmodule PhoenixKitComments.Web.Settings do
   def handle_event("save_resource_path", %{"resource_path" => params}, socket) do
     case check_authorization(socket) do
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Not authorized")}
+        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
 
       :ok ->
         do_save_resource_path(socket, params)
@@ -144,7 +146,7 @@ defmodule PhoenixKitComments.Web.Settings do
   def handle_event("reset_defaults", _params, socket) do
     case check_authorization(socket) do
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Not authorized")}
+        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
 
       :ok ->
         # Resource path templates are intentionally NOT reset here —
@@ -169,7 +171,7 @@ defmodule PhoenixKitComments.Web.Settings do
 
         {:noreply,
          socket
-         |> put_flash(:info, "Settings reset to defaults")
+         |> put_flash(:info, gettext("Settings reset to defaults"))
          |> load_settings()}
     end
   end
@@ -213,10 +215,10 @@ defmodule PhoenixKitComments.Web.Settings do
              _ -> false
            end) do
           socket
-          |> put_flash(:info, "Settings saved successfully")
+          |> put_flash(:info, gettext("Settings saved successfully"))
           |> load_settings()
         else
-          put_flash(socket, :error, "Failed to save some settings")
+          put_flash(socket, :error, gettext("Failed to save some settings"))
         end
 
       {:noreply, assign(socket, :saving, false)}
@@ -227,7 +229,7 @@ defmodule PhoenixKitComments.Web.Settings do
 
         {:noreply,
          assign(socket, :saving, false)
-         |> put_flash(:error, "Something went wrong. Please try again.")}
+         |> put_flash(:error, gettext("Something went wrong. Please try again."))}
     end
   end
 
@@ -262,7 +264,7 @@ defmodule PhoenixKitComments.Web.Settings do
       socket
       |> assign(:draft_paths, Map.delete(socket.assigns.draft_paths, resource_type))
       |> assign(:draft_titles, Map.delete(socket.assigns.draft_titles, resource_type))
-      |> put_flash(:info, "Added path for \"#{resource_type}\"")
+      |> put_flash(:info, gettext("Added path for \"%{type}\"", type: resource_type))
     end)
   end
 
@@ -276,7 +278,7 @@ defmodule PhoenixKitComments.Web.Settings do
       |> assign(:editing_resource_type, nil)
       |> assign(:editing_path_value, "")
       |> assign(:editing_title_value, "")
-      |> put_flash(:info, "Updated path for \"#{resource_type}\"")
+      |> put_flash(:info, gettext("Updated path for \"%{type}\"", type: resource_type))
     end)
   end
 
@@ -394,5 +396,27 @@ defmodule PhoenixKitComments.Web.Settings do
     else
       {:error, :unauthorized}
     end
+  end
+
+  @doc """
+  Lightweight in-card section heading (icon + title + rule). Local copy of
+  core's `Core.FormSection.section_header/1` under a distinct name, so this
+  package renders identically without requiring a core release that exports
+  it (and won't conflict with the core import once it does).
+  """
+  attr(:icon, :string, required: true)
+  attr(:title, :string, required: true)
+  attr(:class, :string, default: nil)
+
+  def settings_section_header(assigns) do
+    ~H"""
+    <div class={["flex items-center gap-2 pt-4 first:pt-0", @class]}>
+      <.icon name={@icon} class="w-4 h-4 text-primary/70" />
+      <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">
+        {@title}
+      </h3>
+      <div class="flex-1 border-t border-base-300 ml-2"></div>
+    </div>
+    """
   end
 end
