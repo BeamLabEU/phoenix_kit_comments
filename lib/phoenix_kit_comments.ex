@@ -72,8 +72,8 @@ defmodule PhoenixKitComments do
 
   alias PhoenixKit.Dashboard.Tab
   alias PhoenixKit.PubSubHelper
+  alias PhoenixKit.ResourceLinks
   alias PhoenixKit.Settings
-  alias PhoenixKit.Utils.Routes
   alias PhoenixKit.Utils.UUID, as: UUIDUtils
   alias PhoenixKitComments.Comment
   alias PhoenixKitComments.CommentDislike
@@ -944,22 +944,14 @@ defmodule PhoenixKitComments do
       %{"shoes" => "/order/shoes/:uuid"}
       %{"shoes" => %{"path" => "/order/shoes/:uuid", "title" => ":metadata.name"}}
   """
-  def get_resource_path_templates do
-    Settings.get_json_setting("comment_resource_paths", %{})
-  rescue
-    e ->
-      Logger.warning("Failed to load resource path templates: #{inspect(e)}")
-      %{}
-  end
+  defdelegate get_resource_path_templates, to: ResourceLinks
 
   @doc """
   Updates resource templates for resource types.
 
   Accepts both legacy string values and new map values with `"path"` and `"title"` keys.
   """
-  def update_resource_path_templates(templates) when is_map(templates) do
-    Settings.update_json_setting("comment_resource_paths", templates)
-  end
+  defdelegate update_resource_path_templates(templates), to: ResourceLinks
 
   # ============================================================================
   # Resource Resolution (for admin UI)
@@ -968,182 +960,12 @@ defmodule PhoenixKitComments do
   @doc """
   Resolves resource context (title and admin path) for a list of comments.
 
-  Returns a map of `{resource_type, resource_uuid} => %{title: ..., path: ...}`
-  by delegating to registered `comment_resource_handlers` that implement
-  `resolve_comment_resources/1`.
+  Returns a map of `{resource_type, resource_uuid} => %{title: ..., path: ...}`.
+  Delegates to `PhoenixKit.ResourceLinks` (core) — the same resolver drives both
+  this comments moderation admin and the Activity feed, off one set of handlers
+  and the shared `comment_resource_paths` templates.
   """
-  def resolve_resource_context(comments) do
-    comments
-    |> Enum.group_by(& &1.resource_type)
-    |> Enum.reduce(%{}, fn {resource_type, type_comments}, acc ->
-      resolved = resolve_for_type(resource_type, type_comments)
-
-      Enum.reduce(resolved, acc, fn {id, info}, inner ->
-        Map.put(inner, {resource_type, id}, info)
-      end)
-    end)
-  end
-
-  defp resource_handlers do
-    configured = Application.get_env(:phoenix_kit, :comment_resource_handlers, %{})
-    Map.merge(default_resource_handlers(), configured)
-  end
-
-  defp default_resource_handlers do
-    handlers = %{}
-
-    handlers =
-      if Code.ensure_loaded?(PhoenixKitPosts),
-        do: Map.put(handlers, "post", PhoenixKitPosts),
-        else: handlers
-
-    # File comments (incl. Etcher annotation discussions) resolve to the file's
-    # media page via phoenix_kit core's Annotations context.
-    handlers =
-      if Code.ensure_loaded?(PhoenixKit.Annotations),
-        do: Map.put(handlers, "file", PhoenixKit.Annotations),
-        else: handlers
-
-    # User comments resolve to the user's admin detail page (with avatar) via
-    # phoenix_kit core's Users context.
-    handlers =
-      if Code.ensure_loaded?(PhoenixKit.Users.CommentResources),
-        do: Map.put(handlers, "user", PhoenixKit.Users.CommentResources),
-        else: handlers
-
-    handlers
-  end
-
-  defp resolve_for_type(resource_type, comments) do
-    resource_uuids = comments |> Enum.map(& &1.resource_uuid) |> Enum.uniq()
-
-    case resolve_via_handler(resource_type, resource_uuids) do
-      result when map_size(result) > 0 ->
-        Map.new(result, fn {id, info} -> {id, Map.put(info, :prefixed, true)} end)
-
-      _ ->
-        resolve_via_path_template(resource_type, comments)
-    end
-  rescue
-    e ->
-      Logger.warning("Comment resource resolver error: #{inspect(e)}")
-      %{}
-  end
-
-  defp resolve_via_handler(resource_type, resource_uuids) do
-    handlers = resource_handlers()
-
-    case Map.get(handlers, resource_type) do
-      nil ->
-        %{}
-
-      mod ->
-        if Code.ensure_loaded?(mod) and function_exported?(mod, :resolve_comment_resources, 1) do
-          mod.resolve_comment_resources(resource_uuids)
-        else
-          %{}
-        end
-    end
-  end
-
-  defp resolve_via_path_template(resource_type, comments) do
-    templates = get_resource_path_templates()
-
-    case Map.get(templates, resource_type) do
-      nil ->
-        %{}
-
-      config ->
-        path_template = path_from_config(config)
-        title_template = title_from_config(config)
-
-        Map.new(comments, fn comment ->
-          metadata = comment.metadata || %{}
-          path = apply_path_template(path_template, comment.resource_uuid, metadata)
-          title = resolve_title(title_template, resource_type, comment, metadata)
-          full_title = resolve_full_title(title_template, resource_type, comment, metadata)
-
-          {comment.resource_uuid,
-           %{title: title, full_title: full_title, path: path, prefixed: false}}
-        end)
-    end
-  end
-
-  defp resolve_title(nil, resource_type, comment, _metadata) do
-    short_id = comment.resource_uuid |> to_string() |> String.slice(0..7)
-    "#{resource_type} #{short_id}..."
-  end
-
-  defp resolve_title(title_template, _resource_type, comment, metadata) do
-    apply_title_template(title_template, comment.resource_uuid, metadata)
-  end
-
-  defp resolve_full_title(nil, resource_type, comment, _metadata) do
-    "#{resource_type} #{comment.resource_uuid}"
-  end
-
-  defp resolve_full_title(title_template, _resource_type, comment, metadata) do
-    title_template
-    |> replace_metadata_placeholders(metadata)
-    |> String.replace(":uuid", to_string(comment.resource_uuid))
-  end
-
-  defp path_from_config(config) when is_binary(config), do: config
-  defp path_from_config(%{"path" => path}), do: path
-  defp path_from_config(_), do: ""
-
-  defp title_from_config(config) when is_binary(config), do: nil
-  defp title_from_config(%{"title" => ""}), do: nil
-  defp title_from_config(%{"title" => title}), do: title
-  defp title_from_config(_), do: nil
-
-  defp apply_path_template(template, resource_uuid, metadata) do
-    template
-    |> replace_metadata_url_placeholders(metadata)
-    |> String.replace(":prefix", prefix_value())
-    |> String.replace(":uuid", url_encode(to_string(resource_uuid)))
-  end
-
-  defp apply_title_template(template, resource_uuid, metadata) do
-    template
-    |> replace_metadata_truncated(metadata)
-    |> String.replace(":uuid", truncate_value(to_string(resource_uuid)))
-  end
-
-  defp prefix_value do
-    prefix = Routes.url_prefix()
-    if prefix == "/", do: "", else: prefix
-  end
-
-  defp replace_metadata_placeholders(template, metadata) do
-    Regex.replace(~r/:metadata\.(\w+)/, template, fn _match, key ->
-      metadata |> Map.get(key, "") |> to_string()
-    end)
-  end
-
-  defp replace_metadata_url_placeholders(template, metadata) do
-    Regex.replace(~r/:metadata\.(\w+)/, template, fn _match, key ->
-      metadata |> Map.get(key, "") |> to_string() |> url_encode()
-    end)
-  end
-
-  defp replace_metadata_truncated(template, metadata) do
-    Regex.replace(~r/:metadata\.(\w+)/, template, fn _match, key ->
-      metadata |> Map.get(key, "") |> to_string() |> truncate_value()
-    end)
-  end
-
-  defp url_encode(value), do: URI.encode(value, &URI.char_unreserved?/1)
-
-  @metadata_max_display_length 15
-
-  defp truncate_value(value) do
-    if String.length(value) <= @metadata_max_display_length do
-      value
-    else
-      String.slice(value, 0, @metadata_max_display_length) <> "..."
-    end
-  end
+  defdelegate resolve_resource_context(comments), to: ResourceLinks, as: :resolve
 
   # ============================================================================
   # Like Operations
@@ -1557,9 +1379,7 @@ defmodule PhoenixKitComments do
   defp reaction_callback(:undisliked), do: :on_comment_undisliked
 
   defp notify_resource_handler(callback, resource_type, resource_uuid, comment) do
-    handlers = resource_handlers()
-
-    case Map.get(handlers, resource_type) do
+    case Map.get(ResourceLinks.handlers(), resource_type) do
       nil ->
         :ok
 

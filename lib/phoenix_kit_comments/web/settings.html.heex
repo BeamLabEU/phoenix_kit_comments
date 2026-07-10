@@ -1,28 +1,24 @@
 <div class="container flex flex-col mx-auto px-4 py-6 overflow-x-hidden">
   <.admin_page_header
     back={PhoenixKit.Utils.Routes.path("/admin/settings")}
-    title="Comments Settings"
-    subtitle="Configure the standalone comments module"
+    title={gettext("Comments Settings")}
+    subtitle={gettext("Configure the standalone comments module")}
   />
 
   <%!-- Settings Form --%>
   <div class="max-w-4xl w-full mx-auto space-y-8">
-    <.form for={%{}} phx-submit="save">
-      <%!-- Module Status --%>
-      <div class="card bg-base-100 shadow-xl mb-6">
-        <div class="card-body overflow-hidden">
-          <h2 class="card-title text-xl sm:text-2xl mb-4 flex-wrap">
-            <.icon name="hero-cog-6-tooth" class="w-6 h-6" /> Module Status
-          </h2>
+    <div class="card bg-base-100 shadow-xl">
+      <div class="card-body overflow-hidden">
+        <.form for={%{}} phx-submit="save" class="space-y-6">
+          <.settings_section_header
+            icon="hero-cog-6-tooth"
+            title={gettext("General")}
+            class="pt-0"
+          />
 
-          <div class="form-control">
-            <label class="cursor-pointer flex flex-col sm:flex-row sm:items-center gap-3 p-2">
-              <span class="flex-1 min-w-0">
-                <span class="font-semibold text-lg">Enable Comments</span>
-                <div class="text-sm text-base-content/70 mt-1">
-                  Enable the standalone comments system across all content types
-                </div>
-              </span>
+          <%!-- Enable Comments --%>
+          <div class="form-control w-full">
+            <label class="label cursor-pointer justify-start gap-4">
               <input type="hidden" name="settings[comments_enabled]" value="false" />
               <input
                 type="checkbox"
@@ -31,48 +27,18 @@
                 class="toggle toggle-primary shrink-0"
                 checked={@comments_enabled == "true"}
               />
+              <span class="label-text font-medium">{gettext("Enable Comments")}</span>
             </label>
-          </div>
-        </div>
-      </div>
-
-      <%!-- Moderation --%>
-      <div class="card bg-base-100 shadow-xl mb-6">
-        <div class="card-body overflow-hidden">
-          <h2 class="card-title text-xl sm:text-2xl mb-4 flex-wrap">
-            <.icon name="hero-shield-check" class="w-6 h-6" /> Moderation
-          </h2>
-
-          <div class="form-control">
-            <label class="cursor-pointer flex flex-col sm:flex-row sm:items-center gap-3 p-2">
-              <span class="flex-1 min-w-0">
-                <span class="font-semibold text-lg">Require Moderation</span>
-                <div class="text-sm text-base-content/70 mt-1">
-                  New comments must be approved before appearing publicly
-                </div>
+            <div class="label pt-0">
+              <span class="label-text-alt text-xs text-base-content/50">
+                {gettext("Enable the standalone comments system across all content types")}
               </span>
-              <input type="hidden" name="settings[comments_moderation]" value="false" />
-              <input
-                type="checkbox"
-                name="settings[comments_moderation]"
-                value="true"
-                class="toggle toggle-warning shrink-0"
-                checked={@comments_moderation == "true"}
-              />
-            </label>
+            </div>
           </div>
 
-          <div class="form-control">
-            <label class="cursor-pointer flex flex-col sm:flex-row sm:items-center gap-3 p-2">
-              <span class="flex-1 min-w-0">
-                <span class="font-semibold text-lg">Rich-Text Editor</span>
-                <div class="text-sm text-base-content/70 mt-1">
-                  Use the Leaf rich-text editor in the comment composer. Turn off to
-                  fall back to a plain textarea — do this if the host app hasn't
-                  registered Leaf's JS hook (otherwise the editor hangs on its
-                  loading text).
-                </div>
-              </span>
+          <%!-- Rich-Text Editor --%>
+          <div class="form-control w-full">
+            <label class="label cursor-pointer justify-start gap-4">
               <input type="hidden" name="settings[comments_rich_text]" value="false" />
               <input
                 type="checkbox"
@@ -81,22 +47,50 @@
                 class="toggle toggle-primary shrink-0"
                 checked={@comments_rich_text == "true"}
               />
+              <span class="label-text font-medium">{gettext("Rich-Text Editor")}</span>
             </label>
+            <div class="label pt-0">
+              <span class="label-text-alt text-xs text-base-content/50">
+                {gettext(
+                  "Use the Leaf rich-text editor in the comment composer. Turn off to fall back to a plain textarea — do this if the host app hasn't registered Leaf's JS hook (otherwise the editor hangs on its loading text)."
+                )}
+              </span>
+            </div>
           </div>
-        </div>
-      </div>
 
-      <%!-- Limits --%>
-      <div class="card bg-base-100 shadow-xl mb-6">
-        <div class="card-body overflow-hidden">
-          <h2 class="card-title text-xl sm:text-2xl mb-4 flex-wrap">
-            <.icon name="hero-adjustments-horizontal" class="w-6 h-6" /> Limits
-          </h2>
+          <.settings_section_header icon="hero-shield-check" title={gettext("Moderation")} />
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="form-control">
+          <%!-- Require Moderation --%>
+          <div class="form-control w-full">
+            <label class="label cursor-pointer justify-start gap-4">
+              <input type="hidden" name="settings[comments_moderation]" value="false" />
+              <input
+                type="checkbox"
+                name="settings[comments_moderation]"
+                value="true"
+                class="toggle toggle-warning shrink-0"
+                checked={@comments_moderation == "true"}
+              />
+              <span class="label-text font-medium">{gettext("Require Moderation")}</span>
+            </label>
+            <div class="label pt-0">
+              <span class="label-text-alt text-xs text-base-content/50">
+                {gettext("New comments must be approved before appearing publicly")}
+              </span>
+            </div>
+          </div>
+
+          <.settings_section_header
+            icon="hero-adjustments-horizontal"
+            title={gettext("Limits")}
+          />
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            <div class="form-control w-full">
               <label class="label">
-                <span class="label-text font-semibold">Max Thread Depth</span>
+                <span class="label-text text-base font-medium">
+                  {gettext("Max Thread Depth")}
+                </span>
               </label>
               <input
                 type="number"
@@ -104,18 +98,20 @@
                 value={@comments_max_depth}
                 min="1"
                 max="50"
-                class="input input-bordered"
+                class="input input-bordered w-full focus:input-primary"
               />
-              <label class="label">
-                <span class="label-text-alt text-base-content/60">
-                  Maximum nesting level for reply threads (default: 10)
+              <div class="label">
+                <span class="label-text-alt text-xs text-base-content/50">
+                  {gettext("Maximum nesting level for reply threads (default: 10)")}
                 </span>
-              </label>
+              </div>
             </div>
 
-            <div class="form-control">
+            <div class="form-control w-full">
               <label class="label">
-                <span class="label-text font-semibold">Max Comment Length</span>
+                <span class="label-text text-base font-medium">
+                  {gettext("Max Comment Length")}
+                </span>
               </label>
               <input
                 type="number"
@@ -123,33 +119,21 @@
                 value={@comments_max_length}
                 min="100"
                 max="100000"
-                class="input input-bordered"
+                class="input input-bordered w-full focus:input-primary"
               />
-              <label class="label">
-                <span class="label-text-alt text-base-content/60">
-                  Maximum characters per comment (default: 10,000)
+              <div class="label">
+                <span class="label-text-alt text-xs text-base-content/50">
+                  {gettext("Maximum characters per comment (default: 10,000)")}
                 </span>
-              </label>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <%!-- Giphy Integration --%>
-      <div class="card bg-base-100 shadow-xl mb-6">
-        <div class="card-body overflow-hidden">
-          <h2 class="card-title text-xl sm:text-2xl mb-4 flex-wrap">
-            <.icon name="hero-film" class="w-6 h-6" /> Giphy Integration
-          </h2>
+          <.settings_section_header icon="hero-film" title={gettext("Giphy Integration")} />
 
-          <div class="form-control mb-4">
-            <label class="cursor-pointer flex flex-col sm:flex-row sm:items-center gap-3 p-2">
-              <span class="flex-1 min-w-0">
-                <span class="font-semibold text-lg">Enable Giphy Picker</span>
-                <div class="text-sm text-base-content/70 mt-1">
-                  Show a GIF picker in the comment form. Requires a valid API key below.
-                </div>
-              </span>
+          <%!-- Enable Giphy Picker --%>
+          <div class="form-control w-full">
+            <label class="label cursor-pointer justify-start gap-4">
               <input type="hidden" name="settings[comments_giphy_enabled]" value="false" />
               <input
                 type="checkbox"
@@ -158,69 +142,62 @@
                 class="toggle toggle-primary shrink-0"
                 checked={@comments_giphy_enabled == "true"}
               />
+              <span class="label-text font-medium">{gettext("Enable Giphy Picker")}</span>
             </label>
+            <div class="label pt-0">
+              <span class="label-text-alt text-xs text-base-content/50">
+                {gettext("Show a GIF picker in the comment form. Requires a valid API key below.")}
+              </span>
+            </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="form-control">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            <div class="form-control w-full">
               <label class="label">
-                <span class="label-text font-semibold">Giphy API Key</span>
+                <span class="label-text text-base font-medium">{gettext("Giphy API Key")}</span>
               </label>
               <input
                 type="password"
                 name="settings[comments_giphy_api_key]"
                 value={@comments_giphy_api_key}
                 autocomplete="off"
-                placeholder="Paste your Giphy API key"
-                class="input input-bordered"
+                placeholder={gettext("Paste your Giphy API key")}
+                class="input input-bordered w-full focus:input-primary"
               />
-              <label class="label">
-                <span class="label-text-alt text-base-content/60">
-                  Stored in the database. Leave blank to disable.
+              <div class="label">
+                <span class="label-text-alt text-xs text-base-content/50">
+                  {gettext("Stored in the database. Leave blank to disable.")}
                 </span>
-              </label>
+              </div>
             </div>
 
-            <div class="form-control">
+            <div class="form-control w-full">
               <label class="label">
-                <span class="label-text font-semibold">Content Rating</span>
+                <span class="label-text text-base font-medium">{gettext("Content Rating")}</span>
               </label>
-              <select
-                name="settings[comments_giphy_rating]"
-                class="select select-bordered"
-              >
-                <option value="g" selected={@comments_giphy_rating == "g"}>G</option>
-                <option value="pg" selected={@comments_giphy_rating == "pg"}>PG</option>
-                <option value="pg-13" selected={@comments_giphy_rating == "pg-13"}>PG-13</option>
-                <option value="r" selected={@comments_giphy_rating == "r"}>R</option>
-              </select>
-              <label class="label">
-                <span class="label-text-alt text-base-content/60">
-                  Maximum rating returned by Giphy search (default: G)
+              <label class="select w-full focus:select-primary">
+                <select name="settings[comments_giphy_rating]">
+                  <option value="g" selected={@comments_giphy_rating == "g"}>G</option>
+                  <option value="pg" selected={@comments_giphy_rating == "pg"}>PG</option>
+                  <option value="pg-13" selected={@comments_giphy_rating == "pg-13"}>
+                    PG-13
+                  </option>
+                  <option value="r" selected={@comments_giphy_rating == "r"}>R</option>
+                </select>
+              </label>
+              <div class="label">
+                <span class="label-text-alt text-xs text-base-content/50">
+                  {gettext("Maximum rating returned by Giphy search (default: G)")}
                 </span>
-              </label>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <%!-- Attachments --%>
-      <div class="card bg-base-100 shadow-xl mb-6">
-        <div class="card-body overflow-hidden">
-          <h2 class="card-title text-xl sm:text-2xl mb-4 flex-wrap">
-            <.icon name="hero-paper-clip" class="w-6 h-6" /> Attachments
-          </h2>
+          <.settings_section_header icon="hero-paper-clip" title={gettext("Attachments")} />
 
-          <div class="form-control mb-4">
-            <label class="cursor-pointer flex flex-col sm:flex-row sm:items-center gap-3 p-2">
-              <span class="flex-1 min-w-0">
-                <span class="font-semibold text-lg">Enable Comment Attachments</span>
-                <div class="text-sm text-base-content/70 mt-1">
-                  Allow users to attach images, video, audio, or files to comments.
-                  Voice messages can also be recorded in-browser. Uses the global
-                  storage backend configured under Settings → Storage.
-                </div>
-              </span>
+          <%!-- Enable Comment Attachments --%>
+          <div class="form-control w-full">
+            <label class="label cursor-pointer justify-start gap-4">
               <input type="hidden" name="settings[comments_attachments_enabled]" value="false" />
               <input
                 type="checkbox"
@@ -229,13 +206,25 @@
                 class="toggle toggle-primary shrink-0"
                 checked={@comments_attachments_enabled == "true"}
               />
+              <span class="label-text font-medium">
+                {gettext("Enable Comment Attachments")}
+              </span>
             </label>
+            <div class="label pt-0">
+              <span class="label-text-alt text-xs text-base-content/50">
+                {gettext(
+                  "Allow users to attach images, video, audio, or files to comments. Voice messages can also be recorded in-browser. Uses the global storage backend configured under Settings → Storage."
+                )}
+              </span>
+            </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="form-control">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            <div class="form-control w-full">
               <label class="label">
-                <span class="label-text font-semibold">Max attachments per comment</span>
+                <span class="label-text text-base font-medium">
+                  {gettext("Max attachments per comment")}
+                </span>
               </label>
               <input
                 type="number"
@@ -243,18 +232,20 @@
                 value={@comments_max_attachments}
                 min="1"
                 max="10"
-                class="input input-bordered"
+                class="input input-bordered w-full focus:input-primary"
               />
-              <label class="label">
-                <span class="label-text-alt text-base-content/60">
-                  Per-comment cap (1–10). Default: 4
+              <div class="label">
+                <span class="label-text-alt text-xs text-base-content/50">
+                  {gettext("Per-comment cap (1–10). Default: 4")}
                 </span>
-              </label>
+              </div>
             </div>
 
-            <div class="form-control">
+            <div class="form-control w-full">
               <label class="label">
-                <span class="label-text font-semibold">Max file size (MB)</span>
+                <span class="label-text text-base font-medium">
+                  {gettext("Max file size (MB)")}
+                </span>
               </label>
               <input
                 type="number"
@@ -262,40 +253,45 @@
                 value={@comments_attachment_max_size_mb}
                 min="1"
                 max="500"
-                class="input input-bordered"
+                class="input input-bordered w-full focus:input-primary"
               />
-              <label class="label">
-                <span class="label-text-alt text-base-content/60">
-                  Clamped against the global storage cap. Default: 20
+              <div class="label">
+                <span class="label-text-alt text-xs text-base-content/50">
+                  {gettext("Clamped against the global storage cap. Default: 20")}
                 </span>
-              </label>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <%!-- Action Buttons --%>
-      <div class="flex flex-col-reverse sm:flex-row gap-3 sm:gap-4 sm:justify-end">
-        <button
-          type="button"
-          phx-click="reset_defaults"
-          class="btn btn-ghost btn-outline w-full sm:w-auto"
-        >
-          Reset to Defaults
-        </button>
-        <button
-          type="submit"
-          class="btn btn-primary w-full sm:w-auto"
-          disabled={@saving}
-        >
-          <%= if @saving do %>
-            <span class="loading loading-spinner loading-sm"></span> Saving...
-          <% else %>
-            Save Settings
-          <% end %>
-        </button>
+          <%!-- Action Buttons --%>
+          <div class="flex gap-3 pt-4">
+            <button
+              type="submit"
+              class={["btn btn-primary flex-1", if(@saving, do: "loading", else: "")]}
+              disabled={@saving}
+            >
+              <%= if @saving do %>
+                {gettext("Saving...")}
+              <% else %>
+                {gettext("Save Settings")}
+              <% end %>
+            </button>
+            <button
+              type="button"
+              phx-click="reset_defaults"
+              class="btn btn-outline"
+              data-confirm={
+                gettext(
+                  "Reset ALL comments settings to their defaults? Moderation, limits, Giphy and attachment options will be replaced. This cannot be undone."
+                )
+              }
+            >
+              <.icon name="hero-arrow-path" class="w-4 h-4 mr-2" /> {gettext("Reset")}
+            </button>
+          </div>
+        </.form>
       </div>
-    </.form>
+    </div>
 
     <%!-- Resource Link Patterns (outside main form to avoid nested forms) --%>
     <script>
@@ -363,18 +359,23 @@
     </script>
     <div class="card bg-base-100 shadow-xl mb-6">
       <div class="card-body overflow-hidden">
-        <h2 class="card-title text-xl sm:text-2xl mb-2 flex-wrap">
-          <.icon name="hero-link" class="w-6 h-6" /> Resource Link Patterns
+        <h2 class="card-title text-lg mb-2 flex-wrap">
+          <.icon name="hero-link" class="w-5 h-5" /> {gettext("Resource Link Patterns")}
         </h2>
         <p class="text-sm text-base-content/60 mb-4 break-words">
-          Configure URL patterns for resource types so comments link to their source in the admin page.
-          Use <code class="kbd kbd-sm break-all">:uuid</code> for resource ID,
-          <code class="kbd kbd-sm break-all">:metadata.KEY</code> for values from comment metadata,
-          and <code class="kbd kbd-sm break-all">:prefix</code> to include the site URL prefix.
+          {gettext(
+            "Configure URL patterns for resource types so comments link to their source in the admin page."
+          )}
+          {gettext("Use")} <code class="kbd kbd-sm break-all">:uuid</code>
+          {gettext("for resource ID,")}
+          <code class="kbd kbd-sm break-all">:metadata.KEY</code>
+          {gettext("for values from comment metadata, and")}
+          <code class="kbd kbd-sm break-all">:prefix</code>
+          {gettext("to include the site URL prefix.")}
         </p>
         <p class="text-xs text-base-content/40 mb-4 break-words">
-          Example: <code class="break-all">/products/:uuid</code>
-          or <code class="break-all">:prefix/admin/shop/:uuid</code>
+          {gettext("Example:")} <code class="break-all">/products/:uuid</code>
+          {gettext("or")} <code class="break-all">:prefix/admin/shop/:uuid</code>
         </p>
 
         <%!-- Existing patterns --%>
@@ -384,9 +385,9 @@
             <table class="table table-sm table-fixed w-full">
               <thead>
                 <tr>
-                  <th>Resource Type</th>
-                  <th>Path Template</th>
-                  <th>Display Template</th>
+                  <th>{gettext("Resource Type")}</th>
+                  <th>{gettext("Path Template")}</th>
+                  <th>{gettext("Display Template")}</th>
                   <th class="w-20"></th>
                 </tr>
               </thead>
@@ -412,7 +413,9 @@
                           >
                             <div>
                               <label class="label py-0">
-                                <span class="label-text text-xs font-semibold">Path</span>
+                                <span class="label-text text-xs font-semibold">
+                                  {gettext("Path")}
+                                </span>
                               </label>
                               <textarea
                                 name="resource_path[path_template]"
@@ -423,19 +426,21 @@
                             </div>
                             <div>
                               <label class="label py-0">
-                                <span class="label-text text-xs font-semibold">Display title</span>
+                                <span class="label-text text-xs font-semibold">
+                                  {gettext("Display title")}
+                                </span>
                               </label>
                               <input
                                 type="text"
                                 name="resource_path[title_template]"
                                 value={@editing_title_value}
-                                placeholder="e.g. :metadata.slug - Ch. :metadata.chapter"
+                                placeholder={gettext("e.g. :metadata.slug - Ch. :metadata.chapter")}
                                 class="input input-bordered input-sm w-full"
                               />
                             </div>
                             <%= if keys = Map.get(@metadata_keys_by_type, resource_type) do %>
                               <div class="text-xs text-base-content/60 flex flex-wrap items-center gap-1">
-                                <span class="font-semibold">Available fields:</span>
+                                <span class="font-semibold">{gettext("Available fields:")}</span>
                                 <%= for key <- keys do %>
                                   <span
                                     class="badge badge-ghost badge-xs font-mono gap-0.5"
@@ -452,10 +457,10 @@
                                 phx-click="cancel_edit_resource_path"
                                 class="btn btn-ghost btn-xs"
                               >
-                                Cancel
+                                {gettext("Cancel")}
                               </button>
                               <button type="submit" class="btn btn-primary btn-xs">
-                                Save
+                                {gettext("Save")}
                               </button>
                             </div>
                           </.form>
@@ -474,7 +479,9 @@
                         <%= if display_title != "" do %>
                           <code class="text-sm break-all">{display_title}</code>
                         <% else %>
-                          <span class="text-base-content/40 text-xs">UUID (default)</span>
+                          <span class="text-base-content/40 text-xs">
+                            {gettext("UUID (default)")}
+                          </span>
                         <% end %>
                       </td>
                       <td>
@@ -492,7 +499,9 @@
                             phx-click="remove_resource_path"
                             phx-value-type={resource_type}
                             class="btn btn-ghost btn-xs text-error"
-                            data-confirm={"Remove path pattern for \"#{resource_type}\"?"}
+                            data-confirm={
+                              gettext("Remove path pattern for \"%{type}\"?", type: resource_type)
+                            }
                           >
                             <.icon name="hero-trash" class="w-4 h-4" />
                           </button>
@@ -527,7 +536,7 @@
                   >
                     <div>
                       <label class="label py-0">
-                        <span class="label-text text-xs font-semibold">Path</span>
+                        <span class="label-text text-xs font-semibold">{gettext("Path")}</span>
                       </label>
                       <textarea
                         name="resource_path[path_template]"
@@ -538,19 +547,21 @@
                     </div>
                     <div>
                       <label class="label py-0">
-                        <span class="label-text text-xs font-semibold">Display title</span>
+                        <span class="label-text text-xs font-semibold">
+                          {gettext("Display title")}
+                        </span>
                       </label>
                       <input
                         type="text"
                         name="resource_path[title_template]"
                         value={@editing_title_value}
-                        placeholder="e.g. :metadata.slug"
+                        placeholder={gettext("e.g. :metadata.slug")}
                         class="input input-bordered input-sm w-full"
                       />
                     </div>
                     <%= if keys = Map.get(@metadata_keys_by_type, resource_type) do %>
                       <div class="text-xs text-base-content/60 flex flex-wrap items-center gap-1">
-                        <span class="font-semibold">Available fields:</span>
+                        <span class="font-semibold">{gettext("Available fields:")}</span>
                         <%= for key <- keys do %>
                           <span
                             class="badge badge-ghost badge-xs font-mono gap-0.5"
@@ -567,10 +578,10 @@
                         phx-click="cancel_edit_resource_path"
                         class="btn btn-ghost btn-xs"
                       >
-                        Cancel
+                        {gettext("Cancel")}
                       </button>
                       <button type="submit" class="btn btn-primary btn-xs">
-                        Save
+                        {gettext("Save")}
                       </button>
                     </div>
                   </.form>
@@ -593,19 +604,21 @@
                         phx-click="remove_resource_path"
                         phx-value-type={resource_type}
                         class="btn btn-ghost btn-xs text-error"
-                        data-confirm={"Remove path pattern for \"#{resource_type}\"?"}
+                        data-confirm={
+                          gettext("Remove path pattern for \"%{type}\"?", type: resource_type)
+                        }
                       >
                         <.icon name="hero-trash" class="w-4 h-4" />
                       </button>
                     </div>
                   </div>
                   <div>
-                    <span class="text-xs text-base-content/50">Path:</span>
+                    <span class="text-xs text-base-content/50">{gettext("Path:")}</span>
                     <code class="text-xs break-all">{display_path}</code>
                   </div>
                   <%= if display_title != "" do %>
                     <div>
-                      <span class="text-xs text-base-content/50">Display:</span>
+                      <span class="text-xs text-base-content/50">{gettext("Display:")}</span>
                       <code class="text-xs break-all">{display_title}</code>
                     </div>
                   <% end %>
@@ -615,7 +628,7 @@
           </div>
         <% else %>
           <div class="text-center py-4 text-base-content/50 text-sm mb-4">
-            No resource link patterns configured yet.
+            {gettext("No resource link patterns configured yet.")}
           </div>
         <% end %>
 
@@ -624,7 +637,7 @@
           <div class="mb-4">
             <h3 class="text-sm font-semibold text-warning mb-2">
               <.icon name="hero-exclamation-triangle" class="w-4 h-4 inline" />
-              Resource types without link patterns
+              {gettext("Resource types without link patterns")}
             </h3>
             <div class="space-y-3">
               <%= for resource_type <- @unconfigured_types do %>
@@ -648,13 +661,17 @@
                       <div class="flex items-center gap-2">
                         <span class="badge badge-warning badge-sm">{resource_type}</span>
                         <span class="text-xs text-base-content/50">
-                          {Map.get(@counts_by_type, resource_type, 0)} comments
+                          {ngettext(
+                            "%{count} comment",
+                            "%{count} comments",
+                            Map.get(@counts_by_type, resource_type, 0)
+                          )}
                         </span>
                       </div>
                     </div>
                     <div class="form-control">
                       <label class="label py-0">
-                        <span class="label-text text-xs font-semibold">Path</span>
+                        <span class="label-text text-xs font-semibold">{gettext("Path")}</span>
                       </label>
                       <input
                         type="text"
@@ -667,19 +684,21 @@
                     </div>
                     <div class="form-control">
                       <label class="label py-0">
-                        <span class="label-text text-xs font-semibold">Display title</span>
+                        <span class="label-text text-xs font-semibold">
+                          {gettext("Display title")}
+                        </span>
                       </label>
                       <input
                         type="text"
                         name="resource_path[title_template]"
                         value={Map.get(@draft_titles, resource_type, "")}
-                        placeholder="e.g. :metadata.slug"
+                        placeholder={gettext("e.g. :metadata.slug")}
                         class="input input-bordered input-sm w-full"
                       />
                     </div>
                     <%= if keys = Map.get(@metadata_keys_by_type, resource_type) do %>
                       <div class="text-xs text-base-content/60 flex flex-wrap items-center gap-1">
-                        <span class="font-semibold">Available fields:</span>
+                        <span class="font-semibold">{gettext("Available fields:")}</span>
                         <%= for key <- keys do %>
                           <span
                             class="badge badge-ghost badge-xs font-mono gap-0.5"
@@ -692,7 +711,7 @@
                     <% end %>
                     <div class="flex justify-end">
                       <button type="submit" class="btn btn-sm btn-outline btn-warning">
-                        <.icon name="hero-plus" class="w-4 h-4" /> Add
+                        <.icon name="hero-plus" class="w-4 h-4" /> {gettext("Add")}
                       </button>
                     </div>
                   </.form>
@@ -701,7 +720,7 @@
             </div>
           </div>
 
-          <div class="divider text-xs text-base-content/40">or add manually</div>
+          <div class="divider text-xs text-base-content/40">{gettext("or add manually")}</div>
         <% end %>
 
         <%!-- Add new pattern manually --%>
@@ -709,42 +728,42 @@
           <.form for={%{}} phx-submit="add_resource_path" class="space-y-2">
             <div class="form-control">
               <label class="label py-0">
-                <span class="label-text text-xs font-semibold">Resource Type</span>
+                <span class="label-text text-xs font-semibold">{gettext("Resource Type")}</span>
               </label>
               <input
                 type="text"
                 name="resource_path[resource_type]"
-                placeholder="e.g. shoes"
+                placeholder={gettext("e.g. shoes")}
                 class="input input-bordered input-sm w-full"
                 required
               />
             </div>
             <div class="form-control">
               <label class="label py-0">
-                <span class="label-text text-xs font-semibold">Path</span>
+                <span class="label-text text-xs font-semibold">{gettext("Path")}</span>
               </label>
               <input
                 type="text"
                 name="resource_path[path_template]"
-                placeholder="e.g. /order/shoes/:uuid"
+                placeholder={gettext("e.g. /order/shoes/:uuid")}
                 class="input input-bordered input-sm w-full"
                 required
               />
             </div>
             <div class="form-control">
               <label class="label py-0">
-                <span class="label-text text-xs font-semibold">Display title</span>
+                <span class="label-text text-xs font-semibold">{gettext("Display title")}</span>
               </label>
               <input
                 type="text"
                 name="resource_path[title_template]"
-                placeholder="e.g. :metadata.slug - Ch. :metadata.chapter"
+                placeholder={gettext("e.g. :metadata.slug - Ch. :metadata.chapter")}
                 class="input input-bordered input-sm w-full"
               />
             </div>
             <div class="flex justify-end">
               <button type="submit" class="btn btn-sm btn-outline btn-primary">
-                <.icon name="hero-plus" class="w-4 h-4" /> Add
+                <.icon name="hero-plus" class="w-4 h-4" /> {gettext("Add")}
               </button>
             </div>
           </.form>

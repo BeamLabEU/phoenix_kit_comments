@@ -19,6 +19,7 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: lib/phoenix_kit_comments/web/index.html.heex:234
+#: lib/phoenix_kit_comments/web/settings.html.heex:664
 #, elixir-autogen, elixir-format
 msgid "%{count} comment"
 msgid_plural "%{count} comments"
@@ -89,6 +90,8 @@ msgid "Author"
 msgstr ""
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:1188
+#: lib/phoenix_kit_comments/web/settings.html.heex:460
+#: lib/phoenix_kit_comments/web/settings.html.heex:581
 #, elixir-autogen, elixir-format
 msgid "Cancel"
 msgstr ""
@@ -400,6 +403,11 @@ msgstr ""
 #: lib/phoenix_kit_comments/web/index.ex:155
 #: lib/phoenix_kit_comments/web/index.ex:173
 #: lib/phoenix_kit_comments/web/index.ex:194
+#: lib/phoenix_kit_comments/web/settings.ex:54
+#: lib/phoenix_kit_comments/web/settings.ex:65
+#: lib/phoenix_kit_comments/web/settings.ex:76
+#: lib/phoenix_kit_comments/web/settings.ex:138
+#: lib/phoenix_kit_comments/web/settings.ex:149
 #, elixir-autogen, elixir-format
 msgid "Not authorized"
 msgstr ""
@@ -473,6 +481,8 @@ msgstr ""
 
 #: lib/phoenix_kit_comments/web/index.html.heex:71
 #: lib/phoenix_kit_comments/web/index.html.heex:139
+#: lib/phoenix_kit_comments/web/settings.html.heex:388
+#: lib/phoenix_kit_comments/web/settings.html.heex:731
 #, elixir-autogen, elixir-format
 msgid "Resource Type"
 msgstr ""
@@ -483,6 +493,8 @@ msgid "Restore"
 msgstr ""
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:1191
+#: lib/phoenix_kit_comments/web/settings.html.heex:463
+#: lib/phoenix_kit_comments/web/settings.html.heex:584
 #, elixir-autogen, elixir-format
 msgid "Save"
 msgstr ""
@@ -653,4 +665,346 @@ msgstr ""
 #: lib/phoenix_kit_comments/web/index.ex:467
 #, elixir-autogen, elixir-format
 msgid "— Re: %{snippet}"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:714
+#: lib/phoenix_kit_comments/web/settings.html.heex:766
+#, elixir-autogen, elixir-format
+msgid "Add"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.ex:267
+#, elixir-autogen, elixir-format
+msgid "Added path for \"%{type}\""
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:215
+#, elixir-autogen, elixir-format
+msgid "Allow users to attach images, video, audio, or files to comments. Voice messages can also be recorded in-browser. Uses the global storage backend configured under Settings → Storage."
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:196
+#, elixir-autogen, elixir-format, fuzzy
+msgid "Attachments"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:443
+#: lib/phoenix_kit_comments/web/settings.html.heex:564
+#: lib/phoenix_kit_comments/web/settings.html.heex:701
+#, elixir-autogen, elixir-format
+msgid "Available fields:"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:260
+#, elixir-autogen, elixir-format
+msgid "Clamped against the global storage cap. Default: 20"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:4
+#, elixir-autogen, elixir-format, fuzzy
+msgid "Comments Settings"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:366
+#, elixir-autogen, elixir-format
+msgid "Configure URL patterns for resource types so comments link to their source in the admin page."
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:5
+#, elixir-autogen, elixir-format
+msgid "Configure the standalone comments module"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:176
+#, elixir-autogen, elixir-format, fuzzy
+msgid "Content Rating"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:390
+#, elixir-autogen, elixir-format
+msgid "Display Template"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:430
+#: lib/phoenix_kit_comments/web/settings.html.heex:551
+#: lib/phoenix_kit_comments/web/settings.html.heex:688
+#: lib/phoenix_kit_comments/web/settings.html.heex:755
+#, elixir-autogen, elixir-format
+msgid "Display title"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:621
+#, elixir-autogen, elixir-format
+msgid "Display:"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:210
+#, elixir-autogen, elixir-format
+msgid "Enable Comment Attachments"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:30
+#, elixir-autogen, elixir-format
+msgid "Enable Comments"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:145
+#, elixir-autogen, elixir-format
+msgid "Enable Giphy Picker"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:34
+#, elixir-autogen, elixir-format
+msgid "Enable the standalone comments system across all content types"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:377
+#, elixir-autogen, elixir-format
+msgid "Example:"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.ex:221
+#, elixir-autogen, elixir-format
+msgid "Failed to save some settings"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:15
+#, elixir-autogen, elixir-format
+msgid "General"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:157
+#, elixir-autogen, elixir-format
+msgid "Giphy API Key"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:132
+#, elixir-autogen, elixir-format
+msgid "Giphy Integration"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:85
+#, elixir-autogen, elixir-format
+msgid "Limits"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:113
+#, elixir-autogen, elixir-format
+msgid "Max Comment Length"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:92
+#, elixir-autogen, elixir-format
+msgid "Max Thread Depth"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:226
+#, elixir-autogen, elixir-format
+msgid "Max attachments per comment"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:247
+#, elixir-autogen, elixir-format
+msgid "Max file size (MB)"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:126
+#, elixir-autogen, elixir-format
+msgid "Maximum characters per comment (default: 10,000)"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:105
+#, elixir-autogen, elixir-format
+msgid "Maximum nesting level for reply threads (default: 10)"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:190
+#, elixir-autogen, elixir-format
+msgid "Maximum rating returned by Giphy search (default: G)"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:61
+#, elixir-autogen, elixir-format
+msgid "Moderation"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:78
+#, elixir-autogen, elixir-format
+msgid "New comments must be approved before appearing publicly"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:631
+#, elixir-autogen, elixir-format
+msgid "No resource link patterns configured yet."
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:164
+#, elixir-autogen, elixir-format
+msgid "Paste your Giphy API key"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:417
+#: lib/phoenix_kit_comments/web/settings.html.heex:539
+#: lib/phoenix_kit_comments/web/settings.html.heex:674
+#: lib/phoenix_kit_comments/web/settings.html.heex:743
+#, elixir-autogen, elixir-format
+msgid "Path"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:389
+#, elixir-autogen, elixir-format
+msgid "Path Template"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:616
+#, elixir-autogen, elixir-format
+msgid "Path:"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:239
+#, elixir-autogen, elixir-format
+msgid "Per-comment cap (1–10). Default: 4"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:503
+#: lib/phoenix_kit_comments/web/settings.html.heex:608
+#, elixir-autogen, elixir-format
+msgid "Remove path pattern for \"%{type}\"?"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.ex:84
+#, elixir-autogen, elixir-format
+msgid "Removed path for \"%{type}\""
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:74
+#, elixir-autogen, elixir-format
+msgid "Require Moderation"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:289
+#, elixir-autogen, elixir-format
+msgid "Reset"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:284
+#, elixir-autogen, elixir-format
+msgid "Reset ALL comments settings to their defaults? Moderation, limits, Giphy and attachment options will be replaced. This cannot be undone."
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:363
+#, elixir-autogen, elixir-format
+msgid "Resource Link Patterns"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:640
+#, elixir-autogen, elixir-format
+msgid "Resource types without link patterns"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:50
+#, elixir-autogen, elixir-format
+msgid "Rich-Text Editor"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:276
+#, elixir-autogen, elixir-format, fuzzy
+msgid "Save Settings"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:274
+#, elixir-autogen, elixir-format
+msgid "Saving..."
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.ex:174
+#, elixir-autogen, elixir-format
+msgid "Settings reset to defaults"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.ex:218
+#, elixir-autogen, elixir-format
+msgid "Settings saved successfully"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:149
+#, elixir-autogen, elixir-format
+msgid "Show a GIF picker in the comment form. Requires a valid API key below."
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.ex:232
+#, elixir-autogen, elixir-format
+msgid "Something went wrong. Please try again."
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:169
+#, elixir-autogen, elixir-format
+msgid "Stored in the database. Leave blank to disable."
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:483
+#, elixir-autogen, elixir-format
+msgid "UUID (default)"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.ex:281
+#, elixir-autogen, elixir-format
+msgid "Updated path for \"%{type}\""
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:369
+#, elixir-autogen, elixir-format
+msgid "Use"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:54
+#, elixir-autogen, elixir-format
+msgid "Use the Leaf rich-text editor in the comment composer. Turn off to fall back to a plain textarea — do this if the host app hasn't registered Leaf's JS hook (otherwise the editor hangs on its loading text)."
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:748
+#, elixir-autogen, elixir-format
+msgid "e.g. /order/shoes/:uuid"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:558
+#: lib/phoenix_kit_comments/web/settings.html.heex:695
+#, elixir-autogen, elixir-format
+msgid "e.g. :metadata.slug"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:437
+#: lib/phoenix_kit_comments/web/settings.html.heex:760
+#, elixir-autogen, elixir-format
+msgid "e.g. :metadata.slug - Ch. :metadata.chapter"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:736
+#, elixir-autogen, elixir-format
+msgid "e.g. shoes"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:370
+#, elixir-autogen, elixir-format
+msgid "for resource ID,"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:372
+#, elixir-autogen, elixir-format
+msgid "for values from comment metadata, and"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:378
+#, elixir-autogen, elixir-format
+msgid "or"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:723
+#, elixir-autogen, elixir-format
+msgid "or add manually"
+msgstr ""
+
+#: lib/phoenix_kit_comments/web/settings.html.heex:374
+#, elixir-autogen, elixir-format
+msgid "to include the site URL prefix."
 msgstr ""
