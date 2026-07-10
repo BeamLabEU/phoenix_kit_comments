@@ -2,6 +2,40 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.14 — 2026-07-10
+
+### Changed
+
+- **Settings page modernized (`Web.Settings`).** The five stacked cards collapse
+  into a single card with lightweight in-card section headers (new
+  `settings_section_header/1` component — a local copy of core's
+  `FormSection.section_header/1` so the package renders identically without
+  waiting on a core release). Toggles and inputs move to daisyUI label patterns,
+  and the **Reset to Defaults** button gains a `data-confirm` prompt since it
+  wipes moderation, limits, Giphy, and attachment settings.
+- **Resource resolution delegated to core `PhoenixKit.ResourceLinks`.**
+  `PhoenixKitComments` drops its own ~170-line handler registry and
+  path-template engine and `defdelegate`s `get_resource_path_templates/0`,
+  `update_resource_path_templates/1`, and `resolve_resource_context/1` (plus the
+  notification-callback dispatch) to core. The comments moderation admin and the
+  Activity feed now resolve deep-links through one shared resolver, off one set
+  of handlers and the shared `comment_resource_paths` templates. Behaviour is
+  preserved — same return shape, same default handlers (`post`/`file`/`user`),
+  same template fallback — with `integration` and module-declared handlers added
+  for free.
+
+### Added
+
+- **Full gettext coverage for the settings page.** Every user-facing string on
+  `Web.Settings` (template + flash messages) is now wrapped in
+  `gettext`/`ngettext` against the module's own `PhoenixKitComments.Gettext`
+  backend, and the `default.pot` + `en`/`et`/`ru` catalogs are extended and
+  fully translated to Russian and Estonian.
+
+### Dependencies
+
+- Bump `phoenix_kit` to `1.7.181` (provides `PhoenixKit.ResourceLinks`).
+
 ## 0.2.13 — 2026-06-25
 
 ### Added
