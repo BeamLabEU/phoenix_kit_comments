@@ -5,6 +5,7 @@ defmodule PhoenixKitComments.CommentDislike do
   Tracks which users have disliked which comments. Enforces one dislike per user per comment.
   """
   use Ecto.Schema
+  use PhoenixKit.SchemaPrefix
   import Ecto.Changeset
 
   @primary_key {:uuid, UUIDv7, autogenerate: true}
