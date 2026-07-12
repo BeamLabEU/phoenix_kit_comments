@@ -178,131 +178,131 @@
   </div>
 
   <%!-- Bulk Actions --%>
-  <%= if length(@selected_uuids) > 0 do %>
-    <div class="flex gap-2 mb-4 items-center">
-      <span class="text-sm text-base-content/70">
-        {ngettext("%{count} selected", "%{count} selected", length(@selected_uuids))}
-      </span>
-      <button phx-click="bulk_action" phx-value-action="approve" class="btn btn-success btn-xs">
-        {gettext("Approve")}
-      </button>
-      <button phx-click="bulk_action" phx-value-action="hide" class="btn btn-warning btn-xs">
-        {gettext("Hide")}
-      </button>
-      <button
-        phx-click="bulk_action"
-        phx-value-action="delete"
-        class="btn btn-error btn-xs"
-        data-confirm={gettext("Delete selected comments?")}
-      >
-        {gettext("Delete")}
-      </button>
-    </div>
-  <% end %>
+  <%!-- Selection now lives client-side (BulkSelectScope hook), so the server
+       can't know the count at initial render — the bar always renders and
+       starts hidden via inline style + data-bulk-show, which the hook flips
+       once something's selected. --%>
+  <div
+    class="flex gap-2 mb-4 items-center"
+    data-bulk-show="has-selection"
+    style="display: none;"
+  >
+    <span
+      class="text-sm text-base-content/70"
+      data-bulk-text-template={gettext("%{count} selected", count: "%{count}")}
+    ></span>
+    <button data-bulk-action="bulk_approve" class="btn btn-success btn-xs">
+      {gettext("Approve")}
+    </button>
+    <button data-bulk-action="bulk_hide" class="btn btn-warning btn-xs">
+      {gettext("Hide")}
+    </button>
+    <button
+      data-bulk-action="bulk_delete_comments"
+      class="btn btn-error btn-xs"
+      data-confirm={gettext("Delete selected comments?")}
+    >
+      {gettext("Delete")}
+    </button>
+  </div>
 
   <%!-- Comments Table --%>
   <%= if length(@comments) > 0 do %>
-    <.table_default
-      id="comments-table"
-      variant="zebra"
-      size="sm"
-      class="w-full"
-      toggleable={true}
-      items={@comments}
-      card_fields={
-        fn comment ->
-          # Resource/Display are shown by the chip in the card header instead.
-          [
-            %{
-              label: gettext("Author"),
-              value: if(comment.user, do: comment.user.email, else: gettext("Deleted user"))
-            },
-            %{
-              label: gettext("Date"),
-              value: Calendar.strftime(comment.inserted_at, "%b %d, %Y")
-            },
-            %{label: gettext("Status"), value: status_badge_value(comment.status)}
-          ]
-        end
-      }
-    >
-      <%!-- Toolbar header: the filtered result count (the stats above show the
-           unfiltered totals) shares the row with the grid/list view toggle, so
-           the toggle no longer sits alone on a row of its own. --%>
-      <:toolbar_title>
-        <span class="text-sm font-medium text-base-content/70">
-          {ngettext("%{count} comment", "%{count} comments", @total)}
-        </span>
-      </:toolbar_title>
-      <%!-- Card header renders the content as markdown (like the table cell),
-           so the grid view shows formatting instead of raw markdown. --%>
-      <:card_header :let={comment}>
-        <%!-- Resource chip first, so the card shows what the comment is on (and
-             links to it) — the same clickable thumbnail chip as the table. --%>
-        <div class="mb-1.5">
-          <.resource_chip comment={comment} resource_context={@resource_context} />
-        </div>
-        <.reply_indicator comment={comment} />
-        <.comment_content_preview comment={comment} />
-      </:card_header>
-      <:card_actions :let={comment}>
-        <%!-- Distinct id from the table menu: both views are in the DOM. --%>
-        <.comment_actions_menu comment={comment} id={"comment-menu-card-#{comment.uuid}"} />
-      </:card_actions>
+    <.bulk_select_scope id="comments-bulk" total_count={length(@comments)}>
+      <.table_default
+        id="comments-table"
+        variant="zebra"
+        size="sm"
+        class="w-full"
+        toggleable={true}
+        items={@comments}
+        card_fields={
+          fn comment ->
+            # Resource/Display are shown by the chip in the card header instead.
+            [
+              %{
+                label: gettext("Author"),
+                value: if(comment.user, do: comment.user.email, else: gettext("Deleted user"))
+              },
+              %{
+                label: gettext("Date"),
+                value: Calendar.strftime(comment.inserted_at, "%b %d, %Y")
+              },
+              %{label: gettext("Status"), value: status_badge_value(comment.status)}
+            ]
+          end
+        }
+      >
+        <%!-- Toolbar header: the filtered result count (the stats above show the
+             unfiltered totals) shares the row with the grid/list view toggle, so
+             the toggle no longer sits alone on a row of its own. --%>
+        <:toolbar_title>
+          <span class="text-sm font-medium text-base-content/70">
+            {ngettext("%{count} comment", "%{count} comments", @total)}
+          </span>
+        </:toolbar_title>
+        <%!-- Card header renders the content as markdown (like the table cell),
+             so the grid view shows formatting instead of raw markdown. --%>
+        <:card_header :let={comment}>
+          <%!-- Resource chip first, so the card shows what the comment is on (and
+               links to it) — the same clickable thumbnail chip as the table. --%>
+          <div class="mb-1.5">
+            <.resource_chip comment={comment} resource_context={@resource_context} />
+          </div>
+          <.reply_indicator comment={comment} />
+          <.comment_content_preview comment={comment} />
+        </:card_header>
+        <:card_actions :let={comment}>
+          <%!-- Distinct id from the table menu: both views are in the DOM. --%>
+          <.comment_actions_menu comment={comment} id={"comment-menu-card-#{comment.uuid}"} />
+        </:card_actions>
 
-      <.table_default_header>
-        <.table_default_row hover={false}>
-          <.table_default_header_cell class="w-8"></.table_default_header_cell>
-          <.table_default_header_cell>{gettext("Content")}</.table_default_header_cell>
-          <.table_default_header_cell>{gettext("Author")}</.table_default_header_cell>
-          <.table_default_header_cell>{gettext("Resource")}</.table_default_header_cell>
-          <.table_default_header_cell>{gettext("Date")}</.table_default_header_cell>
-          <.table_default_header_cell>{gettext("Status")}</.table_default_header_cell>
-          <.table_default_header_cell>{gettext("Actions")}</.table_default_header_cell>
-        </.table_default_row>
-      </.table_default_header>
-
-      <.table_default_body>
-        <%= for comment <- @comments do %>
-          <.table_default_row>
-            <.table_default_cell>
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs"
-                phx-click="toggle_select"
-                phx-value-uuid={comment.uuid}
-                checked={comment.uuid in @selected_uuids}
-              />
-            </.table_default_cell>
-            <.table_default_cell class="max-w-xs">
-              <.reply_indicator comment={comment} />
-              <.comment_content_preview comment={comment} />
-            </.table_default_cell>
-            <.table_default_cell class="text-sm">
-              <%= if comment.user do %>
-                {comment.user.email}
-              <% else %>
-                <span class="text-base-content/50">{gettext("Deleted user")}</span>
-              <% end %>
-            </.table_default_cell>
-            <.table_default_cell>
-              <.resource_chip comment={comment} resource_context={@resource_context} />
-            </.table_default_cell>
-            <.table_default_cell class="text-sm text-base-content/70">
-              {Calendar.strftime(comment.inserted_at, "%b %d, %Y")}
-            </.table_default_cell>
-            <.table_default_cell>
-              <span class={status_badge_class(comment.status)}>
-                {comment.status}
-              </span>
-            </.table_default_cell>
-            <.table_default_cell>
-              <.comment_actions_menu comment={comment} id={"comment-menu-#{comment.uuid}"} />
-            </.table_default_cell>
+        <.table_default_header>
+          <.table_default_row hover={false}>
+            <.bulk_select_header_cell id="comments-select-all" aria_label={gettext("Select all comments")} />
+            <.table_default_header_cell>{gettext("Content")}</.table_default_header_cell>
+            <.table_default_header_cell>{gettext("Author")}</.table_default_header_cell>
+            <.table_default_header_cell>{gettext("Resource")}</.table_default_header_cell>
+            <.table_default_header_cell>{gettext("Date")}</.table_default_header_cell>
+            <.table_default_header_cell>{gettext("Status")}</.table_default_header_cell>
+            <.table_default_header_cell>{gettext("Actions")}</.table_default_header_cell>
           </.table_default_row>
-        <% end %>
-      </.table_default_body>
-    </.table_default>
+        </.table_default_header>
+
+        <.table_default_body>
+          <%= for comment <- @comments do %>
+            <.table_default_row>
+              <.bulk_select_cell value={comment.uuid} />
+              <.table_default_cell class="max-w-xs">
+                <.reply_indicator comment={comment} />
+                <.comment_content_preview comment={comment} />
+              </.table_default_cell>
+              <.table_default_cell class="text-sm">
+                <%= if comment.user do %>
+                  {comment.user.email}
+                <% else %>
+                  <span class="text-base-content/50">{gettext("Deleted user")}</span>
+                <% end %>
+              </.table_default_cell>
+              <.table_default_cell>
+                <.resource_chip comment={comment} resource_context={@resource_context} />
+              </.table_default_cell>
+              <.table_default_cell class="text-sm text-base-content/70">
+                {Calendar.strftime(comment.inserted_at, "%b %d, %Y")}
+              </.table_default_cell>
+              <.table_default_cell>
+                <span class={status_badge_class(comment.status)}>
+                  {comment.status}
+                </span>
+              </.table_default_cell>
+              <.table_default_cell>
+                <.comment_actions_menu comment={comment} id={"comment-menu-#{comment.uuid}"} />
+              </.table_default_cell>
+            </.table_default_row>
+          <% end %>
+        </.table_default_body>
+      </.table_default>
+    </.bulk_select_scope>
   <% else %>
     <div class="text-center py-12 text-base-content/60">
       <.icon name="hero-chat-bubble-left" class="w-12 h-12 mx-auto mb-2 opacity-50" />

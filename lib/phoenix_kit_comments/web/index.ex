@@ -36,7 +36,6 @@ defmodule PhoenixKitComments.Web.Index do
         |> assign(:resource_context, %{})
         |> assign(:viewing_comment, nil)
         |> assign(:stats, empty_stats())
-        |> assign(:selected_uuids, [])
         |> assign(:resource_types, [])
         |> assign_filter_defaults()
         |> maybe_load_dashboard_data()
@@ -176,31 +175,39 @@ defmodule PhoenixKitComments.Web.Index do
   end
 
   @impl true
-  def handle_event("toggle_select", %{"uuid" => uuid}, socket) do
-    selected = socket.assigns.selected_uuids
-
-    selected =
-      if uuid in selected,
-        do: List.delete(selected, uuid),
-        else: [uuid | selected]
-
-    {:noreply, assign(socket, :selected_uuids, selected)}
-  end
-
-  @impl true
-  def handle_event("bulk_action", %{"action" => action}, socket) do
+  def handle_event("bulk_approve", %{"uuids" => uuids}, socket) do
     case check_authorization(socket) do
       {:error, :unauthorized} ->
         {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
 
       :ok ->
-        do_bulk_action(action, socket)
+        do_bulk_action("approve", uuids, socket)
     end
   end
 
-  defp do_bulk_action(action, socket) do
-    uuids = socket.assigns.selected_uuids
+  @impl true
+  def handle_event("bulk_hide", %{"uuids" => uuids}, socket) do
+    case check_authorization(socket) do
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
 
+      :ok ->
+        do_bulk_action("hide", uuids, socket)
+    end
+  end
+
+  @impl true
+  def handle_event("bulk_delete_comments", %{"uuids" => uuids}, socket) do
+    case check_authorization(socket) do
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+
+      :ok ->
+        do_bulk_action("delete", uuids, socket)
+    end
+  end
+
+  defp do_bulk_action(action, uuids, socket) do
     if uuids == [] do
       {:noreply, put_flash(socket, :error, gettext("No comments selected"))}
     else
@@ -210,7 +217,6 @@ defmodule PhoenixKitComments.Web.Index do
 
           {:noreply,
            socket
-           |> assign(:selected_uuids, [])
            |> load_comments()
            |> reload_stats()
            |> put_flash(:info, gettext("Comments approved"))}
@@ -220,7 +226,6 @@ defmodule PhoenixKitComments.Web.Index do
 
           {:noreply,
            socket
-           |> assign(:selected_uuids, [])
            |> load_comments()
            |> reload_stats()
            |> put_flash(:info, gettext("Comments hidden"))}
@@ -230,7 +235,6 @@ defmodule PhoenixKitComments.Web.Index do
 
           {:noreply,
            socket
-           |> assign(:selected_uuids, [])
            |> load_comments()
            |> reload_stats()
            |> put_flash(:info, gettext("Comments deleted"))}
