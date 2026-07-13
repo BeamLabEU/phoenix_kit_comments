@@ -5,6 +5,7 @@ defmodule PhoenixKitComments.CommentLike do
   Tracks which users have liked which comments. Enforces one like per user per comment.
   """
   use Ecto.Schema
+  use PhoenixKit.SchemaPrefix
   import Ecto.Changeset
 
   @primary_key {:uuid, UUIDv7, autogenerate: true}

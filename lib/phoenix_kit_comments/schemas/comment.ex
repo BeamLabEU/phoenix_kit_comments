@@ -34,6 +34,7 @@ defmodule PhoenixKitComments.Comment do
   it's about to attach files in the same transaction.
   """
   use Ecto.Schema
+  use PhoenixKit.SchemaPrefix
   import Ecto.Changeset
 
   @primary_key {:uuid, UUIDv7, autogenerate: true}
