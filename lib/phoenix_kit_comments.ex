@@ -73,6 +73,7 @@ defmodule PhoenixKitComments do
   """
 
   use PhoenixKit.Module
+  use Gettext, backend: PhoenixKitComments.Gettext
 
   import Ecto.Query, warn: false
   require Logger
@@ -129,6 +130,23 @@ defmodule PhoenixKitComments do
       max_depth: get_max_depth(),
       max_length: get_max_length()
     }
+  end
+
+  @doc """
+  Returns stats for the module card on the admin Modules page.
+
+  Runs `get_config/0`, which issues three `count` queries (total,
+  published, pending comments). Invoked once per render of the admin
+  Modules card; not cached.
+  """
+  def module_stats do
+    config = get_config()
+
+    [
+      %{label: gettext("Total"), value: config[:total_comments] || 0},
+      %{label: gettext("Published"), value: config[:published_comments] || 0},
+      %{label: gettext("Pending"), value: config[:pending_comments] || 0}
+    ]
   end
 
   @doc "Returns the configured maximum comment depth."
