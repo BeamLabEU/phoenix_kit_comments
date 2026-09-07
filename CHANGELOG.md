@@ -2,6 +2,12 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.4.6 - 2026-09-07
+
+### Fixed
+
+- Removed a duplicate page heading on the Comments settings page — it repeated the page title already shown in the top breadcrumb bar.
+
 ## 0.4.5 - 2026-08-29
 
 A quality sweep across the module (#41) and the post-merge review pass over
