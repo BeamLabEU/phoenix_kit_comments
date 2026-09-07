@@ -41,7 +41,12 @@ defmodule PhoenixKitComments.Web.Settings do
   defp do_mount(socket) do
     socket =
       socket
+      # Trail: Admin Panel / Settings / Comments Settings — this page lives
+      # under the site's Settings area, not the Comments tab.
       |> assign(:page_title, gettext("Comments Settings"))
+      |> assign(:page_subtitle, gettext("Configure the standalone comments module"))
+      |> assign(:page_section, gettext("Settings"))
+      |> assign(:page_section_path, Routes.path("/admin/settings"))
       |> assign(:project_title, "")
       |> assign(:saving, false)
       |> assign(:editing_resource_type, nil)
