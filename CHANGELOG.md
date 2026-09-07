@@ -2,6 +2,21 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.4.7 - 2026-09-07
+
+### Added
+
+- Tabs on the Comments settings page — General / Moderation / Limits /
+  Giphy Integration / Attachments / Resource Link Patterns, replacing one
+  long single-form scroll, matching the tabbed treatment core applies to
+  its own Settings pages.
+
+### Fixed
+
+- Page title shortened from "Comments Settings" to "Comments" to match
+  the sidebar and the "bare noun" convention every other Settings page's
+  breadcrumb-title follows.
+
 ## 0.4.6 - 2026-09-07
 
 ### Fixed

@@ -41,9 +41,8 @@ defmodule PhoenixKitComments.Web.Settings do
   defp do_mount(socket) do
     socket =
       socket
-      # Trail: Admin Panel / Settings / Comments Settings — this page lives
-      # under the site's Settings area, not the Comments tab.
-      |> assign(:page_title, gettext("Comments Settings"))
+      # Trail: Admin Panel / Settings / Comments — matches the sidebar label.
+      |> assign(:page_title, gettext("Comments"))
       |> assign(:page_subtitle, gettext("Configure the standalone comments module"))
       |> assign(:page_section, gettext("Settings"))
       |> assign(:page_section_path, Routes.path("/admin/settings"))
@@ -54,6 +53,7 @@ defmodule PhoenixKitComments.Web.Settings do
       |> assign(:editing_title_value, "")
       |> assign(:draft_paths, %{})
       |> assign(:draft_titles, %{})
+      |> assign(:active_tab, "general")
       |> assign_settings_defaults()
 
     socket =
@@ -66,6 +66,11 @@ defmodule PhoenixKitComments.Web.Settings do
       end
 
     {:ok, socket}
+  end
+
+  @impl true
+  def handle_event("switch_settings_tab", %{"tab" => tab}, socket) do
+    {:noreply, assign(socket, :active_tab, tab)}
   end
 
   @impl true

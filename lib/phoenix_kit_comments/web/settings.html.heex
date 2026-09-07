@@ -1,9 +1,24 @@
 <div class="container flex flex-col mx-auto px-4 py-6 overflow-x-hidden">
   <%!-- Settings Form --%>
   <div class="max-w-4xl w-full mx-auto space-y-8">
-    <div class="card bg-base-100 shadow-xl">
+    <.nav_tabs
+      active_tab={@active_tab}
+      on_change="switch_settings_tab"
+      variant={:border}
+      tabs={[
+        %{id: "general", label: gettext("General"), icon: "hero-cog-6-tooth"},
+        %{id: "moderation", label: gettext("Moderation"), icon: "hero-shield-check"},
+        %{id: "limits", label: gettext("Limits"), icon: "hero-adjustments-horizontal"},
+        %{id: "giphy", label: gettext("Giphy Integration"), icon: "hero-film"},
+        %{id: "attachments", label: gettext("Attachments"), icon: "hero-paper-clip"},
+        %{id: "links", label: gettext("Resource Link Patterns"), icon: "hero-link"}
+      ]}
+    />
+
+    <div class={["card bg-base-100 shadow-xl", @active_tab == "links" && "hidden"]}>
       <div class="card-body overflow-hidden">
         <.form for={%{}} phx-submit="save" class="space-y-6">
+          <div class={@active_tab != "general" && "hidden"}>
           <.settings_section_header
             icon="hero-cog-6-tooth"
             title={gettext("General")}
@@ -51,7 +66,9 @@
               </span>
             </div>
           </div>
+          </div>
 
+          <div class={@active_tab != "moderation" && "hidden"}>
           <.settings_section_header icon="hero-shield-check" title={gettext("Moderation")} />
 
           <%!-- Require Moderation --%>
@@ -73,7 +90,9 @@
               </span>
             </div>
           </div>
+          </div>
 
+          <div class={@active_tab != "limits" && "hidden"}>
           <.settings_section_header
             icon="hero-adjustments-horizontal"
             title={gettext("Limits")}
@@ -122,7 +141,9 @@
               </div>
             </div>
           </div>
+          </div>
 
+          <div class={@active_tab != "giphy" && "hidden"}>
           <.settings_section_header icon="hero-film" title={gettext("Giphy Integration")} />
 
           <%!-- Enable Giphy Picker --%>
@@ -186,7 +207,9 @@
               </div>
             </div>
           </div>
+          </div>
 
+          <div class={@active_tab != "attachments" && "hidden"}>
           <.settings_section_header icon="hero-paper-clip" title={gettext("Attachments")} />
 
           <%!-- Enable Comment Attachments --%>
@@ -256,8 +279,10 @@
               </div>
             </div>
           </div>
+          </div>
 
-          <%!-- Action Buttons --%>
+          <%!-- Action Buttons — save/reset apply to the whole form, not just
+               the visible tab, so they stay outside the tab-hidden wrappers. --%>
           <div class="flex gap-3 pt-4">
             <button
               type="submit"
@@ -290,7 +315,7 @@
     </div>
 
     <%!-- Resource Link Patterns (outside main form to avoid nested forms) --%>
-    <div class="card bg-base-100 shadow-xl mb-6">
+    <div class={["card bg-base-100 shadow-xl mb-6", @active_tab != "links" && "hidden"]}>
       <div class="card-body overflow-hidden">
         <h2 class="card-title text-lg mb-2 flex-wrap">
           <.icon name="hero-link" class="w-5 h-5" /> {gettext("Resource Link Patterns")}
