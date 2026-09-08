@@ -84,7 +84,7 @@ PHOENIX_KIT_PATH=../phoenix_kit mix deps.get && PHOENIX_KIT_PATH=../phoenix_kit 
 - `assert_activity_logged` passes against code that logs nothing under a non-shared sandbox: `Activity.log/2` rescues `DBConnection.OwnershipError` to `:ok` and the LiveView is another process. `LiveCase` tests stay `async: false`.
 - `FunctionClauseError` in `Scope.user_uuid/1` from a LiveView test: the scope's user was a plain map. Use `fake_scope/1` (`cached_roles` is a list of role NAMES, `cached_permissions` a `MapSet`).
 - "cannot invoke handle_params nor navigate/patch" from a filter or search event in tests: `push_patch` prepends whatever prefix `Routes.path/1` resolves. The test router mounts both `/en/admin/...` and `/phoenix_kit/en/admin/...`; keep both.
-- Integration tests excluded with an "author_display_name does not exist" notice: the core in `deps/` predates the attribution columns, not a broken suite. Run against a newer core (`PHOENIX_KIT_PATH`) or update the pin. On the Mac the test role defaults to `postgres`; use `PGUSER=maxdon`.
+- Integration tests excluded with an "author_display_name does not exist" notice: the core in `deps/` predates the attribution columns, not a broken suite. Run against a newer core (`PHOENIX_KIT_PATH`) or update the pin.
 
 ## Architecture
 
