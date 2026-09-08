@@ -89,6 +89,10 @@ defmodule PhoenixKitComments do
   alias PhoenixKitComments.CommentLike
   alias PhoenixKitComments.CommentMedia
 
+  # Single-sourced from mix.exs at compile time; the behaviour test asserts
+  # `version/0 == Mix.Project.config()[:version]`.
+  @version Mix.Project.config()[:version]
+
   # ============================================================================
   # Module Status
   # ============================================================================
@@ -375,7 +379,7 @@ defmodule PhoenixKitComments do
   def module_name, do: "Comments"
 
   @impl PhoenixKit.Module
-  def version, do: Application.spec(:phoenix_kit_comments, :vsn) |> to_string()
+  def version, do: @version
 
   @impl PhoenixKit.Module
   def permission_metadata do
