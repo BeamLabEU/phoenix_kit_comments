@@ -1,6 +1,17 @@
 defmodule PhoenixKitCommentsTest do
   use ExUnit.Case
 
+  # `function_exported?/3` answers FALSE for a module that is merely not
+  # loaded, not only for one that lacks the function. Nothing forces
+  # PhoenixKitComments into memory before the five callback assertions here,
+  # so under a random seed they failed intermittently and never when the test
+  # ran alone -- the shape that reads as flaky infrastructure and gets re-run
+  # instead of fixed. Loading it once up front makes them deterministic.
+  setup_all do
+    Code.ensure_loaded!(PhoenixKitComments)
+    :ok
+  end
+
   describe "behaviour implementation" do
     test "implements PhoenixKit.Module" do
       behaviours =
