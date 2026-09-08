@@ -51,6 +51,11 @@ exported before the first `mix test` (a stale lock aborts on the optional
 PHOENIX_KIT_PATH=../phoenix_kit mix deps.get && PHOENIX_KIT_PATH=../phoenix_kit mix test
 ```
 
+Repo-local aliases:
+
+- `mix quality` — `format` + `credo --strict` + `dialyzer` (applies formatting).
+- `mix quality.ci` — `format --check-formatted` + `credo --strict` + `dialyzer`: it CHECKS formatting rather than applying it, so run `mix format` first.
+
 ## Conventions
 
 - Module key `"comments"` in every callback; tab ids `:admin_comments` and `:admin_settings_comments`; URL segment `comments` on both tabs; setting keys prefixed `comments_`.
