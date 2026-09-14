@@ -1183,9 +1183,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp consume_attachments(socket) do
     user_uuid = socket.assigns.current_user.uuid
+    resource_type = socket.assigns.resource_type
+    resource_uuid = socket.assigns.resource_uuid
 
     socket
-    |> consume_uploaded_entries(:attachment, &store_entry(&1, &2, user_uuid))
+    |> consume_uploaded_entries(
+      :attachment,
+      &store_entry(&1, &2, user_uuid, resource_type, resource_uuid)
+    )
     |> partition_upload_results()
   end
 
@@ -1279,7 +1284,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp uploads_done?(entries), do: Enum.all?(entries, & &1.done?)
 
-  defp store_entry(meta, entry, user_uuid) do
+  defp store_entry(meta, entry, user_uuid, resource_type, resource_uuid) do
     # `client_*` is exactly that: what the browser SAID. Core's storage does
     # `Keyword.fetch!` on both and derives the stored mime type and the
     # render branch from `content_type` alone — nothing in the chain looks
@@ -1304,8 +1309,18 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     ]
 
     case Storage.store_file(meta.path, opts) do
-      {:ok, %{uuid: uuid}} -> {:ok, {:ok, uuid}}
-      {:error, reason} -> {:ok, {:error, reason}}
+      {:ok, %Storage.File{} = file} ->
+        PhoenixKitComments.Attachments.place_stored_file(
+          file,
+          resource_type,
+          resource_uuid,
+          user_uuid
+        )
+
+        {:ok, {:ok, file.uuid}}
+
+      {:error, reason} ->
+        {:ok, {:error, reason}}
     end
   end
 
