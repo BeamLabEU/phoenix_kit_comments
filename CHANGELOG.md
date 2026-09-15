@@ -2,6 +2,14 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- Comment attachments can be placed under a host-configured folder
+  (`:attachments_parent_folder`), instead of always landing at the media
+  root; unset or a `nil` answer keeps today's behaviour.
+
 ## 0.4.7 - 2026-09-07
 
 ### Added
