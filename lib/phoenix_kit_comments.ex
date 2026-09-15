@@ -1986,6 +1986,11 @@ defmodule PhoenixKitComments do
       :ok
   end
 
+  @doc false
+  # `Attachments` applies host code too, and logs its exits the same way.
+  @spec describe_exit(term()) :: String.t()
+  def describe_exit(reason), do: exit_summary(reason)
+
   # A one-line, payload-free description of an exit reason.
   defp exit_summary({:timeout, {GenServer, :call, _args}}), do: "GenServer.call timeout"
   defp exit_summary({:noproc, {GenServer, :call, _args}}), do: "GenServer.call to a dead process"

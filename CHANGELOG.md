@@ -2,13 +2,25 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
-## Unreleased
+## 0.4.8 - 2026-09-15
 
 ### Added
 
 - Comment attachments can be placed under a host-configured folder
-  (`:attachments_parent_folder`), instead of always landing at the media
-  root; unset or a `nil` answer keeps today's behaviour.
+  (`config :phoenix_kit_comments, :attachments_parent_folder, {mod, fun}`),
+  instead of always landing at the media root; unset or a `nil` answer keeps
+  the default. Placement uses core's `Storage.attach_file_to_folder/2`, so a
+  deduplicated file homed elsewhere is linked, never moved. Documented in the
+  README and AGENTS.md.
+
+### Fixed
+
+- The attachment folder hook can no longer crash the comment component
+  mid-upload: a folder uuid that no longer exists (an FK violation core
+  raises rather than returns), a non-uuid answer, and a hook that exits
+  (e.g. a `GenServer.call` to a dead process) are all logged and leave the
+  files at the root.
+- The hook is asked once per comment instead of once per attached file.
 
 ## 0.4.7 - 2026-09-07
 

@@ -81,6 +81,24 @@ Handler modules can implement:
 - `on_comment_deleted/3` — called after a comment is deleted
 - `resolve_comment_resources/1` — returns `%{uuid => %{title: ..., path: ...}}` for admin display
 
+### Attachment folder
+
+Uploaded attachments land at the media root by default. To keep them next to the
+commented record instead, point a hook at the folder:
+
+```elixir
+config :phoenix_kit_comments, :attachments_parent_folder, {MyApp.Media, :parent_for}
+
+# in MyApp.Media
+def parent_for(:comment_attachment, _actor_uuid, %{resource_type: "order", resource_uuid: uuid}),
+  do: {:ok, order_folder_uuid(uuid)}
+
+def parent_for(_kind, _actor_uuid, _subject), do: nil
+```
+
+It is called once per comment. Anything other than `{:ok, folder_uuid}` leaves the
+files at the root, and a hook that raises or exits never fails the comment.
+
 ### Live updates across sessions
 
 `CommentsComponent` keeps the **posting** user's own view fresh automatically.
