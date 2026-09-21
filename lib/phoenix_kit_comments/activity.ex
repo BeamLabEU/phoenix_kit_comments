@@ -14,47 +14,21 @@ defmodule PhoenixKitComments.Activity do
   status, resource type, counts, and uuids that resolve to a record for
   anyone entitled to look it up.
 
-  Logging never crashes the caller. A missing activity table (a host that
-  has not migrated) and a dead pool are both `:ok` — an audit line is not
-  worth losing the write it describes.
+  Logging never crashes the caller: core's `PhoenixKit.Activity.log/3`
+  returns a missing activity table (a host that has not migrated) or a
+  dead pool as a logged `{:error, _}` — an audit line is not worth losing
+  the write it describes.
   """
-
-  require Logger
 
   @module "comments"
 
   @doc """
-  Logs one action. `opts` mirrors `PhoenixKit.Activity.log/1`'s keys.
+  Logs one action under the `"comments"` module key. Options as
+  `PhoenixKit.Activity.log/3`.
   """
-  @spec log(binary(), keyword()) :: term()
-  def log(action, opts \\ []) when is_binary(action) and is_list(opts) do
-    if Code.ensure_loaded?(PhoenixKit.Activity) do
-      PhoenixKit.Activity.log(%{
-        action: action,
-        module: @module,
-        mode: Keyword.get(opts, :mode, "manual"),
-        actor_uuid: Keyword.get(opts, :actor_uuid),
-        resource_type: Keyword.get(opts, :resource_type),
-        resource_uuid: Keyword.get(opts, :resource_uuid),
-        target_uuid: Keyword.get(opts, :target_uuid),
-        metadata: Keyword.get(opts, :metadata, %{})
-      })
-    else
-      :activity_unavailable
-    end
-  rescue
-    Postgrex.Error ->
-      :ok
-
-    DBConnection.OwnershipError ->
-      :ok
-
-    e ->
-      Logger.warning("[PhoenixKitComments] activity logging failed: #{Exception.message(e)}")
-      {:error, e}
-  catch
-    :exit, _reason -> :ok
-  end
+  @spec log(binary(), keyword()) :: {:ok, struct()} | {:error, term()}
+  def log(action, opts \\ []) when is_binary(action) and is_list(opts),
+    do: PhoenixKit.Activity.log(@module, action, opts)
 
   @doc """
   Pipe-step for `{:ok, %Comment{}}` repo results.

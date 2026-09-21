@@ -22,6 +22,7 @@ defmodule PhoenixKitComments.Web.Index do
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitComments.Comment
+  alias PhoenixKitWeb.Actor
 
   @impl true
   # Reads are gated here, not only writes.
@@ -216,7 +217,7 @@ defmodule PhoenixKitComments.Web.Index do
     if uuids == [] do
       {:noreply, put_flash(socket, :error, gettext("No comments selected"))}
     else
-      opts = actor_opts(socket)
+      opts = Actor.opts(socket)
 
       # Each bulk action goes through the SAME context function as its
       # single-row menu item. Writing the status directly (the old
@@ -263,7 +264,7 @@ defmodule PhoenixKitComments.Web.Index do
   defp moderate(socket, uuid, fun, messages) do
     with :ok <- check_authorization(socket),
          %Comment{} = comment <- PhoenixKitComments.get_comment(uuid),
-         {:ok, _updated} <- fun.(comment, actor_opts(socket)) do
+         {:ok, _updated} <- fun.(comment, Actor.opts(socket)) do
       {:noreply,
        socket
        |> load_comments()
@@ -409,15 +410,6 @@ defmodule PhoenixKitComments.Web.Index do
         action: label,
         failed: err_count
       )
-
-  # The acting admin, for the audit trail. Moderation is exactly the kind of
-  # action whose value is knowing who took it.
-  defp actor_opts(socket) do
-    case socket.assigns[:phoenix_kit_current_scope] do
-      %{user: %{uuid: uuid}} -> [actor_uuid: uuid]
-      _ -> []
-    end
-  end
 
   defp check_authorization(socket) do
     scope = socket.assigns[:phoenix_kit_current_scope]
