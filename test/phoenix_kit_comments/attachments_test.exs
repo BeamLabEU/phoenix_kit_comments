@@ -149,6 +149,18 @@ defmodule PhoenixKitComments.AttachmentsTest do
     assert Repo.get!(Storage.File, file.uuid).folder_uuid == nil
   end
 
+  test "a trashed folder is not a place to put the file" do
+    folder = folder_fixture!()
+    {:ok, _} = Storage.trash_folder(folder)
+    Process.put(:stale_answer, folder.uuid)
+    Application.put_env(:phoenix_kit_comments, :attachments_parent_folder, {StaleHook, :parent})
+
+    file = root_file_fixture!()
+
+    assert :ok = Attachments.place_stored_file(file, "order", Ecto.UUID.generate(), nil)
+    assert Repo.get!(Storage.File, file.uuid).folder_uuid == nil
+  end
+
   test "a non-uuid answer is treated as no answer" do
     Process.put(:stale_answer, "not-a-uuid")
     Application.put_env(:phoenix_kit_comments, :attachments_parent_folder, {StaleHook, :parent})
