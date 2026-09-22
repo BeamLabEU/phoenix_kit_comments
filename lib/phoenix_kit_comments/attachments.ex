@@ -54,6 +54,11 @@ defmodule PhoenixKitComments.Attachments do
       {:ok, _file} ->
         :ok
 
+      # Restored by someone else first: it keeps the home they gave it and
+      # is attached here like any other file.
+      {:error, :not_trashed} ->
+        place_file(%{file | status: "active"}, folder_uuid)
+
       {:error, reason} ->
         Logger.warning(
           "[Comments] could not restore file #{file.uuid}: " <>
