@@ -43,8 +43,27 @@ defmodule PhoenixKitComments.Attachments do
   a file homed elsewhere gains a folder link. `nil` is a no-op, and so is a
   folder deleted or trashed since the host answered. Always `:ok`; a failure
   is logged and the file stays where storage put it.
+
+  Storage de-duplicates an upload by its bytes, so the file can be one the
+  uploader trashed: it is wanted again, so it is restored into `folder_uuid`
+  (into no folder for `nil`) rather than left trashed under a new comment.
   """
   @spec place_file(Storage.File.t() | %{uuid: String.t()}, String.t() | nil) :: :ok
+  def place_file(%Storage.File{status: "trashed"} = file, folder_uuid) do
+    case Storage.restore_file_into(file, folder_uuid) do
+      {:ok, _file} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "[Comments] could not restore file #{file.uuid}: " <>
+            ResourceFolders.describe_failure(reason)
+        )
+
+        :ok
+    end
+  end
+
   def place_file(_file, nil), do: :ok
 
   def place_file(%{uuid: file_uuid} = file, folder_uuid) when is_binary(folder_uuid) do

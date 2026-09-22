@@ -7,9 +7,10 @@ defmodule PhoenixKitComments.LiveCase do
 
   ## Sandbox ownership is load-bearing here
 
-  `PhoenixKitComments.Activity.log/2` rescues `DBConnection.OwnershipError`
-  to `:ok`. A LiveView runs in its own process, so under a non-shared
-  sandbox every activity write from a `render_click` is silently swallowed
+  Activity rows go through core's `PhoenixKit.Activity.log/3`, which never
+  raises: a `DBConnection.OwnershipError` is logged and returned. A LiveView
+  runs in its own process, so under a non-shared sandbox every activity
+  write from a `render_click` is silently lost
   and an `assert_activity_logged` would pass against code that logs nothing.
   These tests therefore run `async: false`, which makes `Sandbox.start_owner!`
   shared — do not make them async without re-checking that assumption.

@@ -184,6 +184,26 @@ defmodule PhoenixKitComments.AttachmentsTest do
     assert Repo.get!(Storage.File, file.uuid).folder_uuid == folder.uuid
   end
 
+  test "a file the uploader had trashed comes back live, in the comment's folder" do
+    folder = folder_fixture!()
+    file = root_file_fixture!()
+    {:ok, trashed} = Storage.trash_file(file)
+
+    assert :ok = Attachments.place_file(trashed, folder.uuid)
+
+    placed = Repo.get!(Storage.File, file.uuid)
+    assert placed.status == "active"
+    assert placed.folder_uuid == folder.uuid
+  end
+
+  test "with no folder, a trashed file still comes back live" do
+    file = root_file_fixture!()
+    {:ok, trashed} = Storage.trash_file(file)
+
+    assert :ok = Attachments.place_file(trashed, nil)
+    assert Repo.get!(Storage.File, file.uuid).status == "active"
+  end
+
   test "place_file/2 with no folder is a no-op" do
     file = root_file_fixture!()
 
