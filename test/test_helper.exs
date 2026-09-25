@@ -50,6 +50,7 @@ repo_available =
       {:ok, _} -> :ok
       {:error, {:already_started, _}} -> :ok
     end
+
     # `start_link/0` connects lazily, so it succeeds against a database that
     # does not exist — the first real query is what fails, and by then every
     # test is already running and timing out one settings read at a time.

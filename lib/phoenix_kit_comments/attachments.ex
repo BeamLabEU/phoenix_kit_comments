@@ -46,26 +46,38 @@ defmodule PhoenixKitComments.Attachments do
 
   Storage de-duplicates an upload by its bytes, so the file can be one the
   uploader trashed: it is wanted again, so it is restored into `folder_uuid`
-  (into no folder for `nil`) rather than left trashed under a new comment.
+  rather than left trashed under a new comment. Restore and attach are one
+  transaction (core's `ResourceFolders.place_stored/2`), so a folder the
+  host answered that is gone or trashed by now cannot leave the file active
+  in a dead home; it comes back live at the media root instead. Restored
+  by someone else first, it keeps the home they gave it and is attached
+  here like any other duplicate.
   """
   @spec place_file(Storage.File.t() | %{uuid: String.t()}, String.t() | nil) :: :ok
-  def place_file(%Storage.File{status: "trashed"} = file, folder_uuid) do
-    case Storage.restore_file_into(file, folder_uuid) do
+  def place_file(%Storage.File{status: "trashed"} = file, folder_uuid)
+      when is_binary(folder_uuid) do
+    case ResourceFolders.place_stored({:ok, file, :duplicate}, folder_uuid) do
       {:ok, _file} ->
         :ok
 
-      # Restored by someone else first: it keeps the home they gave it and
-      # is attached here like any other file.
-      {:error, :not_trashed} ->
-        place_file(%{file | status: "active"}, folder_uuid)
+      {:already_attached, _file} ->
+        :ok
 
       {:error, reason} ->
         Logger.warning(
-          "[Comments] could not restore file #{file.uuid}: " <>
-            ResourceFolders.describe_failure(reason)
+          "[Comments] could not restore file #{file.uuid} into #{folder_uuid}: " <>
+            ResourceFolders.describe_failure(reason) <> " — restoring it at the root"
         )
 
-        :ok
+        place_file(file, nil)
+    end
+  end
+
+  def place_file(%Storage.File{status: "trashed"} = file, nil) do
+    case Storage.restore_file_into(file, nil) do
+      {:ok, _file} -> :ok
+      # Someone else restored it first; it keeps the home they gave it.
+      {:error, :not_trashed} -> :ok
     end
   end
 

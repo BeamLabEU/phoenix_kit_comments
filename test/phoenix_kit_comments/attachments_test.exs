@@ -161,6 +161,44 @@ defmodule PhoenixKitComments.AttachmentsTest do
     assert Repo.get!(Storage.File, file.uuid).folder_uuid == nil
   end
 
+  # A trashed duplicate answered a dead folder: restore and attach are one
+  # transaction in core, so the file must not come back active inside the
+  # trashed folder (in no listing, not in the trash either) — it comes back
+  # live at the root.
+  test "a trashed duplicate answered a trashed folder comes back live at the root" do
+    folder = folder_fixture!()
+    {:ok, _} = Storage.trash_folder(folder)
+    file = root_file_fixture!()
+    {:ok, trashed} = Storage.trash_file(file)
+    assert trashed.status == "trashed"
+
+    assert :ok = Attachments.place_file(trashed, folder.uuid)
+
+    reloaded = Repo.get!(Storage.File, file.uuid)
+    assert reloaded.status == "active"
+    assert reloaded.folder_uuid == nil
+  end
+
+  test "a trashed duplicate answered a folder that no longer exists does not raise" do
+    file = root_file_fixture!()
+    {:ok, trashed} = Storage.trash_file(file)
+
+    assert :ok = Attachments.place_file(trashed, Ecto.UUID.generate())
+    assert Repo.get!(Storage.File, file.uuid).status == "active"
+  end
+
+  test "a trashed duplicate answered a live folder is restored into it" do
+    folder = folder_fixture!()
+    file = root_file_fixture!()
+    {:ok, trashed} = Storage.trash_file(file)
+
+    assert :ok = Attachments.place_file(trashed, folder.uuid)
+
+    reloaded = Repo.get!(Storage.File, file.uuid)
+    assert reloaded.status == "active"
+    assert reloaded.folder_uuid == folder.uuid
+  end
+
   test "a non-uuid answer is treated as no answer" do
     Process.put(:stale_answer, "not-a-uuid")
     Application.put_env(:phoenix_kit_comments, :attachments_parent_folder, {StaleHook, :parent})
