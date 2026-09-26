@@ -79,6 +79,26 @@ defmodule PhoenixKitComments.Attachments do
       # Someone else restored it first; it keeps the home they gave it.
       {:error, :not_trashed} -> :ok
     end
+  rescue
+    # Unlike the folder path, which core's `place_stored/2` guards, this is
+    # a bare `update_all`: a dropped connection or a bad uuid raises, and
+    # the caller is `consume_uploaded_entries/3` with the bytes already
+    # stored.
+    error ->
+      Logger.warning(
+        "[Comments] could not restore file #{file.uuid}: " <>
+          ResourceFolders.describe_failure(error)
+      )
+
+      :ok
+  catch
+    kind, reason when kind in [:exit, :throw] ->
+      Logger.warning(
+        "[Comments] could not restore file #{file.uuid}: " <>
+          ResourceFolders.describe_failure({kind, reason})
+      )
+
+      :ok
   end
 
   def place_file(_file, nil), do: :ok

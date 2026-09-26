@@ -242,6 +242,16 @@ defmodule PhoenixKitComments.AttachmentsTest do
     assert Repo.get!(Storage.File, file.uuid).status == "active"
   end
 
+  # The root restore is a bare `update_all` outside core's guard; a raise
+  # there must not reach `consume_uploaded_entries/3`. A uuid that does not
+  # cast is the cheapest way to make it raise, on both entry paths.
+  test "a trashed file whose restore raises is logged, not raised" do
+    unrestorable = %Storage.File{uuid: "not-a-uuid", status: "trashed"}
+
+    assert :ok = Attachments.place_file(unrestorable, nil)
+    assert :ok = Attachments.place_file(unrestorable, folder_fixture!().uuid)
+  end
+
   test "place_file/2 with no folder is a no-op" do
     file = root_file_fixture!()
 

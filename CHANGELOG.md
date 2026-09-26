@@ -2,6 +2,29 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.4.9 - 2026-09-26
+
+### Changed
+
+- Requires `phoenix_kit` `>= 2.38.0 and < 3.0.0` (was `~> 2.0`): the module
+  now uses core's shared toolkits, which first shipped in 2.38.0, and that
+  release also carries the attribution columns.
+- Comment attachments are placed through core's `Storage.ResourceFolders`
+  (hook calling, uuid checking and the attach rule), so a folder that was
+  trashed after the host answered is refused and the file stays at the
+  media root.
+- The acting user comes from `PhoenixKitWeb.Actor.opts/1` and activity is
+  logged through `PhoenixKit.Activity.log/3`.
+
+### Fixed
+
+- A file the uploader had trashed and then uploaded again to a comment
+  (storage dedupes it back to the trashed row) is restored instead of
+  staying trashed. It goes into the comment's folder, or to the media root
+  when there is no folder or the folder is gone.
+- Restoring that file at the media root can no longer crash the upload on a
+  database error; the failure is logged and the comment is still posted.
+
 ## 0.4.8 - 2026-09-15
 
 ### Added
