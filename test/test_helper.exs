@@ -42,6 +42,15 @@ repo_available =
     # `broadcast_change/3` lands in its own rescue, so a test asserting a
     # subscriber receives anything would fail for the wrong reason.
     {:ok, _} = Phoenix.PubSub.Supervisor.start_link(name: PhoenixKit.PubSub)
+
+    # Core's own writes (trashing a file, folder events) announce on its
+    # internal manager; without it they raise "unknown registry" from
+    # inside a storage call this suite makes.
+    case PhoenixKit.PubSub.Manager.start_link([]) do
+      {:ok, _} -> :ok
+      {:error, {:already_started, _}} -> :ok
+    end
+
     # `start_link/0` connects lazily, so it succeeds against a database that
     # does not exist — the first real query is what fails, and by then every
     # test is already running and timing out one settings read at a time.

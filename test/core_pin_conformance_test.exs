@@ -12,14 +12,18 @@ defmodule PhoenixKitComments.CorePinConformanceTest do
   outright, with no degraded mode. Nothing else in this repo's own test run
   would notice, which is why the check is a test rather than a convention.
 
-  Core 1.7 is deliberately excluded: core 2.0.0 squashed the migration chain to
-  a V135 floor and this module is verified only against that baseline.
+  The floor is `>= 2.38.0 and < 3.0.0`: attachments are placed by core's
+  `Storage.ResourceFolders` and the actor and activity log come from
+  `PhoenixKitWeb.Actor` and `Activity.log/3`, all first shipped in core
+  2.38.0; the module does not compile without them. Before that it was
+  `~> 2.0`: core 2.0.0 squashed the migration chain to a V135 floor and the
+  module was verified only against that baseline.
   """
 
-  @must_admit ["2.0.0", "2.0.7", "2.1.0", "2.9.4"]
-  @must_reject ["1.7.189", "1.7.236", "1.9.4", "3.0.0"]
+  @must_admit ["2.38.0", "2.38.1", "2.39.0", "2.99.4"]
+  @must_reject ["1.7.236", "2.0.0", "2.9.4", "2.23.2", "2.37.5", "3.0.0"]
 
-  test "the :phoenix_kit requirement admits every core 2.x and nothing else" do
+  test "the :phoenix_kit requirement admits every core >= 2.38.0 minor and nothing else" do
     requirement = core_requirement()
 
     assert match?({:ok, _parsed}, Version.parse_requirement(requirement)),
@@ -29,7 +33,8 @@ defmodule PhoenixKitComments.CorePinConformanceTest do
       assert Version.match?(version, requirement),
              "`:phoenix_kit` requirement #{inspect(requirement)} rejects core #{version}. " <>
                "A pin that excludes a core minor breaks `mix deps.get` for every host " <>
-               "running this module alongside that core. Keep it a two-segment `~> 2.0`."
+               "running this module alongside that core. Keep the floor patch-precise " <>
+               "and the ceiling open (`>= 2.38.0 and < 3.0.0`), never a three-segment `~>`."
     end
 
     for version <- @must_reject do
