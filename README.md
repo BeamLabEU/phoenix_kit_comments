@@ -65,15 +65,33 @@ Use the `CommentsComponent` LiveComponent in any LiveView:
 
 ### Resource handler callbacks
 
-Modules that consume comments can register handlers to receive lifecycle notifications:
+A module whose records are commented on names a handler per `resource_type`, to
+make those records clickable in the moderation admin and to receive lifecycle
+notifications. A PhoenixKit module does it from its own `PhoenixKit.Module`,
+with no host configuration:
+
+```elixir
+# in the module that owns the "ticket" records
+def resource_links, do: %{"ticket" => MyModule.Tickets}
+
+# a link only, no handler and no notifications: a path template
+def resource_links, do: %{"widget" => "/admin/widgets/:uuid"}
+```
+
+A host app overrides a module's handler, or registers one of its own types, in
+config — the config entry wins for its type:
 
 ```elixir
 # config/config.exs
 config :phoenix_kit, :comment_resource_handlers, %{
-  "post" => PhoenixKitPosts,
-  "entity" => PhoenixKitEntities
+  "order" => MyApp.Orders
 }
 ```
+
+A link is resolved per type in this order, stopping at the first that answers:
+the handler's `resolve_comment_resources/1`, then a `resource_links/0` path
+template, then the template under Settings → Comments → Resource Paths (the
+no-code option for a host page, rendered as a plain link).
 
 Handler modules can implement:
 

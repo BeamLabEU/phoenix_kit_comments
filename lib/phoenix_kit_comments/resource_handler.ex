@@ -1,12 +1,23 @@
 defmodule PhoenixKitComments.ResourceHandler do
   @moduledoc """
-  The contract a host module implements to hook into comments.
+  The contract a module implements to hook into comments.
 
-  Register one per `resource_type`:
+  One handler per `resource_type`. A PhoenixKit module names its own from
+  `resource_links/0`, which needs no host configuration:
+
+      def resource_links, do: %{"post" => MyModule.Posts}
+
+  A host overrides that, or registers a type no PhoenixKit module owns, in
+  config — the config entry wins for its type:
 
       config :phoenix_kit, :comment_resource_handlers, %{
         "post" => MyApp.Posts
       }
+
+  Both land in core's `PhoenixKit.ResourceLinks.handlers/0`, the one registry
+  this package dispatches from. A `resource_links/0` entry that is a path
+  template rather than a module makes the record clickable but is not a
+  handler: it receives no events.
 
   Every callback is optional — implement only the events you care about — so
   a handler is free to be a two-line module that reacts to one thing.
@@ -14,8 +25,8 @@ defmodule PhoenixKitComments.ResourceHandler do
   ## Why adopt the behaviour
 
   Dispatch is by `function_exported?/3`, and it always will be: a handler is
-  named in host config, may live in another application, and may legitimately
-  implement none of these. That is a good property, and it has one bad
+  named by a module or in host config, may live in another application, and
+  may legitimately implement none of these. That is a good property, and it has one bad
   consequence — a callback this package never finds is indistinguishable from
   one you chose not to write. Misname `on_comment_create` (no `d`), take two
   arguments instead of three, and nothing happens: no error, no warning, no
