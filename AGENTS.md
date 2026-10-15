@@ -128,7 +128,7 @@ Statuses (strings): `"published"` (default; visible), `"pending"` (moderation on
 
 ### Host contracts
 
-Resource handlers, registered per `resource_type` in host config (`config :phoenix_kit, :comment_resource_handlers, %{"post" => MyApp.Posts}`); adopt `@behaviour PhoenixKitComments.ResourceHandler` so a misnamed callback is a compile warning instead of silence. Every callback is optional.
+Resource handlers, one per `resource_type`, read from core's `PhoenixKit.ResourceLinks.handlers/0`. A module author declares one with `resource_links/0` on their `PhoenixKit.Module` (`%{"post" => MyModule}`, no host configuration); host config (`config :phoenix_kit, :comment_resource_handlers, %{"post" => MyApp.Posts}`) is the override and wins per type, over module entries and core's built-ins. A link resolves per type through the handler's `resolve_comment_resources/1`, then a `resource_links/0` path-template entry (a link only — a template is not a handler and gets no events), then the Settings → Comments → Resource Paths template. Adopt `@behaviour PhoenixKitComments.ResourceHandler` so a misnamed callback is a compile warning instead of silence. Every callback is optional.
 
 | Callback | Fires |
 |---|---|

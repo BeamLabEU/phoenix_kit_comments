@@ -12,12 +12,31 @@ defmodule PhoenixKitComments do
 
   ## Resource Handler Callbacks
 
-  Modules that consume comments can register handlers to receive notifications
-  when comments are created or deleted. Configure in your app:
+  A module whose records are commented on names a handler per `resource_type`,
+  to make those records clickable in the moderation admin and to be told when
+  comments on them are created, deleted or reacted to. The registry is core's
+  `PhoenixKit.ResourceLinks.handlers/0`; this module only reads it. A handler
+  gets there one of three ways, later ones winning per type:
 
-      config :phoenix_kit, :comment_resource_handlers, %{
-        "post" => PhoenixKitPosts
-      }
+  1. Core's built-ins for the types it knows (`"post"`, `"file"`, `"user"`, …).
+  2. **`resource_links/0` on the module's `PhoenixKit.Module`** — the first
+     choice for a module author, because it needs no host configuration:
+
+         def resource_links, do: %{"ticket" => MyModule.Tickets}
+
+  3. Host config — the override, and the way in for a host app's own types
+     that have no `PhoenixKit.Module`:
+
+         config :phoenix_kit, :comment_resource_handlers, %{
+           "order" => MyApp.Orders
+         }
+
+  A link is resolved per `resource_type` in this order, stopping at the first
+  tier that answers: the handler's `resolve_comment_resources/1`; then a path
+  template a module declared in `resource_links/0` (a string or
+  `%{"path" => …, "title" => …}` instead of a module — a link with no handler
+  and no events); then the host's Settings → Comments → Resource Paths
+  template.
 
   The contract is `PhoenixKitComments.ResourceHandler`. Adopting it is
   optional and changes nothing at runtime, but it is worth doing: dispatch is
