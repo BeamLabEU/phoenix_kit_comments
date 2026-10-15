@@ -74,9 +74,13 @@ with no host configuration:
 # in the module that owns the "ticket" records
 def resource_links, do: %{"ticket" => MyModule.Tickets}
 
-# a link only, no handler and no notifications: a path template
+# or, a link only (no handler, no notifications): a path template
 def resource_links, do: %{"widget" => "/admin/widgets/:uuid"}
 ```
+
+A template declared here is an internal route: give it raw, with no URL prefix,
+and the prefix and locale are applied when it renders. The Settings template
+below is for host pages and is used as written.
 
 A host app overrides a module's handler, or registers one of its own types, in
 config — the config entry wins for its type:
@@ -97,6 +101,9 @@ Handler modules can implement:
 
 - `on_comment_created/3` — called after a comment is created
 - `on_comment_deleted/3` — called after a comment is deleted
+- `on_comment_liked/3`, `on_comment_unliked/3`, `on_comment_disliked/3`,
+  `on_comment_undisliked/3` — called when a reaction actually changes, never on
+  an "already reacted" no-op
 - `resolve_comment_resources/1` — returns `%{uuid => %{title: ..., path: ...}}` for admin display
 
 ### Attachment folder

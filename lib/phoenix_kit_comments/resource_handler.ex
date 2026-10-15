@@ -26,8 +26,8 @@ defmodule PhoenixKitComments.ResourceHandler do
 
   Dispatch is by `function_exported?/3`, and it always will be: a handler is
   named by a module or in host config, may live in another application, and
-  may legitimately implement none of these. That is a good property, and it has one bad
-  consequence — a callback this package never finds is indistinguishable from
+  may legitimately implement none of these. That is a good property, and it
+  has one bad consequence — a callback this package never finds is indistinguishable from
   one you chose not to write. Misname `on_comment_create` (no `d`), take two
   arguments instead of three, and nothing happens: no error, no warning, no
   notification, and nothing to grep for. The host discovers it when someone
