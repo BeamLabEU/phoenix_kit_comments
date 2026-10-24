@@ -2,6 +2,22 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.4.10 - 2026-10-24
+
+### Changed
+
+- The resource-handler docs (README, `PhoenixKitComments` and
+  `ResourceHandler` moduledocs) now describe `resource_links/0` on a module's
+  `PhoenixKit.Module` as the first way to make commented records clickable
+  and receive comment events, with `config :phoenix_kit,
+  :comment_resource_handlers` as the host override. The README lists the
+  reaction callbacks (`on_comment_liked/unliked/disliked/undisliked`) and
+  notes that a module-declared path template gets the PhoenixKit prefix
+  applied, while a Settings template is used verbatim. Docs only; behaviour is
+  unchanged. (PR #45)
+- Dependencies refreshed to `phoenix_kit` 2.64.1. The `phoenix_kit`
+  requirement is unchanged (`>= 2.38.0 and < 3.0.0`).
+
 ## 0.4.9 - 2026-09-26
 
 ### Changed
