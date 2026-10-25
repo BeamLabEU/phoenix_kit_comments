@@ -1127,6 +1127,19 @@ defmodule PhoenixKitComments do
     # restore_comment/2 and delete_comment/2 already did this.
     |> update_comment(%{status: "published"}, Keyword.put(opts, :log, false))
     |> Activity.log_comment("comments.comment_approved", opts)
+    |> tap(fn
+      # Its readers see it only now: the owning module hears of it once.
+      {:ok, %Comment{} = approved} when comment.status == "pending" ->
+        notify_resource_handler(
+          :on_comment_published,
+          approved.resource_type,
+          approved.resource_uuid,
+          approved
+        )
+
+      _ ->
+        :ok
+    end)
   end
 
   @doc """
