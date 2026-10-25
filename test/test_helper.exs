@@ -11,9 +11,10 @@
 #
 #   createdb phoenix_kit_comments_test
 #
-# The comments tables live in CORE's versioned chain, not in this module —
-# so the schema is built by `PhoenixKit.Migration.ensure_current/2`, the
-# same call a host app makes. There is no module-owned DDL to run after it.
+# Core's versioned chain still creates the comments tables, so the schema is
+# built by `PhoenixKit.Migration.ensure_current/2`, the same call a host app
+# makes; then this module's own chain (`PhoenixKitComments.Migrations`, V1
+# adopts those tables) runs on top, as `mix phoenix_kit.update` runs it.
 
 support_dir = Path.expand("support", __DIR__)
 
@@ -57,6 +58,12 @@ repo_available =
     # Ask a question first.
     TestRepo.query!("SELECT 1")
     PhoenixKit.Migration.ensure_current(TestRepo, log: false)
+
+    # `up/1` needs an `Ecto.Migration` run; the SQL is data, so replay it.
+    if PhoenixKitComments.Migrations.migrated_version_runtime() <
+         PhoenixKitComments.Migrations.current_version() do
+      Enum.each(PhoenixKitComments.Migrations.up_statements("public"), &TestRepo.query!/1)
+    end
 
     # Probed BEFORE sandbox mode goes manual — after that a query from this
     # process has no connection ownership and fails for a reason that has
@@ -105,8 +112,16 @@ if repo_available do
   {:ok, _pid} = PhoenixKitComments.Test.Endpoint.start_link()
 end
 
+# `migrations_build_alone_test.exs` uses core's
+# `PhoenixKit.TestSupport.ModuleChainCheck`, which the first core release after
+# 2.64.1 ships; against an older core in `deps/` it is excluded.
+exclude =
+  if Code.ensure_loaded?(PhoenixKit.TestSupport.ModuleChainCheck),
+    do: [],
+    else: [:requires_module_chain_check]
+
 if repo_available do
-  ExUnit.start()
+  ExUnit.start(exclude: exclude)
 else
-  ExUnit.start(exclude: [:integration])
+  ExUnit.start(exclude: [:integration | exclude])
 end

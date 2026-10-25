@@ -22,7 +22,7 @@ repo and PubSub.
 
 ## What this module does NOT do
 
-- Owns no migrations. All four tables ship in core's chain; `migration_module/0` is unset.
+- Does not change its tables through core. Core's chain still creates them, but their shape is this module's: `PhoenixKitComments.Migrations` (V1 adopts them) is where every change goes, never a core migration.
 - Never references the commented resource's table. Linking is by `(resource_type, resource_uuid)` only, so any module can comment on anything without schema coupling.
 - Does not resolve resource titles or links itself. `resolve_resource_context/1` and the path templates delegate to core's `PhoenixKit.ResourceLinks`, the same resolver the Activity feed uses; the `comment_resource_paths` setting is core's.
 - Does not hard-delete. `delete_comment/2` sets `status: "deleted"`; media rows cascade only if the row is ever physically removed.
@@ -100,6 +100,7 @@ lib/
     activity.ex                      # Activity-log wrapper (log/2, log_comment/3)
     embed.ex                         # `use PhoenixKitComments.Embed`: Leaf forwarding hook for hosts
     gettext.ex                       # Own Gettext backend (priv/gettext)
+    migrations.ex                    # Own migration chain (V1 adopts the four core-created tables)
     resource_handler.ex              # @behaviour for host handlers; callbacks/0, event_callbacks/0
     schemas/
       comment.ex                     # phoenix_kit_comments; threading, attribution, content-or-media rule
@@ -166,13 +167,21 @@ Resource path templates (`comment_resource_paths`, core setting managed from the
 
 ## Database & migrations
 
-None. Tables `phoenix_kit_comments`, `phoenix_kit_comments_likes`, `phoenix_kit_comments_dislikes` and `phoenix_kit_comment_media` ship in core's chain (V135 baseline; the attribution columns arrive later in the same chain); `migration_module/0` is unset. A schema change is a core migration first, then schema edits here. UUIDv7 primary keys (`uuid_generate_v7()`, never `gen_random_uuid()`); `use PhoenixKit.SchemaPrefix` on every table-backed schema.
+Owns a versioned chain: `PhoenixKitComments.Migrations` via `migration_module/0`, marker `pkcmt_schema:<N>` as a `COMMENT ON TABLE` on `phoenix_kit_comments` (none reads as 0), currently **V1**. The SQL is data (`up_statements/2`, `down_statements/2`); `up/1` / `down/1` `execute/1` it, so they only work inside an `Ecto.Migration` run. `mix phoenix_kit.update` runs core's chain, then a generated wrapper calling `up(prefix:, version:)`.
+
+- **V1 adopts the four tables core's chain creates** (`phoenix_kit_comments`, `phoenix_kit_comments_likes`, `phoenix_kit_comments_dislikes`, `phoenix_kit_comment_media`): their shape as a fresh core install builds it today (V135, V164's `fk_comments_user_uuid` delete action, V166's attribution columns, index and CHECK), with core's exact names, as `CREATE TABLE IF NOT EXISTS`, guarded `DO $$` constraint blocks and `CREATE INDEX IF NOT EXISTS`. On existing installs only the marker is new; where core no longer creates the tables, the same statements create them.
+- **A change to these tables is a new version here, never a core migration** — core refuses one since V223 (its `PhoenixKit.Migrations.ModuleOwnedTables`; plan: core's `dev_docs/plans/2026-10-25-module-table-ownership.md`). Until core's `ExpectedSchema` hands the tables over, a version that reshapes an object the manifest declares must take it out of the manifest first, or `mix phoenix_kit.repair` restores the old shape; one that only adds objects the manifest never names needs no core step.
+- **Never edit a shipped version's statements**: append behind `target >= N` in `up_statements/2` and bump `@current_version`.
+- **`down/1` never drops a table** — it only rewrites or clears the marker; `migrations_test.exs` asserts no emitted statement matches `DROP|TRUNCATE|DELETE`.
+- **Proof the chain stands alone:** `test/integration/migrations_build_alone_test.exs` runs core's `PhoenixKit.TestSupport.ModuleChainCheck` (core after 2.64.1), which builds the tables both ways in a scratch schema and compares them. `migrations_test.exs` pins every table, index and constraint name, each FK's delete action, prefix threading, and checks the statements against core's manifest.
+
+UUIDv7 primary keys (`uuid_generate_v7()`, never `gen_random_uuid()`); `use PhoenixKit.SchemaPrefix` on every table-backed schema.
 
 ## Testing
 
 - Test DB `phoenix_kit_comments_test` (suffix `MIX_TEST_PARTITION`; `PGDATABASE` overrides the name). Env honoured: `PGUSER` (default `postgres`), `PGPASSWORD`, `PGHOST`, `PGDATABASE`, `PGPOOL` (pool size, default `schedulers_online() * 2`).
 - Without Postgres: behaviour, schema, changeset, markdown, `Embed`, resource-handler and conformance tests run; everything under `test/integration/` is tagged `:integration` via the case templates and is excluded automatically.
-- `test_helper.exs` starts `Test.Repo` and a `PhoenixKit.PubSub` server, runs `TestRepo.query!("SELECT 1")` first (the repo connects lazily), builds the schema with `PhoenixKit.Migration.ensure_current/2` (no module-owned DDL), probes for the attribution column before switching the sandbox to `:manual`, then starts `Test.Endpoint`.
+- `test_helper.exs` starts `Test.Repo` and a `PhoenixKit.PubSub` server, runs `TestRepo.query!("SELECT 1")` first (the repo connects lazily), builds the schema with `PhoenixKit.Migration.ensure_current/2`, replays `PhoenixKitComments.Migrations.up_statements/1` through the repo when the marker is behind, probes for the attribution column before switching the sandbox to `:manual`, then starts `Test.Endpoint`.
 - Support modules: `DataCase` (sandbox owner, `user_fixture/1` inserted directly because the registration rate limiter's ETS is not started, `comment_fixture/2`), `LiveCase` (`Test.Endpoint`, `Phoenix.LiveViewTest`, `fake_scope/1`, `put_test_scope/2`), `Test.Router` (both admin prefixes, the `/en/test/thread/:resource_uuid` host page, a `StubController` at `/admin` so refused redirects are assertable), `Test.Hooks` (`:assign_scope` on_mount replicating core's admin `live_session` assigns), `Test.Layouts` (flashes with stable ids), `Test.HostLive` (embeds the component the way a consumer does; `decoration_keys` from the URL), `ActivityLogAssertions` (`assert_activity_logged/2`).
 - `config :phoenix_kit, repo: Test.Repo` is required; without it every context call falls into its own rescue and returns a plausible nothing.
 - Known noise: the "Integration tests excluded" banner when the DB is missing or the core in `deps/` lacks the attribution columns; a "redefining module PhoenixKitComments.Test.Repo" warning (support files are both compiled from `test/support` and `Code.require_file`d by the helper); `count_comments/3 failed, reporting 0` ownership warnings from the unit tests that assert the rescue path on purpose.
@@ -207,4 +216,4 @@ publish has succeeded.
 
 ## TODOs
 
-- Likes/dislikes have no database-level uniqueness on `(comment_uuid, user_uuid)`; when core adds the index, the changesets' `unique_constraint` names (`uq_comments_likes_comment_user`, `uq_comments_dislikes_comment_user`) must match it, and the lock + precheck can become an `on_conflict` insert.
+- Likes/dislikes have no database-level uniqueness on `(comment_uuid, user_uuid)`. Adding the index is now a version of this module's chain (de-duplicating existing rows first); its names must match the changesets' `unique_constraint` names (`uq_comments_likes_comment_user`, `uq_comments_dislikes_comment_user`), and the lock + precheck can then become an `on_conflict` insert.

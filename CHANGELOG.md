@@ -2,6 +2,19 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- The module's own migration chain, `PhoenixKitComments.Migrations`
+  (`migration_module/0`). V1 adopts the four tables core's chain creates for
+  comments, `phoenix_kit_comments`, `phoenix_kit_comments_likes`,
+  `phoenix_kit_comments_dislikes` and `phoenix_kit_comment_media`, exactly as a
+  fresh core install builds them, and stamps a `pkcmt_schema:1` marker. Nothing
+  changes on an existing install but the marker; from now on a change to these
+  tables ships here instead of in core. A test proves the chain builds the
+  tables without core (core's `PhoenixKit.TestSupport.ModuleChainCheck`).
+
 ## 0.4.10 - 2026-10-24
 
 ### Changed
