@@ -1116,33 +1116,47 @@ defmodule PhoenixKitComments do
   hand-made `approve` published a deleted comment anyway. The rule belongs
   here, at the one place every caller goes through. Use `restore_comment/2`
   to bring a deleted comment back.
+
+  Reads and locks the stored row before approving, so a stale struct cannot
+  republish a deleted comment or repeat the `on_comment_published/3` callback.
   """
   @spec approve_comment(Comment.t(), keyword()) ::
-          {:ok, Comment.t()} | {:error, :comment_deleted | Ecto.Changeset.t()}
-  def approve_comment(comment, opts \\ [])
+          {:ok, Comment.t()} | {:error, :comment_deleted | :not_found | Ecto.Changeset.t()}
+  def approve_comment(%Comment{uuid: uuid}, opts \\ []) do
+    with {:ok, {approved, previous_status}} <- repo().transaction(fn -> approve_locked(uuid) end) do
+      # Publish side effects after the transaction releases its lock.
+      if Keyword.get(opts, :broadcast, true),
+        do: broadcast_change(approved.resource_type, approved.resource_uuid, :updated)
 
-  def approve_comment(%Comment{status: "deleted"}, _opts), do: {:error, :comment_deleted}
+      result = Activity.log_comment({:ok, approved}, "comments.comment_approved", opts)
 
-  def approve_comment(%Comment{} = comment, opts) do
-    comment
-    # `log: false` so this writes ONE audit row, not a
-    # `comments.comment_updated` from the inner call plus the approval.
-    # restore_comment/2 and delete_comment/2 already did this.
-    |> update_comment(%{status: "published"}, Keyword.put(opts, :log, false))
-    |> Activity.log_comment("comments.comment_approved", opts)
-    |> tap(fn
-      # Its readers see it only now: the owning module hears of it once.
-      {:ok, %Comment{} = approved} when comment.status == "pending" ->
+      if previous_status == "pending" do
         notify_resource_handler(
           :on_comment_published,
           approved.resource_type,
           approved.resource_uuid,
           approved
         )
+      end
 
-      _ ->
-        :ok
-    end)
+      result
+    end
+  end
+
+  defp approve_locked(uuid) do
+    case repo().one(from(c in Comment, where: c.uuid == ^uuid, lock: "FOR UPDATE")) do
+      nil ->
+        repo().rollback(:not_found)
+
+      %Comment{status: "deleted"} ->
+        repo().rollback(:comment_deleted)
+
+      %Comment{} = comment ->
+        case update_comment(comment, %{status: "published"}, log: false, broadcast: false) do
+          {:ok, approved} -> {approved, comment.status}
+          {:error, reason} -> repo().rollback(reason)
+        end
+    end
   end
 
   @doc """

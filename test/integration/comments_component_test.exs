@@ -48,6 +48,23 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
   end
 
   describe "the module kill switch" do
+    test "an explicit enabled host attr still respects the module switch",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+      Phoenix.LiveView.send_update(view.pid, CommentsComponent, id: "test-thread", enabled: true)
+      render(view)
+
+      PhoenixKit.Settings.update_boolean_setting_with_module(
+        "comments_enabled",
+        false,
+        "comments"
+      )
+
+      post_comment(view, %{"comment" => "after the switch"})
+
+      assert comments_for(resource_uuid) == []
+    end
+
     test "stops writes from a thread that was already open when it was flipped",
          %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
       {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))

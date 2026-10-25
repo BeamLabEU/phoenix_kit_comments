@@ -21,7 +21,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   ## Optional Attrs
 
-  - `enabled` - Whether comments are enabled (default: true)
+  - `enabled` - An additional host off switch. Defaults to the module's
+    `comments_enabled` setting; `true` still respects that setting.
   - `show_likes` - Show like/dislike buttons (default: true)
   - `title` - Section title (default: "Comments")
   - `rich_text` - Use the rich-text (Leaf) editor in the composer
@@ -817,15 +818,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     :ok
   end
 
-  # nil means "the host said nothing", so the module's own switch decides —
-  # re-read on every update. A host that passed `enabled=` keeps its answer.
-  defp effective_enabled(nil), do: PhoenixKitComments.enabled?()
-  defp effective_enabled(host_value), do: host_value
+  # The host may turn a thread off; the module switch still applies when
+  # the host permits it. Read fresh on both updates and write events.
+  defp effective_enabled(host_value) when host_value in [nil, true],
+    do: PhoenixKitComments.enabled?()
+
+  defp effective_enabled(_host_value), do: false
 
   # The same question as `:enabled`, asked at event time rather than at
   # render time. `:host_enabled` is the host's own switch, remembered across
-  # partial updates; with no host answer the module setting decides, read
-  # fresh.
+  # partial updates; the module setting is always read fresh when the host
+  # permits comments.
   defp writes_enabled?(socket) do
     effective_enabled(socket.assigns[:host_enabled]) == true
   end
