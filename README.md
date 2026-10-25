@@ -100,6 +100,7 @@ no-code option for a host page, rendered as a plain link).
 Handler modules can implement:
 
 - `on_comment_created/3` — called after a comment is created
+- `on_comment_published/3` — called when a comment held for moderation is approved
 - `on_comment_deleted/3` — called after a comment is deleted
 - `on_comment_liked/3`, `on_comment_unliked/3`, `on_comment_disliked/3`,
   `on_comment_undisliked/3` — called when a reaction actually changes, never on
@@ -244,6 +245,7 @@ records. Every callback is optional:
 |---|---|
 | `resolve_comment_resources/1` | the admin list needs titles + links for your records |
 | `on_comment_created/3` | a comment lands on one of your records |
+| `on_comment_published/3` | a `pending` comment is approved (moderation on) |
 | `on_comment_deleted/3` | a comment is soft-deleted |
 | `on_comment_liked/3` · `on_comment_unliked/3` | reaction added / removed |
 | `on_comment_disliked/3` · `on_comment_undisliked/3` | reaction added / removed |

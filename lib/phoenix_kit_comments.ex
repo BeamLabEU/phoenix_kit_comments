@@ -50,6 +50,9 @@ defmodule PhoenixKitComments do
 
   * `on_comment_created(resource_type, resource_uuid, comment)` — new comment
     (check `comment.parent_uuid` to distinguish a reply).
+  * `on_comment_published(resource_type, resource_uuid, comment)` — a `pending`
+    comment was approved and is now visible (fires once; a comment published on
+    creation fires `on_comment_created` instead).
   * `on_comment_deleted(resource_type, resource_uuid, comment)` — comment removed.
   * `on_comment_liked(resource_type, resource_uuid, %{comment: comment, liker_uuid: uuid})`
   * `on_comment_unliked(resource_type, resource_uuid, %{comment: comment, liker_uuid: uuid})`
