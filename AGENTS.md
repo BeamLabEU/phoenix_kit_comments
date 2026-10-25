@@ -135,6 +135,7 @@ Resource handlers, one per `resource_type`, read from core's `PhoenixKit.Resourc
 |---|---|
 | `resolve_comment_resources([uuid])` | Admin display: `%{uuid => %{title, path, full_title?, thumb_url?}}`, path RAW |
 | `on_comment_created(type, uuid, comment)` | After insert (reply: `comment.parent_uuid`) |
+| `on_comment_published(type, uuid, comment)` | A `pending` comment approved (`approve_comment/2`, `bulk_approve/2`): its readers see it only now |
 | `on_comment_deleted(type, uuid, comment)` | After soft delete |
 | `on_comment_liked / unliked / disliked / undisliked(type, uuid, %{comment, liker_uuid})` | Only on an actual state change, never on an `:already_*` no-op |
 

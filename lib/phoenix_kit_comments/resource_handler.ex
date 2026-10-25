@@ -101,6 +101,15 @@ defmodule PhoenixKitComments.ResourceHandler do
   @doc "A comment was created. Check `comment.parent_uuid` to tell a reply apart."
   @callback on_comment_created(resource_type(), resource_uuid(), Comment.t()) :: any()
 
+  @doc """
+  A comment held for moderation was approved, so its readers can now see it.
+  Fires once, when a `pending` comment becomes `published` (`approve_comment/2`,
+  `bulk_approve/2`); a comment published on creation fires
+  `on_comment_created/3` with status `"published"` instead, so a handler that
+  tells people about a comment reacts to both.
+  """
+  @callback on_comment_published(resource_type(), resource_uuid(), Comment.t()) :: any()
+
   @doc "A comment was soft-deleted."
   @callback on_comment_deleted(resource_type(), resource_uuid(), Comment.t()) :: any()
 
@@ -118,6 +127,7 @@ defmodule PhoenixKitComments.ResourceHandler do
 
   @optional_callbacks resolve_comment_resources: 1,
                       on_comment_created: 3,
+                      on_comment_published: 3,
                       on_comment_deleted: 3,
                       on_comment_liked: 3,
                       on_comment_unliked: 3,
