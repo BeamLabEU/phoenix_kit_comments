@@ -231,7 +231,7 @@
                 label: gettext("Author"),
                 value:
                   if(comment.user,
-                    do: author_label(comment, @show_emails),
+                    do: author_label(comment, show_emails?(@phoenix_kit_current_scope)),
                     else: gettext("Deleted user")
                   )
               },
@@ -290,7 +290,7 @@
               </.table_default_cell>
               <.table_default_cell class="text-sm">
                 <%= if comment.user do %>
-                  {author_label(comment, @show_emails)}
+                  {author_label(comment, show_emails?(@phoenix_kit_current_scope))}
                 <% else %>
                   <span class="text-base-content/50">{gettext("Deleted user")}</span>
                 <% end %>
@@ -368,7 +368,7 @@
         <div class="flex flex-wrap items-center gap-2 mb-3 text-sm text-base-content/70">
           <span>
             {if @viewing_comment.user,
-              do: author_label(@viewing_comment, @show_emails),
+              do: author_label(@viewing_comment, show_emails?(@phoenix_kit_current_scope)),
               else: gettext("Deleted user")}
           </span>
           <span class="text-base-content/30">·</span>

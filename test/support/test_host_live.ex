@@ -33,6 +33,10 @@ defmodule PhoenixKitComments.Test.HostLive do
      |> assign(:resource_uuid, params["resource_uuid"])
      |> assign(:decoration_keys, decoration_keys)
      |> assign(:current_user, socket.assigns[:phoenix_kit_current_user])
+     # Passed like a host that already holds the viewer's scope; without it
+     # the component builds one from the database for a user the tests never
+     # granted anything.
+     |> assign(:pk_scope, socket.assigns[:phoenix_kit_current_scope])
      |> assign(:comments_updated, nil)}
   end
 
@@ -47,6 +51,7 @@ defmodule PhoenixKitComments.Test.HostLive do
         resource_type="test_resource"
         resource_uuid={@resource_uuid}
         current_user={@current_user}
+        pk_scope={@pk_scope}
         decoration_keys={@decoration_keys}
       />
     </div>

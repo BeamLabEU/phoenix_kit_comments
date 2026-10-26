@@ -55,13 +55,14 @@ defmodule PhoenixKitComments.ResourceHandlerTest do
   end
 
   describe "the lookups" do
-    test "everything that is not an event is a declared lookup" do
-      # A callback is either fired by the dispatcher (an event, checked
-      # below against the source) or asked by name by one caller (a lookup).
-      # Nothing may be declared as neither: that is a promise with no caller.
-      lookups = ResourceHandler.callbacks() -- ResourceHandler.event_callbacks()
-
-      assert Enum.sort(lookups) == Enum.sort(ResourceHandler.lookup_callbacks())
+    test "every named lookup is a declared callback" do
+      # `event_callbacks/0` is defined as everything that is not a lookup, so
+      # the only way the two lists can drift is a lookup named here that the
+      # behaviour no longer declares — a host implementing it would get
+      # "@impl true but the behaviour does not specify such callback".
+      for lookup <- ResourceHandler.lookup_callbacks() do
+        assert lookup in ResourceHandler.callbacks(), "#{inspect(lookup)} is not declared"
+      end
     end
 
     test "the moderation scope asks moderatable_resources/2 at the declared arity" do

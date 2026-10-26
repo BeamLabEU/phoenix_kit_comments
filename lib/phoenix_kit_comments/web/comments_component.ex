@@ -303,6 +303,20 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> then(
         &assign(&1, :pk_scope, &1.assigns[:pk_scope] || viewer_scope(&1.assigns.current_user))
       )
+      # Whether the viewer moderates THIS record (every comment here is on
+      # it) — the moderation page's rule, not the Owner/Admin role. What
+      # the viewer SEES; `do_delete_comment/2` re-checks for real.
+      |> then(
+        &assign(
+          &1,
+          :viewer_moderates?,
+          viewer_moderates?(
+            &1.assigns[:pk_scope],
+            &1.assigns[:resource_type],
+            &1.assigns[:resource_uuid]
+          )
+        )
+      )
       |> assign(:giphy_enabled?, PhoenixKitComments.giphy_enabled?())
       |> assign(:attachments_enabled?, PhoenixKitComments.attachments_enabled?())
       |> assign(:max_length, PhoenixKitComments.get_max_length())
@@ -1076,7 +1090,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           comment.resource_uuid != socket.assigns.resource_uuid ->
         {:noreply, socket |> put_flash(:error, gettext("Invalid comment for this resource"))}
 
-      not can_delete_comment?(socket.assigns.current_user, comment) ->
+      not can_delete_comment?(socket, comment) ->
         {:noreply,
          socket |> put_flash(:error, gettext("You don't have permission to delete this comment"))}
 
@@ -1552,7 +1566,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           <%!-- keyboard users visible) so a card at rest is just          --%>
           <%!-- author / body / reactions.                                  --%>
           <% may_edit = can_edit_comment?(@current_user, @comment, @ctx.viewer_is_admin?) %>
-          <% may_delete = can_delete_comment?(@current_user, @comment, @ctx.viewer_is_admin?) %>
+          <% may_delete = can_delete_comment?(@current_user, @comment, @ctx.viewer_moderates?) %>
           <%= if may_edit or may_delete do %>
             <%!-- `[@media(hover:none)]` is the touch escape hatch: a device --%>
             <%!-- with no hover never matches `group-hover`, so Edit and     --%>
@@ -2024,13 +2038,34 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp can_edit_comment?(nil, _comment, _admin?), do: false
   defp can_edit_comment?(user, comment, admin?), do: user.uuid == comment.user_uuid or admin?
 
-  defp can_delete_comment?(nil, _comment), do: false
+  # Delete: the author, or someone who moderates this record by the SAME rule
+  # as the moderation page (`comments.moderate_all`, or the base key plus the
+  # handler's `moderatable_resources/2`). Not the Owner/Admin role: that let
+  # a role holder delete anyone's comment from inside a thread the
+  # moderation page would not show them. The 2-arity form is the event-time
+  # boundary and asks the handler afresh; the 3-arity form is the render
+  # path, fed the per-update `viewer_moderates?` assign.
+  defp can_delete_comment?(socket, comment) do
+    user = socket.assigns[:current_user]
 
-  defp can_delete_comment?(user, comment),
-    do: can_delete_comment?(user, comment, user_is_admin?(user))
+    user != nil and
+      (user.uuid == comment.user_uuid or
+         viewer_moderates?(
+           socket.assigns[:pk_scope] || viewer_scope(user),
+           comment.resource_type,
+           comment.resource_uuid
+         ))
+  end
 
-  defp can_delete_comment?(nil, _comment, _admin?), do: false
-  defp can_delete_comment?(user, comment, admin?), do: user.uuid == comment.user_uuid or admin?
+  defp can_delete_comment?(nil, _comment, _moderates?), do: false
+
+  defp can_delete_comment?(user, comment, moderates?),
+    do: user.uuid == comment.user_uuid or moderates?
+
+  defp viewer_moderates?(nil, _type, _uuid), do: false
+
+  defp viewer_moderates?(scope, type, uuid),
+    do: PhoenixKitComments.may_moderate_resource?(scope, type, uuid)
 
   defp user_is_admin?(nil), do: false
 

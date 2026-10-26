@@ -14,6 +14,7 @@ defmodule PhoenixKitComments.Web.ModerationScopeTest do
   """
   use PhoenixKitComments.LiveCase
 
+  alias PhoenixKit.Users.Roles
   alias PhoenixKitComments.Comment
 
   @path "/en/admin/comments"
@@ -318,6 +319,107 @@ defmodule PhoenixKitComments.Web.ModerationScopeTest do
 
       {:ok, view, _html} = open(ctx.conn, scope)
       assert has_element?(view, "#comments-actions-tile")
+    end
+  end
+
+  describe "an emailed moderator whose moderate_all is revoked mid-session" do
+    @tag :capture_log
+    test "stops seeing emails in the list and in the modal opened afterwards", ctx do
+      {:ok, view, html} = open(ctx.conn, ctx.all_scope)
+      assert html =~ ctx.author.email
+
+      # What core does when a role's grants change: the scope is swapped in
+      # place, with no remount and no handle_params.
+      send(view.pid, {:test_replace_scope, ctx.base_scope})
+
+      refute render(view) =~ ctx.author.email
+
+      html = render_click(view, "view_comment", %{"uuid" => ctx.visible.uuid})
+      assert html =~ "modal-open"
+      refute html =~ ctx.author.email
+    end
+  end
+
+  describe "deleting from the embedded thread" do
+    # The host page comments on "test_resource" records.
+    setup ctx do
+      handlers = Application.get_env(:phoenix_kit, :comment_resource_handlers)
+
+      Application.put_env(
+        :phoenix_kit,
+        :comment_resource_handlers,
+        Map.put(handlers, "test_resource", ScopedHandler)
+      )
+
+      record = Ecto.UUID.generate()
+
+      {:ok, theirs} =
+        PhoenixKitComments.create_comment("test_resource", record, ctx.author.uuid, %{
+          content: "someone else's comment",
+          status: "published"
+        })
+
+      # An Admin by ROLE — which used to be enough to delete anyone's comment.
+      {:ok, _} = Roles.assign_role(ctx.moderator, "Admin")
+
+      %{record: record, theirs: theirs}
+    end
+
+    defp thread(conn, scope, record),
+      do: live(put_test_scope(conn, scope), "/en/test/thread/#{record}")
+
+    defp crafted_delete(view, uuid) do
+      view
+      |> with_target("[data-phx-component]")
+      |> render_click("delete_comment", %{"id" => uuid})
+    end
+
+    @tag :capture_log
+    test "the Admin role alone no longer deletes someone else's comment", ctx do
+      {:ok, view, _html} = thread(ctx.conn, ctx.base_scope, ctx.record)
+
+      refute has_element?(
+               view,
+               "button[phx-click='delete_comment'][phx-value-id='#{ctx.theirs.uuid}']"
+             )
+
+      crafted_delete(view, ctx.theirs.uuid)
+      assert status_of(ctx.theirs) == "published"
+    end
+
+    @tag :capture_log
+    test "a base-key holder who manages the record may delete it", ctx do
+      Application.put_env(:phoenix_kit_comments, :test_moderatable, %{
+        "test_resource" => [ctx.record]
+      })
+
+      {:ok, view, _html} = thread(ctx.conn, ctx.base_scope, ctx.record)
+
+      view
+      |> element("button[phx-click='delete_comment'][phx-value-id='#{ctx.theirs.uuid}']")
+      |> render_click()
+
+      assert status_of(ctx.theirs) == "deleted"
+    end
+
+    @tag :capture_log
+    test "a comments.moderate_all holder may delete it", ctx do
+      {:ok, view, _html} = thread(ctx.conn, ctx.all_scope, ctx.record)
+
+      crafted_delete(view, ctx.theirs.uuid)
+      assert status_of(ctx.theirs) == "deleted"
+    end
+
+    @tag :capture_log
+    test "the author still deletes their own without any comments key", ctx do
+      scope = fake_scope(user: ctx.author, roles: [], permissions: [])
+      {:ok, view, _html} = thread(ctx.conn, scope, ctx.record)
+
+      view
+      |> element("button[phx-click='delete_comment'][phx-value-id='#{ctx.theirs.uuid}']")
+      |> render_click()
+
+      assert status_of(ctx.theirs) == "deleted"
     end
   end
 end

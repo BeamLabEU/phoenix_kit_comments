@@ -1369,6 +1369,39 @@ defmodule PhoenixKitComments do
   defp normalize_moderatable(_), do: []
 
   @doc """
+  Whether `scope` may moderate comments on ONE record — the moderation
+  page's rule for a single `(resource_type, resource_uuid)`, asking only that
+  type's handler. `comments.moderate_all` → true; the base key → the
+  handler's `moderatable_resources/2` answer (fail closed); otherwise false.
+  The embedded thread uses it to decide who may delete someone else's
+  comment, so the thread and the moderation page agree.
+  """
+  @spec may_moderate_resource?(term(), String.t(), term()) :: boolean()
+  def may_moderate_resource?(scope, resource_type, resource_uuid) do
+    cond do
+      not can_moderate?(scope) ->
+        false
+
+      can_moderate_all?(scope) ->
+        true
+
+      true ->
+        handler = Map.get(ResourceLinks.handlers(), resource_type)
+
+        case {ask_moderatable(handler, resource_type, scope), cast_uuid(resource_uuid)} do
+          {:all, _} -> true
+          {uuids, {:ok, uuid}} when is_list(uuids) -> uuid in uuids
+          _ -> false
+        end
+    end
+  rescue
+    _ -> false
+  end
+
+  defp cast_uuid(uuid) when is_binary(uuid), do: Ecto.UUID.cast(uuid)
+  defp cast_uuid(_), do: :error
+
+  @doc """
   Whether a comment on `(resource_type, resource_uuid)` falls inside a
   `moderation_scope/1` rule. Used for what the page shows beside a row (a
   reply's parent, a resource title), which must pass the same rule.

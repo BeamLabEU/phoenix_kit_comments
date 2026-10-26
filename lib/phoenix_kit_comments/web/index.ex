@@ -74,7 +74,6 @@ defmodule PhoenixKitComments.Web.Index do
         |> assign(:viewing_comment, nil)
         |> assign(:stats, empty_stats())
         |> assign(:resource_types, [])
-        |> assign(:show_emails, false)
         |> assign(:scoped, true)
         |> assign(:can_change_settings, false)
         |> assign_filter_defaults()
@@ -364,7 +363,6 @@ defmodule PhoenixKitComments.Web.Index do
     scope = socket.assigns[:phoenix_kit_current_scope]
 
     socket
-    |> assign(:show_emails, rule == :all)
     |> assign(:scoped, rule != :all)
     |> assign(:can_change_settings, PhoenixKitComments.can_change_settings?(scope))
     |> assign(:page_subtitle, subtitle(rule))
@@ -485,6 +483,15 @@ defmodule PhoenixKitComments.Web.Index do
       do: :ok,
       else: {:error, :unauthorized}
   end
+
+  # Whether this render may print authors' emails: decided from the LIVE
+  # scope on every render, not from an assign set at the last list load.
+  # Core swaps `:phoenix_kit_current_scope` in place when a role's grants
+  # change (a halting handle_info hook, no handle_params), so a mount-time
+  # flag kept showing emails — in the modal opened afterwards too — to a
+  # moderator whose `comments.moderate_all` had just been revoked.
+  defp show_emails?(scope),
+    do: PhoenixKitComments.can_moderate?(scope) and PhoenixKitComments.can_moderate_all?(scope)
 
   # Who wrote it. The email only for a `comments.moderate_all` holder:
   # seeing a comment on a record you manage is not a licence to its author's
