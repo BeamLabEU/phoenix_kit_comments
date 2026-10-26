@@ -411,6 +411,47 @@ defmodule PhoenixKitComments.Web.ModerationScopeTest do
     end
 
     @tag :capture_log
+    test "the Admin role alone no longer edits someone else's comment", ctx do
+      {:ok, view, _html} = thread(ctx.conn, ctx.base_scope, ctx.record)
+
+      refute has_element?(
+               view,
+               "button[phx-click='edit_comment'][phx-value-id='#{ctx.theirs.uuid}']"
+             )
+
+      view
+      |> with_target("[data-phx-component]")
+      |> render_click("edit_comment", %{"id" => ctx.theirs.uuid})
+
+      refute has_element?(view, "form[phx-submit='save_edit']")
+
+      view
+      |> with_target("[data-phx-component]")
+      |> render_submit("save_edit", %{"content" => "rewritten by an admin"})
+
+      assert Repo.get!(Comment, ctx.theirs.uuid).content == "someone else's comment"
+    end
+
+    @tag :capture_log
+    test "a base-key holder who manages the record may edit it", ctx do
+      Application.put_env(:phoenix_kit_comments, :test_moderatable, %{
+        "test_resource" => [ctx.record]
+      })
+
+      {:ok, view, _html} = thread(ctx.conn, ctx.base_scope, ctx.record)
+
+      view
+      |> element("button[phx-click='edit_comment'][phx-value-id='#{ctx.theirs.uuid}']")
+      |> render_click()
+
+      view
+      |> element("form[phx-submit='save_edit']")
+      |> render_submit(%{"content" => "moderated wording"})
+
+      assert Repo.get!(Comment, ctx.theirs.uuid).content == "moderated wording"
+    end
+
+    @tag :capture_log
     test "the author still deletes their own without any comments key", ctx do
       scope = fake_scope(user: ctx.author, roles: [], permissions: [])
       {:ok, view, _html} = thread(ctx.conn, scope, ctx.record)
