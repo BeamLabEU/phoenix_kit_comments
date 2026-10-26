@@ -6,6 +6,7 @@ All notable changes to PhoenixKitComments will be documented in this file.
 
 ### Added
 
+- **The module supplies the manifest of its 4 tables** (`expected_schema/0`, `PhoenixKitComments.ExpectedSchema`), so `mix phoenix_kit.repair` and `mix phoenix_kit.doctor` check and repair them again, now from the module's own chain instead of core's manifest. Generated from `PhoenixKitComments.Migrations` by core's `dev_docs/squash/generate_module_manifest.exs`, never edited by hand. Core uses it from the first release after 2.64.1; before that nothing reads it. Repair is additive (it creates what is missing and reports the rest) and checks the tables only while the database is at the chain's current version. No migration.
 - The module's own migration chain, `PhoenixKitComments.Migrations`
   (`migration_module/0`). V1 adopts the four tables core's chain creates for
   comments, `phoenix_kit_comments`, `phoenix_kit_comments_likes`,
