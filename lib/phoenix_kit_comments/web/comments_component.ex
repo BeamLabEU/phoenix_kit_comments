@@ -285,9 +285,16 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # when an annotation is drawn) — would otherwise read nil and flip
       # the composer to "Sign in to post a comment" for a logged-in user.
       |> then(&assign(&1, :can_post?, &1.assigns.current_user != nil))
-      |> then(
-        &assign(&1, :pk_scope, &1.assigns[:pk_scope] || viewer_scope(&1.assigns.current_user))
+      # A host that passes `pk_scope` owns it and sends the current one with
+      # each update. One that does not gets a scope built here from the
+      # database — cached for RENDERING only (rebuilt when the viewer
+      # changes); every write event builds its own (`event_scope/1`), so a
+      # revoked grant stops working on the next click.
+      |> assign(
+        :host_pk_scope?,
+        socket.assigns[:host_pk_scope?] == true or is_map(assigns[:pk_scope])
       )
+      |> then(&assign(&1, :pk_scope, render_scope(&1.assigns)))
       # Whether the viewer moderates THIS record (every comment here is on
       # it) — the moderation page's rule, not the Owner/Admin role. What
       # the viewer SEES; `do_delete_comment/2` re-checks for real.
@@ -2031,10 +2038,31 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     user != nil and
       (user.uuid == comment.user_uuid or
          viewer_moderates?(
-           socket.assigns[:pk_scope] || viewer_scope(user),
+           event_scope(socket),
            comment.resource_type,
            comment.resource_uuid
          ))
+  end
+
+  # The scope a WRITE is authorised against: the host's, which it keeps
+  # current through `update/2`, or — when the host gave none — one built from
+  # the database now. Never the copy cached for rendering, which would keep a
+  # revoked `comments.moderate_all` working for the life of the thread.
+  defp event_scope(socket) do
+    if socket.assigns[:host_pk_scope?],
+      do: socket.assigns[:pk_scope],
+      else: viewer_scope(socket.assigns[:current_user])
+  end
+
+  defp render_scope(%{host_pk_scope?: true} = assigns), do: assigns[:pk_scope]
+
+  defp render_scope(assigns) do
+    user = assigns[:current_user]
+
+    case assigns[:pk_scope] do
+      %Scope{user: %{uuid: uuid}} = scope when not is_nil(user) and uuid == user.uuid -> scope
+      _ -> viewer_scope(user)
+    end
   end
 
   defp may_change?(nil, _comment, _moderates?), do: false

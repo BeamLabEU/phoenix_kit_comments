@@ -14,7 +14,7 @@ defmodule PhoenixKitComments.Web.ModerationScopeTest do
   """
   use PhoenixKitComments.LiveCase
 
-  alias PhoenixKit.Users.Roles
+  alias PhoenixKit.Users.{Permissions, Roles}
   alias PhoenixKitComments.Comment
 
   @path "/en/admin/comments"
@@ -449,6 +449,57 @@ defmodule PhoenixKitComments.Web.ModerationScopeTest do
       |> render_submit(%{"content" => "moderated wording"})
 
       assert Repo.get!(Comment, ctx.theirs.uuid).content == "moderated wording"
+    end
+
+    @tag :capture_log
+    test "a host that passes no scope: a moderate_all revoked mid-session stops the next write",
+         ctx do
+      # The scope comes from the DATABASE here, as on a CRM or projects page:
+      # a real role holding the keys, assigned to the viewer.
+      {:ok, role} = Roles.create_role(%{name: "Mods #{System.unique_integer([:positive])}"})
+      viewer = user_fixture()
+      {:ok, _} = Roles.assign_role(viewer, role.name)
+      {:ok, _} = Permissions.grant_permission(role.uuid, "comments", nil)
+
+      {:ok, _} =
+        Permissions.grant_permission(role.uuid, "comments.moderate_all", nil)
+
+      {:ok, other} =
+        PhoenixKitComments.create_comment("test_resource", ctx.record, ctx.author.uuid, %{
+          content: "second comment",
+          status: "published"
+        })
+
+      scope = fake_scope(user: viewer, roles: [], permissions: [])
+
+      # Plain textarea: with Leaf on, the edit form holds a second component
+      # and a crafted event cannot be aimed at this one alone.
+      PhoenixKit.Settings.update_boolean_setting_with_module(
+        "comments_rich_text",
+        false,
+        "comments"
+      )
+
+      {:ok, view, _html} =
+        live(put_test_scope(ctx.conn, scope), "/en/test/thread/#{ctx.record}?no_scope=1")
+
+      # Allowed while the role holds moderate_all: open an edit on one.
+      view
+      |> element("button[phx-click='edit_comment'][phx-value-id='#{other.uuid}']")
+      |> render_click()
+
+      assert has_element?(view, "form[phx-submit='save_edit']")
+
+      :ok = Permissions.revoke_permission(role.uuid, "comments.moderate_all")
+
+      crafted_delete(view, ctx.theirs.uuid)
+      assert status_of(ctx.theirs) == "published"
+
+      view
+      |> with_target("[data-phx-component]")
+      |> render_submit("save_edit", %{"content" => "after revocation"})
+
+      assert Repo.get!(Comment, other.uuid).content == "second comment"
     end
 
     @tag :capture_log
