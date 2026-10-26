@@ -58,6 +58,10 @@ defmodule PhoenixKitComments do
   * `on_comment_unliked(resource_type, resource_uuid, %{comment: comment, liker_uuid: uuid})`
   * `on_comment_disliked(resource_type, resource_uuid, %{comment: comment, liker_uuid: uuid})`
   * `on_comment_undisliked(resource_type, resource_uuid, %{comment: comment, liker_uuid: uuid})`
+  * `moderatable_resources(resource_type, scope)` — not an event: which of the
+    type's records a holder of the base `comments` key may moderate comments
+    on (`:all` or resource uuids). Without it the type is invisible to them;
+    see `moderation_scope/1`.
 
   The reaction callbacks fire only when the reaction state actually changed
   (`{:ok, :liked}` / `{:ok, :unliked}` …), never on `:already_liked` no-ops.
@@ -104,6 +108,9 @@ defmodule PhoenixKitComments do
   alias PhoenixKit.PubSubHelper
   alias PhoenixKit.ResourceLinks
   alias PhoenixKit.Settings
+  alias PhoenixKit.Users.Auth.Scope
+  alias PhoenixKit.Users.Permissions
+  alias PhoenixKit.Users.RolePermission
   alias PhoenixKit.Utils.UUID, as: UUIDUtils
   alias PhoenixKitComments.Activity
   alias PhoenixKitComments.Comment
@@ -412,8 +419,124 @@ defmodule PhoenixKitComments do
       key: "comments",
       label: "Comments",
       icon: "hero-chat-bubble-left-right",
-      description: "Comment moderation, threading, and reactions across all content types"
+      description: "Moderate comments on records you manage",
+      # The base key used to mean "moderate every comment on the site and
+      # change the module's settings". It now means "moderate comments on the
+      # records you manage" (each resource handler's `moderatable_resources/2`
+      # answers which), and these two carry the rest. Core auto-grants
+      # declared sub-keys to Admin at boot, Owner holds everything, and
+      # `migrate_legacy/0` hands both once to every role that held the base
+      # key before the split — so nobody loses access, while a role granted
+      # the base key from now on gets only the narrow meaning.
+      sub_permissions: [
+        %{
+          key: "moderate_all",
+          label: "Moderate every comment on the site",
+          description:
+            "See, approve, hide, delete and restore every comment, whoever's record it is on, and see authors' emails"
+        },
+        %{
+          key: "settings",
+          label: "Change the comments settings",
+          description:
+            "Open the comments settings page: the on/off switch, moderation, limits, the Giphy API key and resource paths"
+        }
+      ]
     }
+  end
+
+  @moderate_all_permission "comments.moderate_all"
+  @settings_permission "comments.settings"
+
+  # One flag per sub-key, so a later sub-key gets its own pass.
+  @moderate_all_backfill_key "comments_moderate_all_backfilled"
+  @settings_backfill_key "comments_settings_backfilled"
+
+  @doc """
+  One-time data repairs for installs that predate a change here. Core calls
+  this on every boot, so each repair carries its own "already done" flag.
+
+    * `comments.moderate_all` and `comments.settings` are granted ONCE to
+      every role that holds the base `comments` key, preserving what the
+      base key allowed before the split.
+
+  One-way and one-time: re-deciding on every boot would fight the Owner,
+  handing back a permission they revoked. A role created, or granted the
+  base key, after the backfill gets the narrow meaning. The flag is set only
+  after every grant went through; a failure leaves it unset (and logs a
+  warning) so the next boot retries.
+  """
+  @impl PhoenixKit.Module
+  def migrate_legacy do
+    results = [
+      backfill_sub_permission(@moderate_all_permission, @moderate_all_backfill_key),
+      backfill_sub_permission(@settings_permission, @settings_backfill_key)
+    ]
+
+    case Enum.find(results, &match?({:error, _}, &1)) do
+      nil -> :ok
+      error -> error
+    end
+  end
+
+  @doc false
+  # The backfill for one sub-key. `grant` is `Permissions.grant_permission/3`
+  # (never a raw insert: it refreshes the affected users' live scopes); the
+  # tests pass a failing one to prove the flag stays unset.
+  @spec backfill_sub_permission(String.t(), String.t(), function()) :: :ok | {:error, term()}
+  def backfill_sub_permission(
+        sub_key,
+        flag_key,
+        grant \\ &Permissions.grant_permission/3
+      ) do
+    if Settings.get_setting(flag_key) == "true" do
+      :ok
+    else
+      # Listed with a query that RAISES on failure. Core's
+      # `roles_with_permission/1` answers `[]` for a failed query, which
+      # would read as "nobody to carry over" and set the flag for good.
+      failures =
+        "comments"
+        |> roles_holding()
+        |> Enum.reject(&(sub_key in &1.keys))
+        |> Enum.map(&grant.(&1.role_uuid, sub_key, nil))
+        |> Enum.reject(&match?({:ok, _}, &1))
+
+      if failures == [],
+        do: save_backfill_flag(sub_key, flag_key),
+        else: backfill_failed(sub_key, {:grants_failed, length(failures)})
+    end
+  rescue
+    error -> backfill_failed(sub_key, error.__struct__)
+  catch
+    :exit, reason -> backfill_failed(sub_key, {:exit, exit_summary(reason)})
+  end
+
+  defp save_backfill_flag(sub_key, flag_key) do
+    case Settings.update_setting_with_module(flag_key, "true", module_key()) do
+      {:ok, _} -> :ok
+      {:error, reason} -> backfill_failed(sub_key, {:flag_not_saved, reason})
+    end
+  end
+
+  # Every role holding `base`, with every key it holds.
+  defp roles_holding(base) do
+    holders = from(rp in RolePermission, where: rp.module_key == ^base, select: rp.role_uuid)
+
+    from(rp in RolePermission,
+      where: rp.role_uuid in subquery(holders),
+      group_by: rp.role_uuid,
+      select: %{role_uuid: rp.role_uuid, keys: fragment("array_agg(?)", rp.module_key)}
+    )
+    |> repo().all()
+  end
+
+  defp backfill_failed(sub_key, reason) do
+    Logger.warning(
+      "[Comments] #{sub_key} backfill did not complete, will retry on next boot: #{inspect(reason)}"
+    )
+
+    {:error, reason}
   end
 
   @impl PhoenixKit.Module
@@ -449,7 +572,7 @@ defmodule PhoenixKitComments do
         priority: 924,
         level: :admin,
         parent: :admin_settings,
-        permission: "comments",
+        permission: @settings_permission,
         live_view: {PhoenixKitComments.Web.Settings, :settings}
       )
     ]
@@ -1103,6 +1226,214 @@ defmodule PhoenixKitComments do
   end
 
   # ============================================================================
+  # Moderation scope
+  # ============================================================================
+
+  @typedoc """
+  Which comments a moderator may see and act on, from `moderation_scope/1`.
+
+  `:all` for a `comments.moderate_all` holder. Otherwise a rule: every
+  comment of the types in `all_types`, plus, per type in `uuids`, the
+  comments on those resource uuids. `%{all_types: [], uuids: %{}}` is "none".
+  """
+  @type moderation_scope ::
+          :all | %{all_types: [String.t()], uuids: %{String.t() => [Ecto.UUID.t()]}}
+
+  @no_comments %{all_types: [], uuids: %{}}
+
+  @doc "The permission key that lets a moderator act on every comment."
+  @spec moderate_all_permission() :: String.t()
+  def moderate_all_permission, do: @moderate_all_permission
+
+  @doc "The permission key that opens the comments settings page."
+  @spec settings_permission() :: String.t()
+  def settings_permission, do: @settings_permission
+
+  @doc """
+  Whether `scope` may open the moderation page at all (the base `comments`
+  key). What it then sees is `moderation_scope/1`.
+  """
+  @spec can_moderate?(term()) :: boolean()
+  def can_moderate?(%Scope{} = scope), do: Scope.can?(scope, "comments")
+  def can_moderate?(_), do: false
+
+  @doc "Whether `scope` moderates every comment on the site (`comments.moderate_all`)."
+  @spec can_moderate_all?(term()) :: boolean()
+  def can_moderate_all?(%Scope{} = scope), do: Scope.can?(scope, @moderate_all_permission)
+  def can_moderate_all?(_), do: false
+
+  @doc """
+  Whether `scope` may open and change the comments settings
+  (`comments.settings`).
+
+  Not `Scope.can?/2`: that also requires the module to be ENABLED, and the
+  settings page holds the module's on/off switch, so a disabled module could
+  never be switched back on from it. Held means held directly (or through
+  the `"*"` wildcard) together with its base key.
+  """
+  @spec can_change_settings?(term()) :: boolean()
+  def can_change_settings?(%Scope{} = scope) do
+    Scope.has_module_access?(scope, "comments") and
+      Scope.has_module_access?(scope, @settings_permission)
+  end
+
+  def can_change_settings?(_), do: false
+
+  @doc """
+  The comments `scope` may moderate.
+
+  `comments.moderate_all` → `:all`. The base key alone → for every resource
+  type with a handler, that handler's `moderatable_resources/2` answer. A
+  type with no handler, a handler without the callback, or one that answers
+  `[]`, anything malformed, raises or exits contributes nothing: this fails
+  CLOSED. There is no exception for the viewer's own comments or for any
+  type (`"user"` included). No base key → none.
+
+  Computed fresh on every call; the moderation page asks once per list
+  build and once per action, so a revoked grant stops working on the next
+  click.
+  """
+  @spec moderation_scope(term()) :: moderation_scope()
+  def moderation_scope(scope) do
+    cond do
+      not can_moderate?(scope) -> @no_comments
+      can_moderate_all?(scope) -> :all
+      true -> scoped_moderation(scope)
+    end
+  end
+
+  defp scoped_moderation(scope) do
+    ResourceLinks.handlers()
+    |> Enum.sort()
+    |> Enum.reduce(@no_comments, fn {type, handler}, acc ->
+      case ask_moderatable(handler, type, scope) do
+        :all -> %{acc | all_types: [type | acc.all_types]}
+        [] -> acc
+        uuids -> %{acc | uuids: Map.put(acc.uuids, type, uuids)}
+      end
+    end)
+  rescue
+    error ->
+      Logger.warning("[Comments] moderation scope unavailable: #{inspect(error.__struct__)}")
+      @no_comments
+  end
+
+  defp ask_moderatable(handler, type, scope) when is_atom(handler) and is_binary(type) do
+    if Code.ensure_loaded?(handler) and function_exported?(handler, :moderatable_resources, 2) do
+      normalize_moderatable(handler.moderatable_resources(type, scope))
+    else
+      []
+    end
+  rescue
+    error ->
+      Logger.warning(
+        "[Comments] #{inspect(handler)}.moderatable_resources/2 raised for #{inspect(type)}: " <>
+          inspect(error.__struct__)
+      )
+
+      []
+  catch
+    :exit, reason ->
+      Logger.warning(
+        "[Comments] #{inspect(handler)}.moderatable_resources/2 exited for #{inspect(type)}: " <>
+          exit_summary(reason)
+      )
+
+      []
+
+    :throw, _ ->
+      []
+  end
+
+  defp ask_moderatable(_handler, _type, _scope), do: []
+
+  defp normalize_moderatable(:all), do: :all
+
+  # Cast here, not left to the query: one malformed element would raise
+  # Ecto.Query.CastError for the whole page.
+  defp normalize_moderatable(uuids) when is_list(uuids) do
+    uuids
+    |> Enum.flat_map(fn
+      uuid when is_binary(uuid) ->
+        case Ecto.UUID.cast(uuid) do
+          {:ok, valid} -> [valid]
+          :error -> []
+        end
+
+      _ ->
+        []
+    end)
+    |> Enum.uniq()
+  end
+
+  defp normalize_moderatable(_), do: []
+
+  @doc """
+  Whether a comment on `(resource_type, resource_uuid)` falls inside a
+  `moderation_scope/1` rule. Used for what the page shows beside a row (a
+  reply's parent, a resource title), which must pass the same rule.
+  """
+  @spec moderation_allows?(moderation_scope(), String.t(), term()) :: boolean()
+  def moderation_allows?(:all, _resource_type, _resource_uuid), do: true
+
+  def moderation_allows?(%{all_types: types, uuids: uuids}, resource_type, resource_uuid) do
+    resource_type in types or
+      (is_binary(resource_uuid) and resource_uuid in Map.get(uuids, resource_type, []))
+  end
+
+  def moderation_allows?(_rule, _resource_type, _resource_uuid), do: false
+
+  # The rule as a WHERE clause. Each type's uuid list is bound as ONE array
+  # parameter: Ecto compiles `field in ^list` to `field = ANY($n)`, never an
+  # expanded `IN ($1, $2, …)`. Keep it that way — Postgres caps a statement
+  # at 65,535 parameters and a busy type can return more uuids than that
+  # (the moderation tests bind 70,000).
+  defp apply_moderation_scope(query, :all), do: query
+
+  defp apply_moderation_scope(query, %{all_types: types, uuids: uuids}) do
+    initial =
+      if types == [],
+        do: dynamic([c], false),
+        else: dynamic([c], c.resource_type in ^types)
+
+    predicate =
+      Enum.reduce(uuids, initial, fn {type, list}, acc ->
+        dynamic(
+          [c],
+          ^acc or
+            (c.resource_type == ^type and c.resource_uuid in ^list)
+        )
+      end)
+
+    where(query, ^predicate)
+  end
+
+  # Anything else is not a rule: fail closed.
+  defp apply_moderation_scope(query, _rule), do: where(query, false)
+
+  @doc """
+  One comment by uuid, only when it falls inside `rule`
+  (`moderation_scope/1`). A uuid outside the rule answers `nil`, exactly
+  like a missing one, so a crafted uuid tells the caller nothing.
+  """
+  @spec get_comment_for_moderation(term(), moderation_scope(), keyword()) :: Comment.t() | nil
+  def get_comment_for_moderation(uuid, rule, opts \\ [])
+
+  def get_comment_for_moderation(uuid, rule, opts) when is_binary(uuid) do
+    if UUIDUtils.valid?(uuid) do
+      from(c in Comment, where: c.uuid == ^uuid)
+      |> apply_moderation_scope(rule)
+      |> repo().one()
+      |> case do
+        nil -> nil
+        comment -> repo().preload(comment, Keyword.get(opts, :preload, []))
+      end
+    end
+  end
+
+  def get_comment_for_moderation(_uuid, _rule, _opts), do: nil
+
+  # ============================================================================
   # Moderation
   # ============================================================================
 
@@ -1189,7 +1520,9 @@ defmodule PhoenixKitComments do
 
   Routes through `update_comment/2` (and `delete_comment/1` for the
   `"deleted"` case) so resource-handler callbacks fire per row. Returns
-  `{ok_count, error_count}`.
+  `{ok_count, error_count}`. `moderation: rule` (`moderation_scope/1`,
+  default `:all`) limits the rows touched; one outside it is skipped like a
+  missing one.
   """
   def bulk_update_status(comment_uuids, status, opts \\ [])
 
@@ -1197,11 +1530,9 @@ defmodule PhoenixKitComments do
       when is_list(comment_uuids) and status in ["published", "hidden", "deleted", "pending"] do
     # Filtered before the query: these arrive from the client, and a single
     # non-uuid element raises Ecto.Query.CastError for the whole batch.
-    valid_uuids = Enum.filter(comment_uuids, &UUIDUtils.valid?/1)
+    {rule, opts} = Keyword.pop(opts, :moderation, :all)
 
-    comments =
-      from(c in Comment, where: c.uuid in ^valid_uuids)
-      |> repo().all()
+    comments = load_for_bulk(comment_uuids, rule)
 
     Enum.reduce(comments, {0, 0}, fn comment, {ok, err} ->
       result =
@@ -1228,11 +1559,14 @@ defmodule PhoenixKitComments do
   :comment_deleted}` and are counted as failures rather than silently
   skipped, so the flash tells the truth about a mixed selection.
 
-  Returns `{approved_count, failed_count}`.
+  Returns `{approved_count, failed_count}`. Takes `moderation: rule` like
+  `bulk_update_status/3`.
   """
   def bulk_approve(comment_uuids, opts \\ []) when is_list(comment_uuids) do
+    {rule, opts} = Keyword.pop(opts, :moderation, :all)
+
     comment_uuids
-    |> load_for_bulk()
+    |> load_for_bulk(rule)
     |> Enum.reduce({0, 0}, fn comment, {ok, err} ->
       tally(approve_comment(comment, opts), ok, err)
     end)
@@ -1244,22 +1578,27 @@ defmodule PhoenixKitComments do
   Same reason as `bulk_approve/2`: the status-writing path logs
   `comment_updated`, so a bulk hide left no `comment_hidden` row behind it.
 
-  Returns `{hidden_count, failed_count}`.
+  Returns `{hidden_count, failed_count}`. Takes `moderation: rule` like
+  `bulk_update_status/3`.
   """
   def bulk_hide(comment_uuids, opts \\ []) when is_list(comment_uuids) do
+    {rule, opts} = Keyword.pop(opts, :moderation, :all)
+
     comment_uuids
-    |> load_for_bulk()
+    |> load_for_bulk(rule)
     |> Enum.reduce({0, 0}, fn comment, {ok, err} ->
       tally(hide_comment(comment, opts), ok, err)
     end)
   end
 
-  # Same client-uuid filtering as bulk_update_status/3: one non-uuid element
-  # raises Ecto.Query.CastError for the whole batch.
-  defp load_for_bulk(comment_uuids) do
-    valid_uuids = Enum.filter(comment_uuids, &UUIDUtils.valid?/1)
+  # Filtered before the query: these arrive from the client, and one non-uuid
+  # element raises Ecto.Query.CastError for the whole batch. A uuid outside
+  # the moderation rule is dropped exactly like a missing one.
+  defp load_for_bulk(comment_uuids, rule) do
+    valid_uuids = Enum.filter(comment_uuids, &(is_binary(&1) and UUIDUtils.valid?(&1)))
 
     from(c in Comment, where: c.uuid in ^valid_uuids)
+    |> apply_moderation_scope(rule)
     |> repo().all()
   end
 
@@ -1277,6 +1616,9 @@ defmodule PhoenixKitComments do
   - `:search` - Search in content
   - `:page` - Page number (default: 1)
   - `:per_page` - Items per page (default: 20)
+  - `:moderation` - a `moderation_scope/1` rule (default `:all`). The
+    moderation page always passes the viewer's; the rule is part of the
+    query, so the count and pages are of the comments the viewer may see.
   """
   def list_all_comments(opts \\ []) do
     page = Keyword.get(opts, :page, 1)
@@ -1288,9 +1630,10 @@ defmodule PhoenixKitComments do
 
     query =
       from(c in Comment,
-        order_by: [desc: c.inserted_at],
+        order_by: [desc: c.inserted_at, desc: c.uuid],
         preload: [:user, :parent]
       )
+      |> apply_moderation_scope(Keyword.get(opts, :moderation, :all))
 
     query =
       if resource_type, do: where(query, [c], c.resource_type == ^resource_type), else: query
@@ -1331,9 +1674,14 @@ defmodule PhoenixKitComments do
     }
   end
 
-  @doc "Returns distinct resource types that have comments."
-  def list_resource_types do
+  @doc """
+  Returns distinct resource types that have comments, limited to `rule`
+  (`moderation_scope/1`, default `:all`), so the filter never names a type
+  the viewer has no comment on.
+  """
+  def list_resource_types(rule \\ :all) do
     from(c in Comment, distinct: true, select: c.resource_type, order_by: c.resource_type)
+    |> apply_moderation_scope(rule)
     |> repo().all()
   rescue
     _ -> []
@@ -1376,15 +1724,31 @@ defmodule PhoenixKitComments do
       %{}
   end
 
-  @doc "Returns aggregate statistics for all comments."
-  def comment_stats do
+  @doc """
+  Returns aggregate statistics (total and per status), limited to `rule`
+  (`moderation_scope/1`, default `:all`).
+  """
+  def comment_stats(rule \\ :all) do
+    by_status =
+      from(c in Comment, group_by: c.status, select: {c.status, count(c.uuid)})
+      |> apply_moderation_scope(rule)
+      |> repo().all()
+      |> Map.new()
+
     %{
-      total: count_all_comments(),
-      published: count_all_comments(status: "published"),
-      pending: count_all_comments(status: "pending"),
-      hidden: count_all_comments(status: "hidden"),
-      deleted: count_all_comments(status: "deleted")
+      total: by_status |> Map.values() |> Enum.sum(),
+      published: Map.get(by_status, "published", 0),
+      pending: Map.get(by_status, "pending", 0),
+      hidden: Map.get(by_status, "hidden", 0),
+      deleted: Map.get(by_status, "deleted", 0)
     }
+  rescue
+    error ->
+      Logger.warning(
+        "PhoenixKitComments.comment_stats/1 failed, reporting 0: " <> Exception.message(error)
+      )
+
+      %{total: 0, published: 0, pending: 0, hidden: 0, deleted: 0}
   end
 
   # ============================================================================

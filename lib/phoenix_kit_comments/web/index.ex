@@ -5,6 +5,18 @@ defmodule PhoenixKitComments.Web.Index do
   Provides cross-resource comment management with filtering, search,
   pagination, and bulk actions.
 
+  ## Who sees what
+
+  The base `comments` key opens the page; what it lists is
+  `PhoenixKitComments.moderation_scope/1`: every comment for a
+  `comments.moderate_all` holder, otherwise only comments on records a
+  resource handler's `moderatable_resources/2` says the viewer manages. The
+  rule is part of every query (list, count, stats, type filter), and every
+  event that takes a uuid re-reads the row through the same rule, so a
+  crafted uuid answers like a missing one. A reply's parent snippet is shown
+  only when the parent passes the rule too, and authors' emails only to
+  `comments.moderate_all` holders.
+
   ## Route
 
   Mounted at `{prefix}/admin/comments`.
@@ -19,9 +31,9 @@ defmodule PhoenixKitComments.Web.Index do
   require Logger
 
   alias PhoenixKit.Settings
-  alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitComments.Comment
+  alias PhoenixKitComments.Web.CommentsComponent
   alias PhoenixKitWeb.Actor
 
   @impl true
@@ -62,6 +74,9 @@ defmodule PhoenixKitComments.Web.Index do
         |> assign(:viewing_comment, nil)
         |> assign(:stats, empty_stats())
         |> assign(:resource_types, [])
+        |> assign(:show_emails, false)
+        |> assign(:scoped, true)
+        |> assign(:can_change_settings, false)
         |> assign_filter_defaults()
         |> maybe_load_dashboard_data()
 
@@ -77,7 +92,7 @@ defmodule PhoenixKitComments.Web.Index do
   @impl true
   def handle_params(params, _url, socket) do
     socket = apply_params(socket, params)
-    socket = if connected?(socket), do: load_comments(socket), else: socket
+    socket = if connected?(socket), do: refresh(socket, moderation_rule(socket)), else: socket
     {:noreply, socket}
   end
 
@@ -121,14 +136,22 @@ defmodule PhoenixKitComments.Web.Index do
     # now gates the page, but this stays: it reads an ARBITRARY comment by
     # uuid, so it is the one handler where "already on the page" is not the
     # same as "may see this row".
+    #
+    # Read through the viewer's moderation rule: a uuid outside it opens
+    # nothing, exactly like a uuid that does not exist.
     case check_authorization(socket) do
       :ok ->
+        rule = moderation_rule(socket)
+
+        comment =
+          PhoenixKitComments.get_comment_for_moderation(uuid, rule,
+            preload: [:user, media: :file]
+          )
+
         {:noreply,
-         assign(
-           socket,
-           :viewing_comment,
-           PhoenixKitComments.get_comment(uuid, preload: [:user, media: :file])
-         )}
+         socket
+         |> assign(:viewing_comment, comment)
+         |> assign(:resource_context, modal_context(socket.assigns.resource_context, comment))}
 
       {:error, :unauthorized} ->
         {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
@@ -217,7 +240,10 @@ defmodule PhoenixKitComments.Web.Index do
     if uuids == [] do
       {:noreply, put_flash(socket, :error, gettext("No comments selected"))}
     else
-      opts = Actor.opts(socket)
+      # A fresh rule: the bulk context functions drop any uuid outside it,
+      # exactly as they drop one that does not exist.
+      rule = moderation_rule(socket)
+      opts = Keyword.put(Actor.opts(socket), :moderation, rule)
 
       # Each bulk action goes through the SAME context function as its
       # single-row menu item. Writing the status directly (the old
@@ -238,7 +264,7 @@ defmodule PhoenixKitComments.Web.Index do
           "delete" -> {bulk_delete(uuids, opts), gettext("deleted")}
         end
 
-      socket = socket |> load_comments() |> reload_stats()
+      socket = refresh(socket, rule)
 
       {:noreply,
        put_flash(socket, bulk_flash_kind(err_count), bulk_message(ok_count, err_count, label))}
@@ -261,14 +287,19 @@ defmodule PhoenixKitComments.Web.Index do
   # it had worked, and — `Activity.log_comment/3` only logs the `{:ok, _}`
   # clause — left nothing behind to contradict it. Now the result decides the
   # flash, and a failure is logged.
+  #
+  # The row is read through the viewer's moderation rule, computed fresh: a
+  # uuid outside it is "Comment not found", the same answer as a uuid that
+  # does not exist.
   defp moderate(socket, uuid, fun, messages) do
+    rule = moderation_rule(socket)
+
     with :ok <- check_authorization(socket),
-         %Comment{} = comment <- PhoenixKitComments.get_comment(uuid),
+         %Comment{} = comment <- PhoenixKitComments.get_comment_for_moderation(uuid, rule),
          {:ok, _updated} <- fun.(comment, Actor.opts(socket)) do
       {:noreply,
        socket
-       |> load_comments()
-       |> reload_stats()
+       |> refresh(rule)
        |> put_flash(:info, Keyword.fetch!(messages, :ok))}
     else
       {:error, :unauthorized} ->
@@ -282,8 +313,7 @@ defmodule PhoenixKitComments.Web.Index do
 
         {:noreply,
          socket
-         |> load_comments()
-         |> reload_stats()
+         |> refresh(rule)
          |> put_flash(:error, Keyword.fetch!(messages, :error))}
     end
   end
@@ -312,20 +342,58 @@ defmodule PhoenixKitComments.Web.Index do
     |> assign(:filter_status, blank_to_nil(params["status"]))
   end
 
-  defp load_comments(socket) do
+  # The modal's comment may not be on the current page (a deep link, a
+  # search since cleared), so resolve its resource too. It passed the rule
+  # to be loaded at all, so its record may be named.
+  defp modal_context(context, nil), do: context
+
+  defp modal_context(context, comment) do
+    if Map.has_key?(context, {comment.resource_type, comment.resource_uuid}),
+      do: context,
+      else: Map.merge(context, PhoenixKitComments.resolve_resource_context([comment]))
+  end
+
+  defp moderation_rule(socket) do
+    PhoenixKitComments.moderation_scope(socket.assigns[:phoenix_kit_current_scope])
+  end
+
+  # Everything the page shows that depends on who is looking, from ONE rule:
+  # the list and its count, the stat tiles, the type filter, whether emails
+  # and the settings shortcut show.
+  defp refresh(socket, rule) do
+    scope = socket.assigns[:phoenix_kit_current_scope]
+
+    socket
+    |> assign(:show_emails, rule == :all)
+    |> assign(:scoped, rule != :all)
+    |> assign(:can_change_settings, PhoenixKitComments.can_change_settings?(scope))
+    |> assign(:page_subtitle, subtitle(rule))
+    |> assign(:stats, PhoenixKitComments.comment_stats(rule))
+    |> assign(:resource_types, PhoenixKitComments.list_resource_types(rule))
+    |> load_comments(rule)
+  end
+
+  defp subtitle(:all), do: gettext("Moderate comments across all content")
+  defp subtitle(_rule), do: gettext("Moderate comments on records you manage")
+
+  defp load_comments(socket, rule) do
     result =
       PhoenixKitComments.list_all_comments(
         page: socket.assigns.page,
         per_page: socket.assigns.per_page,
         search: socket.assigns.search,
         resource_type: socket.assigns.filter_resource_type,
-        status: socket.assigns.filter_status
+        status: socket.assigns.filter_status,
+        moderation: rule
       )
 
-    resource_context = PhoenixKitComments.resolve_resource_context(result.comments)
+    # Every listed comment passed the rule, so its record may be named. Its
+    # parent need not have: a reply's parent may sit on another resource.
+    comments = Enum.map(result.comments, &drop_unmoderatable_parent(&1, rule))
+    resource_context = PhoenixKitComments.resolve_resource_context(comments)
 
     socket
-    |> assign(:comments, result.comments)
+    |> assign(:comments, comments)
     |> assign(:total, result.total)
     |> assign(:total_pages, result.total_pages)
     |> assign(:resource_context, resource_context)
@@ -334,19 +402,20 @@ defmodule PhoenixKitComments.Web.Index do
     |> assign(:viewing_comment, nil)
   end
 
-  defp reload_stats(socket) do
-    assign(socket, :stats, PhoenixKitComments.comment_stats())
+  defp drop_unmoderatable_parent(%Comment{parent: %Comment{} = parent} = comment, rule) do
+    if PhoenixKitComments.moderation_allows?(rule, parent.resource_type, parent.resource_uuid),
+      do: comment,
+      else: %{comment | parent: nil}
   end
 
+  defp drop_unmoderatable_parent(comment, _rule), do: comment
+
+  # The stats, the type filter and the list load in `handle_params/3`, from
+  # the viewer's moderation rule.
   defp maybe_load_dashboard_data(socket) do
-    if connected?(socket) do
-      socket
-      |> assign(:project_title, Settings.get_project_title())
-      |> assign(:stats, PhoenixKitComments.comment_stats())
-      |> assign(:resource_types, PhoenixKitComments.list_resource_types())
-    else
-      socket
-    end
+    if connected?(socket),
+      do: assign(socket, :project_title, Settings.get_project_title()),
+      else: socket
   end
 
   defp empty_stats,
@@ -412,14 +481,18 @@ defmodule PhoenixKitComments.Web.Index do
       )
 
   defp check_authorization(socket) do
-    scope = socket.assigns[:phoenix_kit_current_scope]
-
-    if scope && Scope.has_module_access?(scope, "comments") do
-      :ok
-    else
-      {:error, :unauthorized}
-    end
+    if PhoenixKitComments.can_moderate?(socket.assigns[:phoenix_kit_current_scope]),
+      do: :ok,
+      else: {:error, :unauthorized}
   end
+
+  # Who wrote it. The email only for a `comments.moderate_all` holder:
+  # seeing a comment on a record you manage is not a licence to its author's
+  # address. Everyone else sees the name the public thread shows.
+  defp author_label(%{user: nil}, _show_emails), do: nil
+  defp author_label(%{user: %{email: email}}, true), do: email
+
+  defp author_label(comment, false), do: CommentsComponent.author_name(comment)
 
   defp resource_info(resource_context, comment) do
     Map.get(resource_context, {comment.resource_type, comment.resource_uuid})

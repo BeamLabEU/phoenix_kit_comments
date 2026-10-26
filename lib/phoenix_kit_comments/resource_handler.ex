@@ -98,6 +98,25 @@ defmodule PhoenixKitComments.ResourceHandler do
               optional(resource_uuid()) => map()
             }
 
+  @doc """
+  Which of this type's records the viewer may moderate comments on.
+
+  Answers `:all` (every record of the type) or the list of resource uuids
+  (strings). Not implemented, an empty list, anything else, a raise or an
+  exit all mean NONE: the moderation page fails closed, so a type whose
+  handler does not answer is invisible to a holder of the base `comments`
+  key (a `comments.moderate_all` holder sees every comment and this is not
+  asked). Called with the viewer's `PhoenixKit.Users.Auth.Scope`, once per
+  resource type each time the moderation page builds its list, and again
+  for every moderation action.
+
+  Start from what the viewer can reach (their projects, their records),
+  never from every commented record, and keep the answer small. The list is
+  bound as one array parameter, so its length is not capped by the
+  database's parameter limit, but it is held in memory on every page load.
+  """
+  @callback moderatable_resources(resource_type(), scope :: term()) :: :all | [String.t()]
+
   @doc "A comment was created. Check `comment.parent_uuid` to tell a reply apart."
   @callback on_comment_created(resource_type(), resource_uuid(), Comment.t()) :: any()
 
@@ -126,6 +145,7 @@ defmodule PhoenixKitComments.ResourceHandler do
   @callback on_comment_undisliked(resource_type(), resource_uuid(), reaction()) :: any()
 
   @optional_callbacks resolve_comment_resources: 1,
+                      moderatable_resources: 2,
                       on_comment_created: 3,
                       on_comment_published: 3,
                       on_comment_deleted: 3,
@@ -145,15 +165,24 @@ defmodule PhoenixKitComments.ResourceHandler do
   def callbacks, do: __MODULE__.behaviour_info(:callbacks) |> Enum.sort()
 
   @doc """
-  The comment-event callbacks, i.e. everything except
-  `resolve_comment_resources/1`.
+  The lookup callbacks: questions a caller asks a handler by name and reads
+  the answer of, rather than events fired at it.
 
-  These are the ones the dispatcher fires by name with three arguments;
-  `resolve_comment_resources/1` is a lookup the renderer calls directly and
-  answers a different question, so checks over "the events" have to exclude
-  it rather than assume the contract is uniform.
+  `resolve_comment_resources/1` is asked by core's `PhoenixKit.ResourceLinks`
+  (titles and links); `moderatable_resources/2` by this package's
+  moderation scope (`PhoenixKitComments.moderation_scope/1`). Neither goes
+  through the event dispatcher, so checks over "the events" exclude them
+  rather than assume the contract is uniform.
+  """
+  @spec lookup_callbacks() :: [{atom(), arity()}]
+  def lookup_callbacks, do: [moderatable_resources: 2, resolve_comment_resources: 1]
+
+  @doc """
+  The comment-event callbacks, i.e. everything except the lookups
+  (`lookup_callbacks/0`).
+
+  These are the ones the dispatcher fires by name with three arguments.
   """
   @spec event_callbacks() :: [{atom(), arity()}]
-  def event_callbacks,
-    do: Enum.filter(callbacks(), fn {name, _} -> name != :resolve_comment_resources end)
+  def event_callbacks, do: callbacks() -- lookup_callbacks()
 end

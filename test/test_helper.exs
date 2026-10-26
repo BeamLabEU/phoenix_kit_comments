@@ -112,6 +112,15 @@ if repo_available do
   {:ok, _pid} = PhoenixKitComments.Test.Endpoint.start_link()
 end
 
+# A host lists this module in core's registry; the test environment registers
+# none. Without it `Scope.can?/2` cannot tell that `comments.moderate_all` is a
+# sub-key of `comments` (nor that the module is on), so every sub-key check
+# here would answer false for a reason no host ever sees.
+:persistent_term.put(
+  {PhoenixKit, :registered_modules},
+  Enum.uniq([PhoenixKitComments | :persistent_term.get({PhoenixKit, :registered_modules}, [])])
+)
+
 # `migrations_build_alone_test.exs` uses core's
 # `PhoenixKit.TestSupport.ModuleChainCheck`, which the first core release after
 # 2.64.1 ships; against an older core in `deps/` it is excluded.

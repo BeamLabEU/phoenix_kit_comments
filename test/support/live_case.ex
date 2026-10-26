@@ -71,8 +71,13 @@ defmodule PhoenixKitComments.LiveCase do
     * `:user` — an existing `%User{}` (use `user_fixture/0` when the test
       needs the row to exist, e.g. for `actor_uuid` foreign keys)
     * `:roles` — defaults to `["Owner"]`
-    * `:permissions` — defaults to `["comments"]`
+    * `:permissions` — defaults to the base key and both sub-keys
+      (`comments`, `comments.moderate_all`, `comments.settings`): what a
+      moderator held before the split, and what the backfill carries over.
+      A test of the narrow base key passes `permissions: ["comments"]`.
   """
+  @full_moderator ["comments", "comments.moderate_all", "comments.settings"]
+
   def fake_scope(opts \\ []) do
     user =
       Keyword.get_lazy(opts, :user, fn ->
@@ -86,7 +91,7 @@ defmodule PhoenixKitComments.LiveCase do
       user: user,
       authenticated?: Keyword.get(opts, :authenticated?, true),
       cached_roles: Keyword.get(opts, :roles, ["Owner"]),
-      cached_permissions: MapSet.new(Keyword.get(opts, :permissions, ["comments"]))
+      cached_permissions: MapSet.new(Keyword.get(opts, :permissions, @full_moderator))
     }
   end
 

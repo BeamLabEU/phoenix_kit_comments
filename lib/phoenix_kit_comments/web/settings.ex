@@ -18,7 +18,6 @@ defmodule PhoenixKitComments.Web.Settings do
   use Gettext, backend: PhoenixKitComments.Gettext
 
   alias PhoenixKit.Settings
-  alias PhoenixKit.Users.Auth.Scope
 
   @impl true
   # Gated on mount, not just on save. Every write here checked, while the
@@ -422,14 +421,14 @@ defmodule PhoenixKitComments.Web.Settings do
   defp extract_title(%{"title" => title}) when is_binary(title), do: title
   defp extract_title(_), do: ""
 
+  # `comments.settings`, not the base key: the base key now means "moderate
+  # comments on records you manage", which is no reason to hold the Giphy
+  # key or switch the module off. See `PhoenixKitComments.can_change_settings?/1`
+  # for why this is not `Scope.can?/2`.
   defp check_authorization(socket) do
-    scope = socket.assigns[:phoenix_kit_current_scope]
-
-    if scope && Scope.has_module_access?(scope, "comments") do
-      :ok
-    else
-      {:error, :unauthorized}
-    end
+    if PhoenixKitComments.can_change_settings?(socket.assigns[:phoenix_kit_current_scope]),
+      do: :ok,
+      else: {:error, :unauthorized}
   end
 
   @doc """

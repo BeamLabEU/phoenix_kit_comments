@@ -106,6 +106,9 @@ Handler modules can implement:
   `on_comment_undisliked/3` — called when a reaction actually changes, never on
   an "already reacted" no-op
 - `resolve_comment_resources/1` — returns `%{uuid => %{title: ..., path: ...}}` for admin display
+- `moderatable_resources/2` — `(resource_type, scope)` → `:all` or the resource
+  uuids whose comments a holder of the base `comments` key may moderate.
+  Without it, comments on the type are invisible to them (fail closed)
 
 ### Attachment folder
 
@@ -189,10 +192,15 @@ When `comments_moderation` is enabled:
 ### Permissions
 
 The module declares permissions via `permission_metadata/0`:
-- `"comments"` — Access to moderation dashboard
-- `"comments"` — Access to settings page
+- `"comments"` — the moderation dashboard, limited to comments on records the
+  viewer manages (each handler's `moderatable_resources/2` answers which);
+  authors are shown by name, not email
+- `"comments.moderate_all"` — moderate every comment on the site, with emails
+- `"comments.settings"` — the settings page (on/off switch, limits, Giphy key,
+  resource paths)
 
-Use `Scope.has_module_access?/2` to check permissions in your application.
+Roles that held `"comments"` before the sub-keys existed are granted both once,
+at boot. Check sub-keys with `Scope.can?/2`.
 
 ### CSS Requirements
 
@@ -249,6 +257,7 @@ records. Every callback is optional:
 | `on_comment_deleted/3` | a comment is soft-deleted |
 | `on_comment_liked/3` · `on_comment_unliked/3` | reaction added / removed |
 | `on_comment_disliked/3` · `on_comment_undisliked/3` | reaction added / removed |
+| `moderatable_resources/2` | the moderation page asks which of your records a base-key holder may moderate (`:all` or uuids) |
 
 `resolve_comment_resources/1` returns `%{uuid => %{title:, path:}}` and may add
 `:full_title` and `:thumb_url`. **`path` is RAW** — the renderer applies the
@@ -352,8 +361,8 @@ mix docs           # Generate documentation
   `rich_text={false}` to the component to use the plain-textarea fallback.
 
 ### Permission denied errors
-- Verify the user has the `"comments"` permission
-- Check that `Scope.has_module_access?/2` returns `true`
+- Verify the user has the `"comments"` permission (and `"comments.settings"` for the settings page)
+- A base-key holder sees only comments on records a handler's `moderatable_resources/2` returns
 
 ## License
 

@@ -2626,9 +2626,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   #
   # Never `user.email`, which is what this used to print, on public boards
   # included.
-  defp author_name(%{author_display_name: name}) when is_binary(name) and name != "", do: name
-  defp author_name(%{user: %User{} = user}), do: display_name(user)
-  defp author_name(_), do: gettext("Unknown")
+  #
+  # Public because the moderation page shows the same name to a moderator
+  # who may not see the author's email.
+  @doc false
+  @spec author_name(map()) :: String.t()
+  def author_name(%{author_display_name: name}) when is_binary(name) and name != "", do: name
+  def author_name(%{user: %User{} = user}), do: display_name(user)
+  def author_name(_), do: gettext("Unknown")
 
   # `User.display_name/1` landed in a core release NEWER than this module's
   # declared floor (`mix.exs` pins `~> 1.7.189`). Calling it unguarded meant a

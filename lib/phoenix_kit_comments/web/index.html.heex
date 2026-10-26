@@ -27,8 +27,9 @@
       <div class="stat-value text-error text-2xl">{@stats.deleted}</div>
     </div>
     <%!-- Actions tile — sits with the counts instead of claiming a row of its
-         own. Settings is the first action; more will be added here later. --%>
-    <div class="stat bg-base-200 rounded-xl">
+         own. Settings is the first action; more will be added here later.
+         Shown only to a `comments.settings` holder, who can open it. --%>
+    <div :if={@can_change_settings} id="comments-actions-tile" class="stat bg-base-200 rounded-xl">
       <div class="stat-title">{gettext("Actions")}</div>
       <div class="flex flex-wrap items-center gap-1.5 mt-1">
         <.link
@@ -228,7 +229,11 @@
             [
               %{
                 label: gettext("Author"),
-                value: if(comment.user, do: comment.user.email, else: gettext("Deleted user"))
+                value:
+                  if(comment.user,
+                    do: author_label(comment, @show_emails),
+                    else: gettext("Deleted user")
+                  )
               },
               %{
                 label: gettext("Date"),
@@ -285,7 +290,7 @@
               </.table_default_cell>
               <.table_default_cell class="text-sm">
                 <%= if comment.user do %>
-                  {comment.user.email}
+                  {author_label(comment, @show_emails)}
                 <% else %>
                   <span class="text-base-content/50">{gettext("Deleted user")}</span>
                 <% end %>
@@ -313,6 +318,9 @@
     <div class="text-center py-12 text-base-content/60">
       <.icon name="hero-chat-bubble-left" class="w-12 h-12 mx-auto mb-2 opacity-50" />
       <p>{gettext("No comments found")}</p>
+      <p :if={@scoped} id="comments-scoped-note" class="text-sm mt-1">
+        {gettext("This page shows comments on records you manage.")}
+      </p>
     </div>
   <% end %>
 
@@ -360,7 +368,7 @@
         <div class="flex flex-wrap items-center gap-2 mb-3 text-sm text-base-content/70">
           <span>
             {if @viewing_comment.user,
-              do: @viewing_comment.user.email,
+              do: author_label(@viewing_comment, @show_emails),
               else: gettext("Deleted user")}
           </span>
           <span class="text-base-content/30">·</span>
