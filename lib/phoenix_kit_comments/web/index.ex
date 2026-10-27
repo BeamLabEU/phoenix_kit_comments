@@ -95,6 +95,13 @@ defmodule PhoenixKitComments.Web.Index do
     {:noreply, socket}
   end
 
+  # Core calls this before halting its scope-refresh hook. Rebuild every
+  # scope-dependent read, including the modal, when grants or active roles change.
+  @doc false
+  def phoenix_kit_scope_changed(socket) do
+    refresh(socket, moderation_rule(socket))
+  end
+
   @impl true
   def handle_event("filter", params, socket) do
     combined_params = %{"page" => "1"}

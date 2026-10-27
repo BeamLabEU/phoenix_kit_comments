@@ -287,9 +287,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> then(&assign(&1, :can_post?, &1.assigns.current_user != nil))
       # A host that passes `pk_scope` owns it and sends the current one with
       # each update. One that does not gets a scope built here from the
-      # database — cached for RENDERING only (rebuilt when the viewer
-      # changes); every write event builds its own (`event_scope/1`), so a
-      # revoked grant stops working on the next click.
+      # database once per update for rendering. Every write event builds
+      # its own (`event_scope/1`), so a revoked grant stops the next click.
       |> assign(
         :host_pk_scope?,
         socket.assigns[:host_pk_scope?] == true or is_map(assigns[:pk_scope])
@@ -2056,14 +2055,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp render_scope(%{host_pk_scope?: true} = assigns), do: assigns[:pk_scope]
 
-  defp render_scope(assigns) do
-    user = assigns[:current_user]
-
-    case assigns[:pk_scope] do
-      %Scope{user: %{uuid: uuid}} = scope when not is_nil(user) and uuid == user.uuid -> scope
-      _ -> viewer_scope(user)
-    end
-  end
+  defp render_scope(assigns), do: viewer_scope(assigns[:current_user])
 
   defp may_change?(nil, _comment, _moderates?), do: false
   defp may_change?(user, comment, moderates?), do: user.uuid == comment.user_uuid or moderates?

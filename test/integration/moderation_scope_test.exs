@@ -16,6 +16,7 @@ defmodule PhoenixKitComments.Web.ModerationScopeTest do
 
   alias PhoenixKit.Users.{Permissions, Roles}
   alias PhoenixKitComments.Comment
+  alias PhoenixKitComments.Web.CommentsComponent
 
   @path "/en/admin/comments"
   @settings_path "/en/admin/settings/comments"
@@ -324,6 +325,54 @@ defmodule PhoenixKitComments.Web.ModerationScopeTest do
 
   describe "an emailed moderator whose moderate_all is revoked mid-session" do
     @tag :capture_log
+    test "reloads the list, counts and filters and closes an out-of-scope modal", ctx do
+      scope = %{
+        ctx.all_scope
+        | cached_permissions: MapSet.put(ctx.all_scope.cached_permissions, "comments.settings")
+      }
+
+      {:ok, view, _html} = open(ctx.conn, scope)
+      assert has_element?(view, "#comments-actions-tile")
+      render_click(view, "view_comment", %{"uuid" => ctx.other_record.uuid})
+      assert has_element?(view, ".modal-open")
+
+      send(view.pid, {:test_replace_scope, ctx.base_scope})
+      html = render(view)
+
+      for comment <- ctx.in_scope, do: assert(html =~ comment.content)
+      for comment <- ctx.out_of_scope, do: refute(html =~ comment.content)
+      assert html =~ "3 comments"
+      assert has_element?(view, ".stat-value.text-primary", "3")
+      refute html =~ ~s(value="orphan_thing")
+      refute has_element?(view, ".modal-open")
+      refute has_element?(view, "#comments-actions-tile")
+    end
+
+    @tag :capture_log
+    test "a newly granted moderate_all refreshes the visible records", ctx do
+      {:ok, view, _html} = open(ctx.conn, ctx.base_scope)
+
+      send(view.pid, {:test_replace_scope, ctx.all_scope})
+      html = render(view)
+
+      for comment <- ctx.in_scope ++ ctx.out_of_scope, do: assert(html =~ comment.content)
+      assert html =~ ctx.author.email
+    end
+
+    @tag :capture_log
+    test "losing the base key clears the dashboard before core evicts the page", ctx do
+      {:ok, view, _html} = open(ctx.conn, ctx.all_scope)
+      revoked = fake_scope(user: ctx.moderator, roles: ["Editor"], permissions: [])
+
+      send(view.pid, {:test_replace_scope, revoked})
+      html = render(view)
+
+      for comment <- ctx.in_scope ++ ctx.out_of_scope, do: refute(html =~ comment.content)
+      assert has_element?(view, ".stat-value.text-primary", "0")
+      assert html =~ "No comments found"
+    end
+
+    @tag :capture_log
     test "stops seeing emails in the list and in the modal opened afterwards", ctx do
       {:ok, view, html} = open(ctx.conn, ctx.all_scope)
       assert html =~ ctx.author.email
@@ -500,6 +549,28 @@ defmodule PhoenixKitComments.Web.ModerationScopeTest do
       |> render_submit("save_edit", %{"content" => "after revocation"})
 
       assert Repo.get!(Comment, other.uuid).content == "second comment"
+
+      # An explicit partial update exercises the component's update/2.
+      # An unchanged live_component call in a host render can be skipped.
+      Phoenix.LiveView.send_update(view.pid, CommentsComponent, id: "test-thread")
+
+      refute has_element?(
+               view,
+               "button[phx-click='delete_comment'][phx-value-id='#{ctx.theirs.uuid}']"
+             )
+
+      refute has_element?(
+               view,
+               "button[phx-click='edit_comment'][phx-value-id='#{ctx.theirs.uuid}']"
+             )
+
+      {:ok, _} = Permissions.grant_permission(role.uuid, "comments.moderate_all", nil)
+      Phoenix.LiveView.send_update(view.pid, CommentsComponent, id: "test-thread")
+
+      assert has_element?(
+               view,
+               "button[phx-click='delete_comment'][phx-value-id='#{ctx.theirs.uuid}']"
+             )
     end
 
     @tag :capture_log

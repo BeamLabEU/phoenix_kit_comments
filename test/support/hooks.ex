@@ -11,6 +11,8 @@ defmodule PhoenixKitComments.Test.Hooks do
 
   import Phoenix.Component, only: [assign: 3]
 
+  alias PhoenixKitWeb.Users.Auth
+
   def on_mount(:assign_scope, _params, session, socket) do
     socket =
       socket
@@ -36,10 +38,13 @@ defmodule PhoenixKitComments.Test.Hooks do
     socket =
       Phoenix.LiveView.attach_hook(socket, :test_scope_refresh, :handle_info, fn
         {:test_replace_scope, scope}, socket ->
-          {:halt,
-           socket
-           |> assign(:phoenix_kit_current_scope, scope)
-           |> assign(:phoenix_kit_current_user, scope.user)}
+          socket =
+            socket
+            |> assign(:phoenix_kit_current_scope, scope)
+            |> assign(:phoenix_kit_current_user, scope.user)
+
+          # Use the same callback dispatcher as core before its hook halts.
+          {:halt, Auth.refresh_view_scope_assigns(socket)}
 
         _other, socket ->
           {:cont, socket}
