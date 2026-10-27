@@ -29,6 +29,22 @@ defmodule PhoenixKitComments.Test.Hooks do
           socket
       end
 
+    # Core swaps the scope in place when a role's grants change: a halting
+    # `handle_info` hook reassigns `:phoenix_kit_current_scope` with no
+    # remount and no `handle_params`. `{:test_replace_scope, scope}` does the
+    # same, so a test can revoke a key mid-session.
+    socket =
+      Phoenix.LiveView.attach_hook(socket, :test_scope_refresh, :handle_info, fn
+        {:test_replace_scope, scope}, socket ->
+          {:halt,
+           socket
+           |> assign(:phoenix_kit_current_scope, scope)
+           |> assign(:phoenix_kit_current_user, scope.user)}
+
+        _other, socket ->
+          {:cont, socket}
+      end)
+
     {:cont, socket}
   end
 end

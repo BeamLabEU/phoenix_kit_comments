@@ -73,7 +73,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   require Logger
 
   @bytes_per_mb 1024 * 1024
-  alias PhoenixKit.Users.Roles
 
   # Leaf is an optional dep. When present, the comment form swaps
   # textareas for `<.live_component module={Leaf}>`. Without leaf
@@ -220,20 +219,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> assign_new(:composer_position, fn -> :top end)
       |> assign_new(:form_extras, fn -> [] end)
       |> assign_new(:current_user, fn -> nil end)
-      # Same reason as :pk_scope above — `user_is_admin?/1` is two `exists?`
-      # queries, and the render path asks it four times per comment,
-      # recursively per reply, so a long thread was hundreds of role queries
-      # per re-render. Reads the SOCKET, not the incoming assigns, because a
-      # send_update may omit `:current_user`.
-      #
-      # Once per UPDATE, not once per component: `assign_new` here would
-      # freeze the viewer's role for the component's whole life, so a host
-      # that mounts with `current_user: nil` and sends the loaded user after
-      # (the async-load pattern) would render every comment for a stranger,
-      # and a role revoked mid-session would keep its Edit/Delete controls.
-      # The event handlers re-check for real, so this is what the viewer
-      # SEES, not what they may do — but it should still be current.
-      |> then(&assign(&1, :viewer_is_admin?, user_is_admin?(&1.assigns[:current_user])))
       # Optional per-comment decoration registry. Generic surface
       # for rendering an external label above the comment body,
       # driven by one of the comment's `metadata[key]` fields. The
@@ -300,8 +285,29 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # when an annotation is drawn) — would otherwise read nil and flip
       # the composer to "Sign in to post a comment" for a logged-in user.
       |> then(&assign(&1, :can_post?, &1.assigns.current_user != nil))
+      # A host that passes `pk_scope` owns it and sends the current one with
+      # each update. One that does not gets a scope built here from the
+      # database — cached for RENDERING only (rebuilt when the viewer
+      # changes); every write event builds its own (`event_scope/1`), so a
+      # revoked grant stops working on the next click.
+      |> assign(
+        :host_pk_scope?,
+        socket.assigns[:host_pk_scope?] == true or is_map(assigns[:pk_scope])
+      )
+      |> then(&assign(&1, :pk_scope, render_scope(&1.assigns)))
+      # Whether the viewer moderates THIS record (every comment here is on
+      # it) — the moderation page's rule, not the Owner/Admin role. What
+      # the viewer SEES; `do_delete_comment/2` re-checks for real.
       |> then(
-        &assign(&1, :pk_scope, &1.assigns[:pk_scope] || viewer_scope(&1.assigns.current_user))
+        &assign(
+          &1,
+          :viewer_moderates?,
+          viewer_moderates?(
+            &1.assigns[:pk_scope],
+            &1.assigns[:resource_type],
+            &1.assigns[:resource_uuid]
+          )
+        )
       )
       |> assign(:giphy_enabled?, PhoenixKitComments.giphy_enabled?())
       |> assign(:attachments_enabled?, PhoenixKitComments.attachments_enabled?())
@@ -646,7 +652,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
 
       comment ->
-        if can_edit_comment?(socket.assigns.current_user, comment) do
+        if can_edit_comment?(socket, comment) do
           # When the comment has a matching decoration entry,
           # pre-fill `:editing_decoration_value` so the unified
           # edit form opens with the live label. No-op for comments
@@ -1076,7 +1082,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           comment.resource_uuid != socket.assigns.resource_uuid ->
         {:noreply, socket |> put_flash(:error, gettext("Invalid comment for this resource"))}
 
-      not can_delete_comment?(socket.assigns.current_user, comment) ->
+      not can_delete_comment?(socket, comment) ->
         {:noreply,
          socket |> put_flash(:error, gettext("You don't have permission to delete this comment"))}
 
@@ -1106,7 +1112,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
            )
          )}
 
-      not can_edit_comment?(socket.assigns.current_user, comment) ->
+      not can_edit_comment?(socket, comment) ->
         {:noreply,
          put_flash(socket, :error, gettext("You don't have permission to edit this comment"))}
 
@@ -1266,7 +1272,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # `do_save_edit/3` do the check, so a caller whose edit rights had gone
       # still landed the label on the host record while their body edit was
       # refused — half an edit, from a refused request.
-      not can_edit_comment?(socket.assigns[:current_user], comment) ->
+      not can_edit_comment?(socket, comment) ->
         {:noreply, put_flash(socket, :error, gettext("You cannot edit this comment"))}
 
       true ->
@@ -1551,8 +1557,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           <%!-- revealed on hover (focus-within keeps an OPEN menu and     --%>
           <%!-- keyboard users visible) so a card at rest is just          --%>
           <%!-- author / body / reactions.                                  --%>
-          <% may_edit = can_edit_comment?(@current_user, @comment, @ctx.viewer_is_admin?) %>
-          <% may_delete = can_delete_comment?(@current_user, @comment, @ctx.viewer_is_admin?) %>
+          <% may_edit = can_edit_comment?(@current_user, @comment, @ctx.viewer_moderates?) %>
+          <% may_delete = can_delete_comment?(@current_user, @comment, @ctx.viewer_moderates?) %>
           <%= if may_edit or may_delete do %>
             <%!-- `[@media(hover:none)]` is the touch escape hatch: a device --%>
             <%!-- with no hover never matches `group-hover`, so Edit and     --%>
@@ -2001,42 +2007,71 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp decoration_if_permitted(comment_uuid, socket) do
     with %{} = decoration <- find_decoration_for_comment_uuid(comment_uuid, socket),
          %{} = comment <- find_comment_in_tree(socket.assigns.comments, comment_uuid),
-         true <- can_edit_comment?(socket.assigns[:current_user], comment) do
+         true <- can_edit_comment?(socket, comment) do
       decoration
     else
       _ -> nil
     end
   end
 
-  # Two arities on purpose. The 2-arity form is the AUTHORIZATION boundary,
-  # called once per event from the handlers, and resolves the role itself.
-  # The 3-arity form takes an already-resolved `admin?` and is what the
-  # RENDER path uses: `user_is_admin?/1` is two `exists?` queries, and
-  # render_comment/1 recurses per reply and asks four times per comment, so
-  # a fifty-comment thread was hundreds of role queries on every re-render.
-  # Same reasoning as `:pk_scope` above — resolve once per render, not once
-  # per comment.
-  defp can_edit_comment?(nil, _comment), do: false
+  # Edit and delete share one rule: the author, or someone who moderates this
+  # record by the SAME rule as the moderation page (`comments.moderate_all`,
+  # or the base key plus the handler's `moderatable_resources/2`). Not the
+  # Owner/Admin role: that let a role holder rewrite or delete anyone's
+  # comment from inside a thread the moderation page would not show them.
+  #
+  # Two arities on purpose. The 2-arity form takes the socket and is the
+  # event-time boundary: it asks the handler afresh. The 3-arity form is the
+  # render path, fed the per-update `viewer_moderates?` assign, so a long
+  # thread does not ask the handler once per comment on every re-render.
+  defp can_edit_comment?(socket, comment), do: may_change_comment?(socket, comment)
+  defp can_edit_comment?(user, comment, moderates?), do: may_change?(user, comment, moderates?)
 
-  defp can_edit_comment?(user, comment),
-    do: can_edit_comment?(user, comment, user_is_admin?(user))
+  defp can_delete_comment?(socket, comment), do: may_change_comment?(socket, comment)
 
-  defp can_edit_comment?(nil, _comment, _admin?), do: false
-  defp can_edit_comment?(user, comment, admin?), do: user.uuid == comment.user_uuid or admin?
+  defp can_delete_comment?(user, comment, moderates?),
+    do: may_change?(user, comment, moderates?)
 
-  defp can_delete_comment?(nil, _comment), do: false
+  defp may_change_comment?(socket, comment) do
+    user = socket.assigns[:current_user]
 
-  defp can_delete_comment?(user, comment),
-    do: can_delete_comment?(user, comment, user_is_admin?(user))
-
-  defp can_delete_comment?(nil, _comment, _admin?), do: false
-  defp can_delete_comment?(user, comment, admin?), do: user.uuid == comment.user_uuid or admin?
-
-  defp user_is_admin?(nil), do: false
-
-  defp user_is_admin?(user) do
-    Roles.user_has_role_owner?(user) or Roles.user_has_role_admin?(user)
+    user != nil and
+      (user.uuid == comment.user_uuid or
+         viewer_moderates?(
+           event_scope(socket),
+           comment.resource_type,
+           comment.resource_uuid
+         ))
   end
+
+  # The scope a WRITE is authorised against: the host's, which it keeps
+  # current through `update/2`, or — when the host gave none — one built from
+  # the database now. Never the copy cached for rendering, which would keep a
+  # revoked `comments.moderate_all` working for the life of the thread.
+  defp event_scope(socket) do
+    if socket.assigns[:host_pk_scope?],
+      do: socket.assigns[:pk_scope],
+      else: viewer_scope(socket.assigns[:current_user])
+  end
+
+  defp render_scope(%{host_pk_scope?: true} = assigns), do: assigns[:pk_scope]
+
+  defp render_scope(assigns) do
+    user = assigns[:current_user]
+
+    case assigns[:pk_scope] do
+      %Scope{user: %{uuid: uuid}} = scope when not is_nil(user) and uuid == user.uuid -> scope
+      _ -> viewer_scope(user)
+    end
+  end
+
+  defp may_change?(nil, _comment, _moderates?), do: false
+  defp may_change?(user, comment, moderates?), do: user.uuid == comment.user_uuid or moderates?
+
+  defp viewer_moderates?(nil, _type, _uuid), do: false
+
+  defp viewer_moderates?(scope, type, uuid),
+    do: PhoenixKitComments.may_moderate_resource?(scope, type, uuid)
 
   defp comment_gif(%{metadata: metadata}) when is_map(metadata) do
     case Map.get(metadata, "giphy") do
@@ -2626,9 +2661,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   #
   # Never `user.email`, which is what this used to print, on public boards
   # included.
-  defp author_name(%{author_display_name: name}) when is_binary(name) and name != "", do: name
-  defp author_name(%{user: %User{} = user}), do: display_name(user)
-  defp author_name(_), do: gettext("Unknown")
+  #
+  # Public because the moderation page shows the same name to a moderator
+  # who may not see the author's email.
+  @doc false
+  @spec author_name(map()) :: String.t()
+  def author_name(%{author_display_name: name}) when is_binary(name) and name != "", do: name
+  def author_name(%{user: %User{} = user}), do: display_name(user)
+  def author_name(_), do: gettext("Unknown")
 
   # `User.display_name/1` landed in a core release NEWER than this module's
   # declared floor (`mix.exs` pins `~> 1.7.189`). Calling it unguarded meant a

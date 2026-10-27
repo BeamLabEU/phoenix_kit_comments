@@ -34,10 +34,11 @@ defmodule PhoenixKitComments.ResourceHandlerTest do
       # three arguments. An event callback declared at any other arity would be
       # declared and never called.
       #
-      # `resolve_comment_resources/1` is deliberately excluded rather than the
-      # contract being assumed uniform: it is a batch lookup the renderer calls
-      # directly, not something `notify_resource_handler/4` fires, and it
-      # answers a different question at a different arity.
+      # The lookups (`resolve_comment_resources/1`, `moderatable_resources/2`)
+      # are deliberately excluded rather than the contract being assumed
+      # uniform: each is a question a named caller asks directly, not
+      # something `notify_resource_handler/4` fires, and each answers at its
+      # own arity.
       for {name, arity} <- ResourceHandler.event_callbacks() do
         assert arity == 3, "#{name}/#{arity} is declared but the dispatcher only calls arity 3"
       end
@@ -50,6 +51,30 @@ defmodule PhoenixKitComments.ResourceHandlerTest do
       # implement it get "@impl true but the behaviour does not specify such
       # callback", and the RAW-path rule documented against it loses its home.
       assert {:resolve_comment_resources, 1} in ResourceHandler.callbacks()
+    end
+  end
+
+  describe "the lookups" do
+    test "every named lookup is a declared callback" do
+      # `event_callbacks/0` is defined as everything that is not a lookup, so
+      # the only way the two lists can drift is a lookup named here that the
+      # behaviour no longer declares — a host implementing it would get
+      # "@impl true but the behaviour does not specify such callback".
+      for lookup <- ResourceHandler.lookup_callbacks() do
+        assert lookup in ResourceHandler.callbacks(), "#{inspect(lookup)} is not declared"
+      end
+    end
+
+    test "the moderation scope asks moderatable_resources/2 at the declared arity" do
+      # `resolve_comment_resources/1` is asked by core's ResourceLinks, outside
+      # this repo. `moderatable_resources/2` is asked here, so its caller is
+      # checkable: a rename on either side, or a call at another arity, would
+      # leave every scoped moderator with an empty page and no error.
+      source = File.read!(@source)
+
+      assert {:moderatable_resources, 2} in ResourceHandler.callbacks()
+      assert source =~ ~r/function_exported\?\(\s*\w+,\s*:moderatable_resources,\s*2\s*\)/
+      assert source =~ ~r/\.moderatable_resources\(\s*\w+,\s*\w+\s*\)/
     end
   end
 

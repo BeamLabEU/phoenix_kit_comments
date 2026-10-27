@@ -17,7 +17,7 @@ repo and PubSub.
 
 - **Depends on:** `phoenix_kit` `>= 2.38.0 and < 3.0.0` (Hex — the release that carries `PhoenixKitWeb.Actor`, `Activity.log/3` and `Storage.ResourceFolders`; the compound form keeps the ceiling open across later 2.x minors), `phoenix_live_view` `~> 1.1`, `giphy_api` `~> 0.1.1`. MDEx is used directly but NOT declared: core provides it transitively so every module shares one resolved version; never add a direct `mdex` dep. No sibling module deps. Newer core seams (`PhoenixKit.Mentions`, `PhoenixKit.Settings.get_editor_mode/0`) are probed with `Code.ensure_loaded?/1` and degrade to off.
 - **Consumed by:** `phoenix_kit_crm`, `phoenix_kit_posts`, `phoenix_kit_staff`, `phoenix_kit_projects`, `phoenix_kit_catalogue` (supplier comments), `phoenix_kit_publishing` (test-only dep). Core's `MediaCanvasViewer` embeds the component for annotation threads.
-- **Admin surface:** tab `:admin_comments` at `/admin/comments` (moderation dashboard; group `:admin_modules`, `match: :prefix`); settings subtab `:admin_settings_comments` at `/admin/settings/comments` (parent `:admin_settings`). Both carry `permission: "comments"`.
+- **Admin surface:** tab `:admin_comments` at `/admin/comments` (moderation dashboard; group `:admin_modules`, `match: :prefix`); settings subtab `:admin_settings_comments` at `/admin/settings/comments` (parent `:admin_settings`). The moderation tab carries `permission: "comments"`, the settings tab `permission: "comments.settings"`.
 - **Module key** `"comments"`; settings prefix `comments_`.
 
 ## What this module does NOT do
@@ -70,8 +70,11 @@ Repo-local aliases:
 - Server-only attrs on `create_comment/4`: `:status` (overrides the moderation default), `:inserted_at` (backdate; not in the changeset cast), `:allow_empty_content`, `:attribution`, `:attachment_file_uuids`. Set them from your own code, never from client params. `:depth` is always recomputed from the parent.
 - Attribution columns (`author_display_name`, `attribution_mode`, `attributed_project_uuid`, `attributed_label`) are outside `cast/3` and set only by `Comment.put_attribution/2` from server-computed values. Project voice never changes `user_uuid`: the public sees the project, the row keeps the accountable author.
 - Metadata: `"giphy"` is reserved for the picker; keys listed in `decoration_keys` are dropped from client `metadata[...]` inputs (a client may not claim the link to one of the host's records; make it server-side in your own `create_comment/4` call). `merge_metadata/3` refuses an empty match rather than rewriting a whole resource type.
-- Reads are gated, not only writes: both admin LiveViews check `Scope.has_module_access?(scope, "comments")` in `mount/3` (and again on every mutation) and redirect to `/admin` otherwise. Core's admin pipeline only ensures "is an admin"; the tab's `permission:` only controls sidebar visibility, so without the mount check an admin lacking the comments permission would read every comment body, commenter email and the Giphy key.
-- Component edit/delete authorisation: the comment's author or a user with the Owner/Admin role. Settings are re-read on every `update/2` (not `assign_new`), so an admin toggle takes effect without a remount; the host's attr still wins as an off switch.
+- Reads are gated, not only writes: both admin LiveViews check their key in `mount/3` (and again on every event) and redirect to `/admin` otherwise — the moderation page `PhoenixKitComments.can_moderate?/1`, the settings page `can_change_settings?/1`. Core's admin pipeline only ensures "is an admin" and the tab's `permission:` is not enforcement to rely on, so without the mount check an admin lacking the key would read every comment body, commenter email and the Giphy key.
+- The moderation page shows and acts only on `moderation_scope/1`: `:all` for `comments.moderate_all`, otherwise a rule built from each handler's `moderatable_resources/2`. Every list, count, stat and type-filter query takes the rule as SQL; every event that takes a uuid (view, approve, hide, delete, restore, the bulk forms) re-reads the row through a rule computed fresh (`get_comment_for_moderation/3`, `moderation:` on the bulk functions), so an out-of-scope uuid answers exactly like a missing one. A reply's parent snippet shows only when the parent passes the rule; authors' emails only when the rule is `:all`. No own-comments exception.
+- The rule binds each type's uuid list as ONE array parameter (`field in ^list` compiles to `= ANY($n)`). Never expand it into a per-uuid `IN`/`OR` chain: a handler may answer more than Postgres's 65,535-parameter limit (`moderation_permissions_test.exs` binds 70,000).
+- Sub-key checks go through `Scope.can?/2`, never raw `cached_permissions` membership (Owner and `"*"` only work through the Scope functions). The exception is `can_change_settings?/1`, which uses `has_module_access?/2` on the base and the sub-key: `can?/2` also requires the module enabled, and the settings page holds the on/off switch.
+- Component authorisation: edit and delete (and decoration edits, which follow edit) — the author, or a viewer who moderates the record by the moderation page's rule (`PhoenixKitComments.may_moderate_resource?/3`: `comments.moderate_all`, or the base key plus the handler's `moderatable_resources/2`), never the role alone. The event re-asks the handler against a scope current at that moment — the host's `pk_scope` when it passes one (it must send the current one with each update), otherwise one built from the database for that event, never the copy cached for rendering; the render path uses the per-update `viewer_moderates?` assign. The moderation page decides email visibility from the live `:phoenix_kit_current_scope` on every render, because core swaps the scope in place when grants change. Settings are re-read on every `update/2` (not `assign_new`), so an admin toggle takes effect without a remount; the host's attr still wins as an off switch.
 - Giphy: `search_giphy/2` is gated by `giphy_enabled?/0` (toggle AND key), not by the key alone. On an exception log only the struct name; the key rides in the query string.
 - Reaction dedup is a `FOR UPDATE` lock on the parent comment plus `reaction_exists?/3`, then a counter bump in the same transaction. There is no composite unique index on `(comment_uuid, user_uuid)` in core's tables, so `on_conflict` upserts raise; do not reintroduce them.
 - Resource handlers dispatch by `function_exported?/3` from `PhoenixKit.ResourceLinks.handlers/0`, wrapped in rescue and `catch :exit`. Log the exit shape via `exit_summary/1`, never the reason verbatim (a `GenServer.call` reason carries the whole comment).
@@ -101,7 +104,7 @@ lib/
     embed.ex                         # `use PhoenixKitComments.Embed`: Leaf forwarding hook for hosts
     gettext.ex                       # Own Gettext backend (priv/gettext)
     migrations.ex                    # Own migration chain (V1 adopts the four core-created tables)
-    resource_handler.ex              # @behaviour for host handlers; callbacks/0, event_callbacks/0
+    resource_handler.ex              # @behaviour for host handlers; callbacks/0, event_callbacks/0, lookup_callbacks/0
     schemas/
       comment.ex                     # phoenix_kit_comments; threading, attribution, content-or-media rule
       comment_like.ex                # phoenix_kit_comments_likes
@@ -134,6 +137,7 @@ Resource handlers, one per `resource_type`, read from core's `PhoenixKit.Resourc
 | Callback | Fires |
 |---|---|
 | `resolve_comment_resources([uuid])` | Admin display: `%{uuid => %{title, path, full_title?, thumb_url?}}`, path RAW |
+| `moderatable_resources(type, scope)` | Moderation page, for a base-key holder without `comments.moderate_all`: `:all` or the resource uuids (strings) of this type the viewer may moderate comments on. Missing, `[]`, malformed, a raise or an exit all mean none (fail closed). Asked per type on every list build and every action; start from what the viewer can reach, never from every commented record |
 | `on_comment_created(type, uuid, comment)` | After insert (reply: `comment.parent_uuid`) |
 | `on_comment_published(type, uuid, comment)` | A `pending` comment approved (`approve_comment/2`, `bulk_approve/2`): its readers see it only now |
 | `on_comment_deleted(type, uuid, comment)` | After soft delete |
@@ -163,7 +167,11 @@ Resource path templates (`comment_resource_paths`, core setting managed from the
 
 ### Permissions and PubSub
 
-- Permission key `"comments"` (`permission_metadata/0`); gates both admin pages and the sidebar entries. No sub-permissions.
+- Permission keys (`permission_metadata/0`):
+  - `comments` — the moderation page, limited to comments on records the viewer manages (`moderatable_resources/2`); author names, not emails.
+  - `comments.moderate_all` — every comment on the site, with authors' emails.
+  - `comments.settings` — the settings page (on/off switch, moderation, limits, Giphy key, resource paths), its sidebar entry and the moderation page's Settings shortcut.
+- `migrate_legacy/0` grants both sub-keys ONCE to every role holding `comments` when it runs, through `Permissions.grant_permission/3`, one flag per sub-key (`comments_moderate_all_backfilled`, `comments_settings_backfilled`) set only after every grant succeeded; roles are listed with a query that raises (core's `roles_with_permission/1` answers `[]` on failure, which would set the flag for good). A role granted `comments` later gets the narrow meaning.
 - PubSub topic `phoenix_kit_comments:<resource_type>:<resource_uuid>` (`topic/2`, `subscribe/2`, `unsubscribe/2`), resolved through `PhoenixKit.PubSubHelper` (`config :phoenix_kit, pubsub: MyApp.PubSub`).
 
 ## Database & migrations
