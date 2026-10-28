@@ -408,50 +408,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
     metadata_params = client_metadata(params, socket)
 
-    metadata =
-      case socket.assigns.giphy_selected do
-        nil -> metadata_params
-        gif -> Map.put(metadata_params, "giphy", gif)
-      end
-
-    base_attrs = %{
-      content: comment_text,
-      parent_uuid: socket.assigns.reply_to,
-      metadata: metadata,
-      attribution: resolve_attribution(socket, params)
-    }
-
-    entries = socket.assigns.uploads.attachment.entries
-    entry_count = length(entries)
-
-    # Precheck before `consume_uploaded_entries` so depth / length /
-    # cap / feature-flag failures don't burn the upload — the entries
-    # stay staged and the user can fix the input and resubmit.
-    # `do_create_comment/2` carries the local Leaf-draft reset and the
-    # composer / attach-menu close assigns on success.
-    case PhoenixKitComments.precheck_create(
-           socket.assigns.resource_type,
-           socket.assigns.resource_uuid,
-           socket.assigns.current_user.uuid,
-           base_attrs,
-           entry_count
-         ) do
-      :ok ->
-        # `consume_uploaded_entries/3` raises "cannot consume uploaded files
-        # when entries are still in progress", and a LiveComponent raising
-        # takes the whole host LiveView with it — composer draft, staged
-        # files and any sibling state. The submit button has no disabled
-        # state while a file is climbing, so this was one impatient click on
-        # a slow connection.
-        if uploads_done?(entries) do
-          do_create_comment(socket, base_attrs)
-        else
-          {:noreply, put_flash(socket, :error, gettext("Wait for uploads to finish."))}
-        end
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, create_error_message(reason))}
+    if inline_image?(comment_text) do
+      {:noreply, put_flash(socket, :error, inline_image_message())}
+    else
+      create_comment_from(socket, params, comment_text, metadata_params)
     end
+  end
+
+  # A file pasted where it cannot be attached (`PhoenixKitCommentsPasteFiles`).
+  # A reason code, never text from the client.
+  def handle_event("paste_refused", %{"reason" => reason}, socket) do
+    {:noreply, put_flash(socket, :error, paste_refused_message(reason))}
   end
 
   def handle_event("cancel_upload", %{"ref" => ref}, socket) do
@@ -1058,6 +1025,74 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         end
     end
   end
+
+  defp create_comment_from(socket, params, comment_text, metadata_params) do
+    metadata =
+      case socket.assigns.giphy_selected do
+        nil -> metadata_params
+        gif -> Map.put(metadata_params, "giphy", gif)
+      end
+
+    base_attrs = %{
+      content: comment_text,
+      parent_uuid: socket.assigns.reply_to,
+      metadata: metadata,
+      attribution: resolve_attribution(socket, params)
+    }
+
+    entries = socket.assigns.uploads.attachment.entries
+    entry_count = length(entries)
+
+    # Precheck before `consume_uploaded_entries` so depth / length /
+    # cap / feature-flag failures don't burn the upload — the entries
+    # stay staged and the user can fix the input and resubmit.
+    # `do_create_comment/2` carries the local Leaf-draft reset and the
+    # composer / attach-menu close assigns on success.
+    case PhoenixKitComments.precheck_create(
+           socket.assigns.resource_type,
+           socket.assigns.resource_uuid,
+           socket.assigns.current_user.uuid,
+           base_attrs,
+           entry_count
+         ) do
+      :ok ->
+        # `consume_uploaded_entries/3` raises "cannot consume uploaded files
+        # when entries are still in progress", and a LiveComponent raising
+        # takes the whole host LiveView with it — composer draft, staged
+        # files and any sibling state. The submit button has no disabled
+        # state while a file is climbing, so this was one impatient click on
+        # a slow connection.
+        if uploads_done?(entries) do
+          do_create_comment(socket, base_attrs)
+        else
+          {:noreply, put_flash(socket, :error, gettext("Wait for uploads to finish."))}
+        end
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, create_error_message(reason))}
+    end
+  end
+
+  defp paste_refused_message("editing"),
+    do: gettext("Files can't be added while editing a comment. Add them to a new comment.")
+
+  defp paste_refused_message("attach_failed"),
+    do: gettext("The pasted file could not be attached. Try the attach button.")
+
+  defp paste_refused_message(_attachments_off),
+    do: gettext("Files can't be attached to comments here.")
+
+  # An image written into the text as a data URL — what the editor did with
+  # a pasted screenshot before the paste became an attachment (a browser
+  # with the old script cached can still send one). Refused in so many
+  # words instead of as "exceeds maximum length".
+  @inline_image ~r/data:image\/[a-z0-9.+-]+;base64,/i
+
+  defp inline_image?(text) when is_binary(text), do: Regex.match?(@inline_image, text)
+  defp inline_image?(_text), do: false
+
+  defp inline_image_message,
+    do: gettext("Images can't be pasted into the text. Paste the image again to attach it.")
 
   defp create_error_message(:empty_comment), do: gettext("Comment can't be empty")
   defp create_error_message(:attachments_disabled), do: gettext("Attachments are disabled")
@@ -1721,6 +1756,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             <%!-- a fresh Leaf when the user opens edit on a different     --%>
             <%!-- comment. Save reads from socket.assigns.editing_content   --%>
             <%!-- (kept fresh via forwarded :leaf_changed events).         --%>
+            <%!-- An edit has no attachments: a pasted file is refused with a
+                 message rather than written into the text. --%>
+            <div
+              id={"comment-edit-paste-#{@component_id}-#{@comment.uuid}"}
+              phx-hook="PhoenixKitCommentsPasteFiles"
+              phx-target={@ctx.myself}
+              data-attachments="false"
+              data-refuse="editing"
+            >
             <%= if @ctx.leaf_editor? do %>
               <.live_component
                 module={Leaf}
@@ -1746,6 +1790,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 id={@ctx.mentions_on && "#{@ctx.id}-edit-comment"}
               ><%= @editing_content %></textarea>
             <% end %>
+            </div>
             <div class="flex flex-wrap justify-end gap-2">
               <button
                 type="button"
@@ -2198,6 +2243,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       phx-target={@ctx.myself}
       class="space-y-2"
     >
+      <%!-- A file pasted into the editor (a screenshot) is attached to
+           the comment through the upload below, not written into its
+           text (`PhoenixKitCommentsPasteFiles`). --%>
+      <div
+        id={"comment-paste-#{@ctx.myself}-#{@suffix}"}
+        phx-hook="PhoenixKitCommentsPasteFiles"
+        phx-target={@ctx.myself}
+        data-upload-name="attachment"
+        data-attachments={to_string(@ctx.attachments_enabled?)}
+        data-refuse="attachments_off"
+      >
       <%!-- Comment editor. When the optional :leaf dep is present,    --%>
       <%!-- render the rich-text Leaf editor; the host LV must forward --%>
       <%!-- {:leaf_changed, ...} via forward_leaf_event/2 so the       --%>
@@ -2232,6 +2288,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           {gettext("Type @ to mention someone, # to link a record.")}
         </p>
       <% end %>
+      </div>
 
       <div class={[
         "text-xs text-right",

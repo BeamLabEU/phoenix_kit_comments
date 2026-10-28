@@ -103,6 +103,76 @@
     };
   })();
 
+  // A file pasted into the comment composer (a screenshot, a copied image)
+  // becomes one of the comment's attachments — the same LiveView upload the
+  // attach button and the voice recorder feed, with its type and size
+  // limits — instead of the editor's fallback, which wrote the image into
+  // the comment's TEXT as a base64 data URL: it showed up, then the comment
+  // could not be saved (hundreds of thousands of characters against a limit
+  // of thousands).
+  //
+  // Listens in the CAPTURE phase on a wrapper round the editor, so it sees
+  // the paste before the editor does. Only a paste with no text in it is
+  // taken: Word and Excel put a picture of the copied cells on the
+  // clipboard next to the text, and that paste is the text.
+  (function() {
+    window.PhoenixKitCommentsHooks = window.PhoenixKitCommentsHooks || {};
+    if (window.PhoenixKitCommentsHooks.PhoenixKitCommentsPasteFiles) return;
+
+    function named(file, index) {
+      // A screenshot arrives as "image.png" or with no name at all.
+      const generic = !file.name || /^image\.(png|jpe?g|gif|webp|bmp)$/i.test(file.name);
+      if (!generic) return file;
+      const ext = ((file.type || "image/png").split("/")[1] || "png").replace("jpeg", "jpg");
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const name = "pasted-" + stamp + (index > 0 ? "-" + (index + 1) : "") + "." + ext;
+      return new File([file], name, { type: file.type || "image/png" });
+    }
+
+    function pastedFiles(clipboard) {
+      if (!clipboard) return [];
+      if ((clipboard.getData("text/plain") || "").trim() !== "") return [];
+      const files = [];
+      const items = clipboard.items || [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].kind === "file") {
+          const file = items[i].getAsFile();
+          if (file) files.push(named(file, files.length));
+        }
+      }
+      if (files.length === 0 && clipboard.files) {
+        for (let i = 0; i < clipboard.files.length; i++) files.push(named(clipboard.files[i], i));
+      }
+      return files;
+    }
+
+    window.PhoenixKitCommentsHooks.PhoenixKitCommentsPasteFiles = {
+      mounted() {
+        this._onPaste = (e) => {
+          const files = pastedFiles(e.clipboardData || window.clipboardData);
+          if (files.length === 0) return;
+          e.preventDefault();
+          e.stopPropagation();
+          // Where a file cannot be attached (attachments off, an edit),
+          // say so — never let the editor bake it into the text instead.
+          if (this.el.dataset.attachments !== "true") {
+            this.pushEventTo(this.el, "paste_refused", { reason: this.el.dataset.refuse || "attachments_off" });
+            return;
+          }
+          try {
+            this.upload(this.el.dataset.uploadName || "attachment", files);
+          } catch (err) {
+            this.pushEventTo(this.el, "paste_refused", { reason: "attach_failed" });
+          }
+        };
+        this.el.addEventListener("paste", this._onPaste, true);
+      },
+      destroyed() {
+        this.el.removeEventListener("paste", this._onPaste, true);
+      }
+    };
+  })();
+
   // Template-variable insertion on the settings page.
   (function() {
     window.PhoenixKitCommentsHooks = window.PhoenixKitCommentsHooks || {};

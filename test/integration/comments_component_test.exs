@@ -241,6 +241,52 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
     }
   end
 
+  describe "a pasted image" do
+    test "the composer catches a pasted file for the attachment upload",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+      view |> element("button[phx-click='open_composer']") |> render_click()
+
+      assert has_element?(
+               view,
+               ~s([phx-hook="PhoenixKitCommentsPasteFiles"][data-upload-name="attachment"])
+             )
+    end
+
+    # The component's flashes do not reach this test host's layout (none of
+    # its error flashes do), so these check the outcome: refused, alive.
+    test "a file pasted where it cannot be attached is refused, the thread intact",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+      view |> element("button[phx-click='open_composer']") |> render_click()
+
+      view
+      |> element(~s([phx-hook="PhoenixKitCommentsPasteFiles"]))
+      |> render_hook("paste_refused", %{"reason" => "attachments_off"})
+
+      assert render(view) =~ "comment-composer"
+      assert comments_for(resource_uuid) == []
+    end
+
+    test "an image written into the text is refused, not saved as a giant comment",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+
+      post_comment(view, %{
+        "comment" => "the wall ![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAE=)"
+      })
+
+      assert comments_for(resource_uuid) == []
+
+      # The composer stays open with the draft; without the image it posts.
+      view
+      |> element("form[phx-submit='add_comment']")
+      |> render_submit(%{"comment" => "the wall is 3420"})
+
+      assert [_] = comments_for(resource_uuid)
+    end
+  end
+
   describe "the giphy picker" do
     test "a logged-out viewer cannot spend the host's Giphy quota" do
       assert {:noreply, socket} =
