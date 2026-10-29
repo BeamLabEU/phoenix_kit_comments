@@ -4,32 +4,24 @@ Guidance for AI agents working on `phoenix_kit_comments`.
 
 ## Overview
 
-Resource-agnostic, polymorphic commenting for PhoenixKit hosts: unlimited nested
-threading, like/dislike reactions, Giphy and file attachments, in-browser voice
-notes, markdown bodies, moderation, activity logging and live (PubSub) updates.
-A comment attaches to any record through a `(resource_type, resource_uuid)` pair
-with no foreign key on the resource side. `PhoenixKitComments` is both the
-`PhoenixKit.Module` implementation and the context module (CRUD, threading,
-reactions, moderation, handler dispatch); `Web.CommentsComponent` is the
-embeddable LiveComponent; two admin LiveViews cover moderation and settings.
-It is a library, not an application: it borrows the host's endpoint, router,
-repo and PubSub.
+Polymorphic commenting for PhoenixKit hosts: nested threads, reactions, Giphy,
+attachments, voice notes, markdown, moderation, activity logs and PubSub updates.
+Comments attach by `(resource_type, resource_uuid)` without a resource FK.
+`PhoenixKitComments` implements `PhoenixKit.Module` and the context API;
+`Web.CommentsComponent` embeds threads; two admin LiveViews cover moderation
+and settings. This library uses the host's endpoint, router, repo and PubSub.
 
 - **Depends on:** `phoenix_kit` `>= 2.38.0 and < 3.0.0` (Hex — the release that carries `PhoenixKitWeb.Actor`, `Activity.log/3` and `Storage.ResourceFolders`; the compound form keeps the ceiling open across later 2.x minors), `phoenix_live_view` `~> 1.1`, `giphy_api` `~> 0.1.1`. MDEx is used directly but NOT declared: core provides it transitively so every module shares one resolved version; never add a direct `mdex` dep. No sibling module deps. Newer core seams (`PhoenixKit.Mentions`, `PhoenixKit.Settings.get_editor_mode/0`) are probed with `Code.ensure_loaded?/1` and degrade to off.
-- **Consumed by:** `phoenix_kit_crm`, `phoenix_kit_posts`, `phoenix_kit_staff`, `phoenix_kit_projects`, `phoenix_kit_catalogue` (supplier comments), `phoenix_kit_publishing` (test-only dep). Core's `MediaCanvasViewer` embeds the component for annotation threads.
 - **Admin surface:** tab `:admin_comments` at `/admin/comments` (moderation dashboard; group `:admin_modules`, `match: :prefix`); settings subtab `:admin_settings_comments` at `/admin/settings/comments` (parent `:admin_settings`). The moderation tab carries `permission: "comments"`, the settings tab `permission: "comments.settings"`.
 - **Module key** `"comments"`; settings prefix `comments_`.
 
-## What this module does NOT do
+## Boundaries
 
-- Does not change its tables through core. Core's chain still creates them, but their shape is this module's: `PhoenixKitComments.Migrations` (V1 adopts them) is where every change goes, never a core migration.
-- Never references the commented resource's table. Linking is by `(resource_type, resource_uuid)` only, so any module can comment on anything without schema coupling.
-- Does not resolve resource titles or links itself. `resolve_resource_context/1` and the path templates delegate to core's `PhoenixKit.ResourceLinks`, the same resolver the Activity feed uses; the `comment_resource_paths` setting is core's.
-- Does not hard-delete. `delete_comment/2` sets `status: "deleted"`; media rows cascade only if the row is ever physically removed.
-- Does not decide self-action skipping for reaction callbacks (whether to notify someone who liked their own comment). The handler decides.
-- Does not authorise host records through metadata. The component authorises the comment (own or admin); a decoration edit hands `actor_uuid` to the host, which owns the record and must decide.
-- Ships no Leaf editor JS and no mention hook. Leaf's bundle and core's `MentionInput` are registered by the host; this module falls back to a plain `<textarea>` when Leaf is off.
-- Depends on no sibling module. Posts, staff, projects and the rest depend on comments, never the reverse.
+- Never reference the resource's table; link only by `(resource_type, resource_uuid)`.
+- Resource titles and links delegate to core's `PhoenixKit.ResourceLinks`; `comment_resource_paths` is a core setting.
+- Handlers decide whether to skip self-action reaction notifications.
+- Decoration edits pass `actor_uuid` to the host, which must authorise its own record.
+- Hosts register Leaf's bundle and core's `MentionInput`; this module ships neither and uses a plain `<textarea>` when Leaf is off.
 
 ## Commands
 
@@ -100,40 +92,19 @@ Repo-local aliases:
 
 ## Architecture
 
-```
-lib/
-  phoenix_kit_comments.ex            # PhoenixKit.Module callbacks + the whole context API
-  phoenix_kit_comments/
-    activity.ex                      # Activity-log wrapper (log/2, log_comment/3)
-    embed.ex                         # `use PhoenixKitComments.Embed`: Leaf forwarding hook for hosts
-    file_references.ex               # file_references/0: file columns for core's orphan check
-    gettext.ex                       # Own Gettext backend (priv/gettext)
-    migrations.ex                    # Own migration chain (V1 adopts the four core-created tables)
-    resource_handler.ex              # @behaviour for host handlers; callbacks/0, event_callbacks/0, lookup_callbacks/0
-    schemas/
-      comment.ex                     # phoenix_kit_comments; threading, attribution, content-or-media rule
-      comment_like.ex                # phoenix_kit_comments_likes
-      comment_dislike.ex             # phoenix_kit_comments_dislikes
-      comment_media.ex               # phoenix_kit_comment_media (junction to Storage files)
-    web/
-      comments_component.ex(.heex)   # Embeddable LiveComponent: composer, tree, reactions, uploads, mentions
-      index.ex(.heex)                # Admin moderation dashboard
-      settings.ex(.heex)             # Admin settings page (+ resource path templates)
-      markdown.ex                    # comment_markdown/1 via MDEx (sanitised allow-list)
-priv/static/assets/phoenix_kit_comments.js   # Hook bundle (js_sources/0)
-priv/gettext/                        # default.pot, en, et, ru
-```
+`lib/phoenix_kit_comments.ex` holds the module callbacks and context API.
+Under `lib/phoenix_kit_comments/`, `schemas/` holds Ecto schemas and `web/`
+holds `comments_component`, moderation `index`, `settings` and the sanitised
+MDEx renderer `markdown.ex`. Supporting modules include `Activity`, `Embed`,
+`FileReferences`, `Gettext`, `Migrations` and `ResourceHandler`.
+See the README and module docs for feature and API reference.
 
 ### Data model
 
-| Table | Schema | Notes |
-|---|---|---|
-| `phoenix_kit_comments` | `Comment` | `resource_type` (max 50), `resource_uuid`, `user_uuid` → users, `parent_uuid` → self (nil = top level), `content`, `status`, `depth` (0-based), `like_count`, `dislike_count`, `metadata` JSONB, attribution columns. `has_many :children`, `has_many :media` (ordered by position). |
-| `phoenix_kit_comments_likes` | `CommentLike` | `(comment_uuid, user_uuid)`; dedup is app-side (lock + precheck), the changeset's `unique_constraint` names an index the baseline does not create. |
-| `phoenix_kit_comments_dislikes` | `CommentDislike` | Same shape and rule as likes. |
-| `phoenix_kit_comment_media` | `CommentMedia` | Junction to `phoenix_kit_files`; unique `(comment_uuid, position)` (`phoenix_kit_comment_media_comment_position_index`); `ON DELETE CASCADE` on `comment_uuid`, `ON DELETE RESTRICT` on `file_uuid` (the file is reaped by storage GC when no junction row references it). |
-
-Statuses (strings): `"published"` (default; visible), `"pending"` (moderation on: new comments start here), `"hidden"` (moderator), `"deleted"` (soft delete). Tree building is in memory (`build_comment_tree/1`), never nested queries. Counters are denormalized on the comment and bumped inside the reaction transaction. Blank content is allowed only with a Giphy entry or media (`has_media: true` on insert); admins can raise the ceiling but the changeset caps content at 100_000.
+- `Comment` maps to `phoenix_kit_comments`: `resource_type` max 50, user FK, self-referencing `parent_uuid` (nil at top level), zero-based depth, JSONB metadata, attribution, reaction counters, children and position-ordered media.
+- `CommentLike` / `CommentDislike` map to `phoenix_kit_comments_likes` / `phoenix_kit_comments_dislikes`; their changesets name unique indexes the baseline does not create (see reaction dedup above).
+- `CommentMedia` maps to `phoenix_kit_comment_media`, linking stored files. Unique `(comment_uuid, position)` index: `phoenix_kit_comment_media_comment_position_index`; comment FK cascades on physical deletion, file FK restricts deletion. Storage GC reaps unreferenced files.
+- Status strings: `"published"` (default), `"pending"` (moderation on), `"hidden"`, `"deleted"`. Build trees in memory (`build_comment_tree/1`), never nested queries. Blank content requires Giphy or media (`has_media: true` on insert).
 
 ### Host contracts
 
@@ -154,19 +125,13 @@ Attachment folder hook (`PhoenixKitComments.Attachments`): `config :phoenix_kit_
 
 ### Settings keys
 
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `comments_enabled` | boolean | false | Module on/off |
-| `comments_moderation` | boolean | false | New comments start as `"pending"` |
-| `comments_max_depth` | integer | 10 | Nesting limit. Depths are 0-based and `validate_depth/1` rejects at `>= max`, so 10 yields depths 0–9 |
-| `comments_max_length` | integer | 10000 | Maximum comment length; settings page clamps to 100–100_000 |
-| `comments_giphy_enabled` | boolean | false | Show the Giphy picker |
-| `comments_giphy_api_key` | string | "" | Giphy API key (DB-stored) |
-| `comments_giphy_rating` | string | "g" | Giphy rating filter (g/pg/pg-13/r) |
-| `comments_attachments_enabled` | boolean | false | Image/video/audio/file attachments and voice recording |
-| `comments_max_attachments` | integer | 4 | Per-comment attachment cap (1–10) |
-| `comments_attachment_max_size_mb` | integer | 20 | Per-file cap (MB), clamped by the global `storage_max_upload_size_mb` |
-| `comments_rich_text` | boolean | true | Leaf composer + markdown rendering (`comment_markdown/1`) |
+README → Settings lists common keys. Other defaults: `comments_giphy_enabled`
+and `comments_attachments_enabled` are false, `comments_giphy_api_key` is `""`,
+and `comments_giphy_rating` is `"g"` (allowed: g/pg/pg-13/r). Keep limits aligned:
+
+- `comments_max_depth` defaults to 10; `validate_depth/1` rejects `>= max`, allowing depths 0–9.
+- `comments_max_length` defaults to 10,000; settings clamp to 100–100_000, matching the changeset ceiling.
+- `comments_max_attachments` defaults to 4, range 1–10. `comments_attachment_max_size_mb` defaults to 20 and is clamped by global `storage_max_upload_size_mb`.
 
 Resource path templates (`comment_resource_paths`, core setting managed from the settings page): `%{"shoes" => "/order/shoes/:uuid"}` or `%{"shoes" => %{"path" => …, "title" => ":metadata.name"}}`.
 
@@ -195,14 +160,10 @@ UUIDv7 primary keys (`uuid_generate_v7()`, never `gen_random_uuid()`); `use Phoe
 
 - Test DB `phoenix_kit_comments_test` (suffix `MIX_TEST_PARTITION`; `PGDATABASE` overrides the name). Env honoured: `PGUSER` (default `postgres`), `PGPASSWORD`, `PGHOST`, `PGDATABASE`, `PGPOOL` (pool size, default `schedulers_online() * 2`).
 - Without Postgres: behaviour, schema, changeset, markdown, `Embed`, resource-handler and conformance tests run; everything under `test/integration/` is tagged `:integration` via the case templates and is excluded automatically.
-- `test_helper.exs` starts `Test.Repo` and a `PhoenixKit.PubSub` server, runs `TestRepo.query!("SELECT 1")` first (the repo connects lazily), builds the schema with `PhoenixKit.Migration.ensure_current/2`, replays `PhoenixKitComments.Migrations.up_statements/1` through the repo when the marker is behind, probes for the attribution column before switching the sandbox to `:manual`, then starts `Test.Endpoint`.
-- Support modules: `DataCase` (sandbox owner, `user_fixture/1` inserted directly because the registration rate limiter's ETS is not started, `comment_fixture/2`), `LiveCase` (`Test.Endpoint`, `Phoenix.LiveViewTest`, `fake_scope/1`, `put_test_scope/2`), `Test.Router` (both admin prefixes, the `/en/test/thread/:resource_uuid` host page, a `StubController` at `/admin` so refused redirects are assertable), `Test.Hooks` (`:assign_scope` on_mount replicating core's admin `live_session` assigns), `Test.Layouts` (flashes with stable ids — the LiveView's; `CommentsComponent`'s own flash never gets there, assert its inline `[data-notice=<place>]` instead), `Test.HostLive` (embeds the component the way a consumer does, wrapped in `#first-thread`; `decoration_keys` from the URL; `?second_thread=<uuid>` adds a second thread in `#second-thread`), `ActivityLogAssertions` (`assert_activity_logged/2`).
+- `test_helper.exs` starts the repo, PubSub and endpoint, probes the DB and attribution column, and applies core/module migrations before enabling the manual sandbox.
+- Use `DataCase` fixtures (`user_fixture/1`, `comment_fixture/2`); registration's rate-limiter ETS is not started. `LiveCase` provides `fake_scope/1` and `put_test_scope/2`. Component notices use `[data-notice=<place>]`, not layout flashes. `Test.HostLive` at `/en/test/thread/:resource_uuid` has `#first-thread`; `?second_thread=<uuid>` adds `#second-thread`. Support code lives in `test/support/`.
 - `config :phoenix_kit, repo: Test.Repo` is required; without it every context call falls into its own rescue and returns a plausible nothing.
 - Known noise: the "Integration tests excluded" banner when the DB is missing or the core in `deps/` lacks the attribution columns; a "redefining module PhoenixKitComments.Test.Repo" warning (support files are both compiled from `test/support` and `Code.require_file`d by the helper); `count_comments/3 failed, reporting 0` ownership warnings from the unit tests that assert the rescue path on purpose.
-
-## Feature notes
-
-None. Feature behaviour is documented in `@moduledoc`s (`PhoenixKitComments`, `ResourceHandler`, `Embed`, `Web.CommentsComponent`) and the README.
 
 ## Versioning & releases
 
