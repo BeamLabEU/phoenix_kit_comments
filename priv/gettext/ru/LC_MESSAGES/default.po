@@ -46,34 +46,34 @@ msgstr "Все статусы"
 msgid "All Types"
 msgstr "Все типы"
 
-#: lib/phoenix_kit_comments/web/index.ex:744
+#: lib/phoenix_kit_comments/web/index.ex:762
 #: lib/phoenix_kit_comments/web/index.html.heex:201
 #, elixir-autogen, elixir-format
 msgid "Approve"
 msgstr "Одобрить"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1598
+#: lib/phoenix_kit_comments/web/comments_component.ex:1711
 #, elixir-autogen, elixir-format
 msgid "Are you sure you want to delete this comment?"
 msgstr "Вы уверены, что хотите удалить этот комментарий?"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2340
-#: lib/phoenix_kit_comments/web/comments_component.ex:2341
+#: lib/phoenix_kit_comments/web/comments_component.ex:2566
+#: lib/phoenix_kit_comments/web/comments_component.ex:2567
 #, elixir-autogen, elixir-format
 msgid "Attach media"
 msgstr "Прикрепить медиа"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2357
+#: lib/phoenix_kit_comments/web/comments_component.ex:2583
 #, elixir-autogen, elixir-format
 msgid "Attach media options"
 msgstr "Параметры вложения медиа"
 
-#: lib/phoenix_kit_comments/web/index.ex:721
+#: lib/phoenix_kit_comments/web/index.ex:739
 #, elixir-autogen, elixir-format
 msgid "Attachment"
 msgstr "Вложение"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1058
+#: lib/phoenix_kit_comments/web/comments_component.ex:1151
 #, elixir-autogen, elixir-format
 msgid "Attachments are disabled"
 msgstr "Вложения отключены"
@@ -84,14 +84,14 @@ msgstr "Вложения отключены"
 msgid "Author"
 msgstr "Автор"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1751
+#: lib/phoenix_kit_comments/web/comments_component.ex:1875
 #: lib/phoenix_kit_comments/web/settings.html.heex:425
 #: lib/phoenix_kit_comments/web/settings.html.heex:548
 #, elixir-autogen, elixir-format
 msgid "Cancel"
 msgstr "Отмена"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:964
+#: lib/phoenix_kit_comments/web/comments_component.ex:965
 #, elixir-autogen, elixir-format
 msgid "Cannot react to a deleted comment"
 msgstr "Нельзя реагировать на удалённый комментарий"
@@ -108,7 +108,7 @@ msgstr "Очистить"
 msgid "Clear search"
 msgstr "Очистить поиск"
 
-#: lib/phoenix_kit_comments/web/index.ex:662
+#: lib/phoenix_kit_comments/web/index.ex:680
 #, elixir-autogen, elixir-format
 msgid "Click to read the full comment"
 msgstr "Нажмите, чтобы прочитать комментарий полностью"
@@ -124,74 +124,74 @@ msgstr "Закрыть"
 msgid "Comment"
 msgstr "Комментарий"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1567
-#: lib/phoenix_kit_comments/web/index.ex:737
+#: lib/phoenix_kit_comments/web/comments_component.ex:1680
+#: lib/phoenix_kit_comments/web/index.ex:755
 #, elixir-autogen, elixir-format
 msgid "Comment actions"
 msgstr "Действия с комментарием"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1045
+#: lib/phoenix_kit_comments/web/comments_component.ex:1053
 #, elixir-autogen, elixir-format
 msgid "Comment added"
 msgstr "Комментарий добавлен"
 
-#: lib/phoenix_kit_comments/web/index.ex:177
+#: lib/phoenix_kit_comments/web/index.ex:175
 #, elixir-autogen, elixir-format
 msgid "Comment approved"
 msgstr "Комментарий одобрен"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1057
+#: lib/phoenix_kit_comments/web/comments_component.ex:1150
 #, elixir-autogen, elixir-format
 msgid "Comment can't be empty"
 msgstr "Комментарий не может быть пустым"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1097
+#: lib/phoenix_kit_comments/web/comments_component.ex:1202
 #, elixir-autogen, elixir-format
 msgid "Comment cannot be empty"
 msgstr "Комментарий не может быть пустым"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1177
-#: lib/phoenix_kit_comments/web/index.ex:193
+#: lib/phoenix_kit_comments/web/comments_component.ex:1288
+#: lib/phoenix_kit_comments/web/index.ex:191
 #, elixir-autogen, elixir-format
 msgid "Comment deleted"
 msgstr "Комментарий удалён"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1067
+#: lib/phoenix_kit_comments/web/comments_component.ex:1160
 #, elixir-autogen, elixir-format
 msgid "Comment exceeds maximum length"
 msgstr "Комментарий превышает максимальную длину"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1104
+#: lib/phoenix_kit_comments/web/comments_component.ex:1210
 #, elixir-autogen, elixir-format
 msgid "Comment exceeds maximum length of %{max_length} characters"
 msgstr "Комментарий превышает максимальную длину в %{max_length} символов"
 
-#: lib/phoenix_kit_comments/web/index.ex:185
+#: lib/phoenix_kit_comments/web/index.ex:183
 #, elixir-autogen, elixir-format
 msgid "Comment hidden"
 msgstr "Комментарий скрыт"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:646
-#: lib/phoenix_kit_comments/web/comments_component.ex:706
-#: lib/phoenix_kit_comments/web/comments_component.ex:782
-#: lib/phoenix_kit_comments/web/comments_component.ex:961
-#: lib/phoenix_kit_comments/web/index.ex:317
+#: lib/phoenix_kit_comments/web/comments_component.ex:638
+#: lib/phoenix_kit_comments/web/comments_component.ex:702
+#: lib/phoenix_kit_comments/web/comments_component.ex:777
+#: lib/phoenix_kit_comments/web/comments_component.ex:957
+#: lib/phoenix_kit_comments/web/index.ex:315
 #, elixir-autogen, elixir-format
 msgid "Comment not found"
 msgstr "Комментарий не найден"
 
-#: lib/phoenix_kit_comments/web/index.ex:209
+#: lib/phoenix_kit_comments/web/index.ex:207
 #, elixir-autogen, elixir-format
 msgid "Comment restored"
 msgstr "Комментарий восстановлен"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1151
+#: lib/phoenix_kit_comments/web/comments_component.ex:1262
 #, elixir-autogen, elixir-format
 msgid "Comment updated"
 msgstr "Комментарий обновлён"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:181
-#: lib/phoenix_kit_comments/web/index.ex:66
+#: lib/phoenix_kit_comments/web/comments_component.ex:185
+#: lib/phoenix_kit_comments/web/index.ex:67
 #: lib/phoenix_kit_comments/web/settings.ex:44
 #, elixir-autogen, elixir-format
 msgid "Comments"
@@ -213,8 +213,8 @@ msgstr "Содержимое"
 msgid "Date"
 msgstr "Дата"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1601
-#: lib/phoenix_kit_comments/web/index.ex:773
+#: lib/phoenix_kit_comments/web/comments_component.ex:1714
+#: lib/phoenix_kit_comments/web/index.ex:791
 #: lib/phoenix_kit_comments/web/index.html.heex:212
 #, elixir-autogen, elixir-format
 msgid "Delete"
@@ -225,12 +225,12 @@ msgstr "Удалить"
 msgid "Delete selected comments?"
 msgstr "Удалить выбранные комментарии?"
 
-#: lib/phoenix_kit_comments/web/index.ex:771
+#: lib/phoenix_kit_comments/web/index.ex:789
 #, elixir-autogen, elixir-format
 msgid "Delete this comment?"
 msgstr "Удалить этот комментарий?"
 
-#: lib/phoenix_kit_comments/web/index.ex:815
+#: lib/phoenix_kit_comments/web/index.ex:833
 #: lib/phoenix_kit_comments/web/index.html.heex:26
 #: lib/phoenix_kit_comments/web/index.html.heex:100
 #: lib/phoenix_kit_comments/web/index.html.heex:168
@@ -245,71 +245,71 @@ msgstr "Удалён"
 msgid "Deleted user"
 msgstr "Удалённый пользователь"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1858
+#: lib/phoenix_kit_comments/web/comments_component.ex:1982
 #, elixir-autogen, elixir-format
 msgid "Dislike"
 msgstr "Не нравится"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1726
+#: lib/phoenix_kit_comments/web/comments_component.ex:1848
 #, elixir-autogen, elixir-format
 msgid "Edit your comment..."
 msgstr "Редактируйте комментарий..."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1048
-#: lib/phoenix_kit_comments/web/comments_component.ex:1070
+#: lib/phoenix_kit_comments/web/comments_component.ex:1056
+#: lib/phoenix_kit_comments/web/comments_component.ex:1163
 #, elixir-autogen, elixir-format
 msgid "Failed to add comment"
 msgstr "Не удалось добавить комментарий"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1180
+#: lib/phoenix_kit_comments/web/comments_component.ex:1292
 #, elixir-autogen, elixir-format
 msgid "Failed to delete comment"
 msgstr "Не удалось удалить комментарий"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1154
+#: lib/phoenix_kit_comments/web/comments_component.ex:1265
 #, elixir-autogen, elixir-format
 msgid "Failed to update comment"
 msgstr "Не удалось обновить комментарий"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:978
+#: lib/phoenix_kit_comments/web/comments_component.ex:985
 #, elixir-autogen, elixir-format
 msgid "Failed to update reaction"
 msgstr "Не удалось обновить реакцию"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2062
+#: lib/phoenix_kit_comments/web/comments_component.ex:2210
 #, elixir-autogen, elixir-format
 msgid "File too large"
 msgstr "Файл слишком большой"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2064
+#: lib/phoenix_kit_comments/web/comments_component.ex:2212
 #, elixir-autogen, elixir-format
 msgid "File type not allowed"
 msgstr "Тип файла не разрешён"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1796
-#: lib/phoenix_kit_comments/web/comments_component.ex:2265
-#: lib/phoenix_kit_comments/web/comments_component.ex:2369
-#: lib/phoenix_kit_comments/web/index.ex:721
+#: lib/phoenix_kit_comments/web/comments_component.ex:1920
+#: lib/phoenix_kit_comments/web/comments_component.ex:2491
+#: lib/phoenix_kit_comments/web/comments_component.ex:2595
+#: lib/phoenix_kit_comments/web/index.ex:739
 #, elixir-autogen, elixir-format
 msgid "GIF"
 msgstr "GIF"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2449
+#: lib/phoenix_kit_comments/web/comments_component.ex:2676
 #, elixir-autogen, elixir-format
 msgid "GIF results"
 msgstr "Результаты GIF"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2422
+#: lib/phoenix_kit_comments/web/comments_component.ex:2649
 #, elixir-autogen, elixir-format
 msgid "Giphy picker"
 msgstr "Выбор Giphy"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1231
+#: lib/phoenix_kit_comments/web/comments_component.ex:1343
 #, elixir-autogen, elixir-format
 msgid "Giphy search failed. Check the API key in settings."
 msgstr "Поиск Giphy не удался. Проверьте ключ API в настройках."
 
-#: lib/phoenix_kit_comments/web/index.ex:814
+#: lib/phoenix_kit_comments/web/index.ex:832
 #: lib/phoenix_kit_comments/web/index.html.heex:22
 #: lib/phoenix_kit_comments/web/index.html.heex:97
 #: lib/phoenix_kit_comments/web/index.html.heex:165
@@ -317,41 +317,41 @@ msgstr "Поиск Giphy не удался. Проверьте ключ API в �
 msgid "Hidden"
 msgstr "Скрыт"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2498
-#: lib/phoenix_kit_comments/web/index.ex:753
+#: lib/phoenix_kit_comments/web/comments_component.ex:2725
+#: lib/phoenix_kit_comments/web/index.ex:771
 #: lib/phoenix_kit_comments/web/index.html.heex:204
 #, elixir-autogen, elixir-format
 msgid "Hide"
 msgstr "Скрыть"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2389
+#: lib/phoenix_kit_comments/web/comments_component.ex:2615
 #, elixir-autogen, elixir-format
 msgid "Image"
 msgstr "Изображение"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1077
-#: lib/phoenix_kit_comments/web/comments_component.ex:1263
+#: lib/phoenix_kit_comments/web/comments_component.ex:1171
+#: lib/phoenix_kit_comments/web/comments_component.ex:1376
 #, elixir-autogen, elixir-format
 msgid "Invalid comment for this resource"
 msgstr "Недопустимый комментарий для этого ресурса"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1069
+#: lib/phoenix_kit_comments/web/comments_component.ex:1162
 #, elixir-autogen, elixir-format
 msgid "Invalid file attachment"
 msgstr "Недопустимое вложение"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1068
+#: lib/phoenix_kit_comments/web/comments_component.ex:1161
 #, elixir-autogen, elixir-format
 msgid "Invalid user"
 msgstr "Недопустимый пользователь"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1841
+#: lib/phoenix_kit_comments/web/comments_component.ex:1965
 #, elixir-autogen, elixir-format
 msgid "Like"
 msgstr "Нравится"
 
-#: lib/phoenix_kit_comments/web/index.ex:67
-#: lib/phoenix_kit_comments/web/index.ex:373
+#: lib/phoenix_kit_comments/web/index.ex:68
+#: lib/phoenix_kit_comments/web/index.ex:381
 #, elixir-autogen, elixir-format
 msgid "Moderate comments across all content"
 msgstr "Модерация комментариев по всему контенту"
@@ -361,26 +361,26 @@ msgstr "Модерация комментариев по всему контен
 msgid "No comments found"
 msgstr "Комментарии не найдены"
 
-#: lib/phoenix_kit_comments/web/index.ex:249
+#: lib/phoenix_kit_comments/web/index.ex:247
 #, elixir-autogen, elixir-format
 msgid "No comments selected"
 msgstr "Комментарии не выбраны"
 
-#: lib/phoenix_kit_comments/web/comments_component.html.heex:119
+#: lib/phoenix_kit_comments/web/comments_component.html.heex:120
 #, elixir-autogen, elixir-format
 msgid "No comments yet. Be the first to comment!"
 msgstr "Пока нет комментариев. Будьте первым!"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2478
+#: lib/phoenix_kit_comments/web/comments_component.ex:2705
 #, elixir-autogen, elixir-format
 msgid "No results."
 msgstr "Нет результатов."
 
-#: lib/phoenix_kit_comments/web/index.ex:154
-#: lib/phoenix_kit_comments/web/index.ex:218
-#: lib/phoenix_kit_comments/web/index.ex:229
-#: lib/phoenix_kit_comments/web/index.ex:240
-#: lib/phoenix_kit_comments/web/index.ex:314
+#: lib/phoenix_kit_comments/web/index.ex:163
+#: lib/phoenix_kit_comments/web/index.ex:216
+#: lib/phoenix_kit_comments/web/index.ex:227
+#: lib/phoenix_kit_comments/web/index.ex:238
+#: lib/phoenix_kit_comments/web/index.ex:312
 #: lib/phoenix_kit_comments/web/settings.ex:80
 #: lib/phoenix_kit_comments/web/settings.ex:91
 #: lib/phoenix_kit_comments/web/settings.ex:102
@@ -390,8 +390,8 @@ msgstr "Нет результатов."
 msgid "Not authorized"
 msgstr "Нет прав доступа"
 
-#: lib/phoenix_kit_comments.ex:175
-#: lib/phoenix_kit_comments/web/index.ex:813
+#: lib/phoenix_kit_comments.ex:181
+#: lib/phoenix_kit_comments/web/index.ex:831
 #: lib/phoenix_kit_comments/web/index.html.heex:18
 #: lib/phoenix_kit_comments/web/index.html.heex:94
 #: lib/phoenix_kit_comments/web/index.html.heex:162
@@ -399,18 +399,18 @@ msgstr "Нет прав доступа"
 msgid "Pending"
 msgstr "На рассмотрении"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2547
+#: lib/phoenix_kit_comments/web/comments_component.ex:2774
 #, elixir-autogen, elixir-format
 msgid "Post Comment"
 msgstr "Отправить комментарий"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1884
+#: lib/phoenix_kit_comments/web/comments_component.ex:2010
 #, elixir-autogen, elixir-format
 msgid "Post Reply"
 msgstr "Отправить ответ"
 
-#: lib/phoenix_kit_comments.ex:174
-#: lib/phoenix_kit_comments/web/index.ex:812
+#: lib/phoenix_kit_comments.ex:180
+#: lib/phoenix_kit_comments/web/index.ex:830
 #: lib/phoenix_kit_comments/web/index.html.heex:14
 #: lib/phoenix_kit_comments/web/index.html.heex:91
 #: lib/phoenix_kit_comments/web/index.html.heex:159
@@ -418,44 +418,44 @@ msgstr "Отправить ответ"
 msgid "Published"
 msgstr "Опубликовано"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1784
-#: lib/phoenix_kit_comments/web/index.ex:689
+#: lib/phoenix_kit_comments/web/comments_component.ex:1908
+#: lib/phoenix_kit_comments/web/index.ex:707
 #, elixir-autogen, elixir-format
 msgid "Read more"
 msgstr "Читать далее"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2402
+#: lib/phoenix_kit_comments/web/comments_component.ex:2629
 #, elixir-autogen, elixir-format
 msgid "Record"
 msgstr "Записать"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2299
+#: lib/phoenix_kit_comments/web/comments_component.ex:2525
 #, elixir-autogen, elixir-format
 msgid "Remove %{name}"
 msgstr "Удалить %{name}"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2271
+#: lib/phoenix_kit_comments/web/comments_component.ex:2497
 #, elixir-autogen, elixir-format
 msgid "Remove GIF"
 msgstr "Удалить GIF"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1831
-#: lib/phoenix_kit_comments/web/index.ex:624
+#: lib/phoenix_kit_comments/web/comments_component.ex:1955
+#: lib/phoenix_kit_comments/web/index.ex:642
 #, elixir-autogen, elixir-format
 msgid "Reply"
 msgstr "Ответить"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1066
+#: lib/phoenix_kit_comments/web/comments_component.ex:1159
 #, elixir-autogen, elixir-format
 msgid "Reply nesting is too deep"
 msgstr "Слишком глубокая вложенность ответов"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1874
+#: lib/phoenix_kit_comments/web/comments_component.ex:2000
 #, elixir-autogen, elixir-format
 msgid "Replying here"
 msgstr "Ответ здесь"
 
-#: lib/phoenix_kit_comments/web/index.ex:610
+#: lib/phoenix_kit_comments/web/index.ex:628
 #: lib/phoenix_kit_comments/web/index.html.heex:276
 #, elixir-autogen, elixir-format
 msgid "Resource"
@@ -469,12 +469,12 @@ msgstr "Ресурс"
 msgid "Resource Type"
 msgstr "Тип ресурса"
 
-#: lib/phoenix_kit_comments/web/index.ex:762
+#: lib/phoenix_kit_comments/web/index.ex:780
 #, elixir-autogen, elixir-format
 msgid "Restore"
 msgstr "Восстановить"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1758
+#: lib/phoenix_kit_comments/web/comments_component.ex:1882
 #: lib/phoenix_kit_comments/web/settings.html.heex:429
 #: lib/phoenix_kit_comments/web/settings.html.heex:552
 #, elixir-autogen, elixir-format
@@ -487,13 +487,13 @@ msgstr "Сохранить"
 msgid "Search"
 msgstr "Поиск"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2426
-#: lib/phoenix_kit_comments/web/comments_component.ex:2434
+#: lib/phoenix_kit_comments/web/comments_component.ex:2653
+#: lib/phoenix_kit_comments/web/comments_component.ex:2661
 #, elixir-autogen, elixir-format
 msgid "Search GIFs"
 msgstr "Поиск GIF"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2433
+#: lib/phoenix_kit_comments/web/comments_component.ex:2660
 #, elixir-autogen, elixir-format
 msgid "Search GIFs..."
 msgstr "Поиск GIF..."
@@ -504,7 +504,7 @@ msgstr "Поиск GIF..."
 msgid "Search comment content..."
 msgstr "Поиск по содержимому комментариев..."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2456
+#: lib/phoenix_kit_comments/web/comments_component.ex:2683
 #, elixir-autogen, elixir-format
 msgid "Select GIF %{id}"
 msgstr "Выбрать GIF %{id}"
@@ -515,27 +515,27 @@ msgstr "Выбрать GIF %{id}"
 msgid "Settings"
 msgstr "Настройки"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1784
+#: lib/phoenix_kit_comments/web/comments_component.ex:1908
 #, elixir-autogen, elixir-format
 msgid "Show less"
 msgstr "Свернуть"
 
-#: lib/phoenix_kit_comments/web/index.ex:631
+#: lib/phoenix_kit_comments/web/index.ex:649
 #, elixir-autogen, elixir-format
 msgid "Show the original comment"
 msgstr "Показать исходный комментарий"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:383
+#: lib/phoenix_kit_comments/web/comments_component.ex:403
 #, elixir-autogen, elixir-format
 msgid "Sign in to post a comment"
 msgstr "Войдите, чтобы оставить комментарий"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2537
+#: lib/phoenix_kit_comments/web/comments_component.ex:2764
 #, elixir-autogen, elixir-format
 msgid "Sign in to post a comment."
 msgstr "Войдите, чтобы оставить комментарий."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:955
+#: lib/phoenix_kit_comments/web/comments_component.ex:951
 #, elixir-autogen, elixir-format
 msgid "Sign in to react to comments"
 msgstr "Войдите, чтобы реагировать на комментарии"
@@ -548,101 +548,101 @@ msgstr "Войдите, чтобы реагировать на коммента�
 msgid "Status"
 msgstr "Статус"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2325
-#: lib/phoenix_kit_comments/web/comments_component.ex:2329
+#: lib/phoenix_kit_comments/web/comments_component.ex:2551
+#: lib/phoenix_kit_comments/web/comments_component.ex:2555
 #, elixir-autogen, elixir-format
 msgid "Stop recording"
 msgstr "Остановить запись"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1709
+#: lib/phoenix_kit_comments/web/comments_component.ex:1822
 #, elixir-autogen, elixir-format
 msgid "Title"
 msgstr "Заголовок"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2063
+#: lib/phoenix_kit_comments/web/comments_component.ex:2211
 #, elixir-autogen, elixir-format
 msgid "Too many files"
 msgstr "Слишком много файлов"
 
-#: lib/phoenix_kit_comments.ex:173
+#: lib/phoenix_kit_comments.ex:179
 #: lib/phoenix_kit_comments/web/index.html.heex:10
 #, elixir-autogen, elixir-format
 msgid "Total"
 msgstr "Всего"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2474
+#: lib/phoenix_kit_comments/web/comments_component.ex:2701
 #, elixir-autogen, elixir-format
 msgid "Type a search term to find GIFs."
 msgstr "Введите запрос для поиска GIF."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1547
-#: lib/phoenix_kit_comments/web/comments_component.ex:2636
+#: lib/phoenix_kit_comments/web/comments_component.ex:1660
+#: lib/phoenix_kit_comments/web/comments_component.ex:2863
 #, elixir-autogen, elixir-format
 msgid "Unknown"
 msgstr "Неизвестно"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1062
+#: lib/phoenix_kit_comments/web/comments_component.ex:1155
 #, elixir-autogen, elixir-format
 msgid "Up to %{count} attachments per comment"
 msgstr "До %{count} вложений на комментарий"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2383
+#: lib/phoenix_kit_comments/web/comments_component.ex:2609
 #, elixir-autogen, elixir-format
 msgid "Up to %{count} files, max %{size}MB each"
 msgstr "До %{count} файлов, максимум %{size} МБ каждый"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2067
+#: lib/phoenix_kit_comments/web/comments_component.ex:2215
 #, elixir-autogen, elixir-format
 msgid "Upload error: %{reason}"
 msgstr "Ошибка загрузки: %{reason}"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2546
+#: lib/phoenix_kit_comments/web/comments_component.ex:2773
 #, elixir-autogen, elixir-format
 msgid "Write a comment..."
 msgstr "Напишите комментарий..."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1883
+#: lib/phoenix_kit_comments/web/comments_component.ex:2009
 #, elixir-autogen, elixir-format
 msgid "Write a reply..."
 msgstr "Напишите ответ..."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2560
+#: lib/phoenix_kit_comments/web/comments_component.ex:2787
 #, elixir-autogen, elixir-format
 msgid "Write comment"
 msgstr "Написать комментарий"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1081
+#: lib/phoenix_kit_comments/web/comments_component.ex:1179
 #, elixir-autogen, elixir-format
 msgid "You don't have permission to delete this comment"
 msgstr "У вас нет прав на удаление этого комментария"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:665
-#: lib/phoenix_kit_comments/web/comments_component.ex:1111
+#: lib/phoenix_kit_comments/web/comments_component.ex:661
+#: lib/phoenix_kit_comments/web/comments_component.ex:1221
 #, elixir-autogen, elixir-format
 msgid "You don't have permission to edit this comment"
 msgstr "У вас нет прав на редактирование этого комментария"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1959
+#: lib/phoenix_kit_comments/web/comments_component.ex:2085
 #, elixir-autogen, elixir-format
 msgid "Your browser does not support audio playback."
 msgstr "Ваш браузер не поддерживает воспроизведение аудио."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1948
+#: lib/phoenix_kit_comments/web/comments_component.ex:2074
 #, elixir-autogen, elixir-format
 msgid "Your browser does not support video playback."
 msgstr "Ваш браузер не поддерживает воспроизведение видео."
 
-#: lib/phoenix_kit_comments/web/index.ex:645
+#: lib/phoenix_kit_comments/web/index.ex:663
 #, elixir-autogen, elixir-format
 msgid "[no text]"
 msgstr "[нет текста]"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1535
+#: lib/phoenix_kit_comments/web/comments_component.ex:1648
 #, elixir-autogen, elixir-format
 msgid "[removed]"
 msgstr "[удалено]"
 
-#: lib/phoenix_kit_comments/web/index.ex:633
+#: lib/phoenix_kit_comments/web/index.ex:651
 #, elixir-autogen, elixir-format
 msgid "— Re: %{snippet}"
 msgstr "— Re: %{snippet}"
@@ -960,7 +960,7 @@ msgstr "напр. shoes"
 msgid "or add manually"
 msgstr "или добавьте вручную"
 
-#: lib/phoenix_kit_comments/web/index.ex:457
+#: lib/phoenix_kit_comments/web/index.ex:465
 #, elixir-autogen, elixir-format
 msgid "%{count} comment %{action}"
 msgid_plural "%{count} comments %{action}"
@@ -968,7 +968,7 @@ msgstr[0] "%{count} комментарий %{action}"
 msgstr[1] "%{count} комментария %{action}"
 msgstr[2] "%{count} комментариев %{action}"
 
-#: lib/phoenix_kit_comments/web/index.ex:464
+#: lib/phoenix_kit_comments/web/index.ex:472
 #, elixir-autogen, elixir-format
 msgid "%{count} comment could not be %{action}"
 msgid_plural "%{count} comments could not be %{action}"
@@ -976,61 +976,61 @@ msgstr[0] "%{count} комментарий %{action}"
 msgstr[1] "%{count} комментария %{action}"
 msgstr[2] "%{count} комментариев %{action}"
 
-#: lib/phoenix_kit_comments/web/index.ex:474
+#: lib/phoenix_kit_comments/web/index.ex:482
 #, elixir-autogen, elixir-format
 msgid "%{ok} %{action}, %{failed} failed"
 msgstr "%{ok} %{action}, ошибок: %{failed}"
 
-#: lib/phoenix_kit_comments/web/index.ex:741
+#: lib/phoenix_kit_comments/web/index.ex:759
 #: lib/phoenix_kit_comments/web/index.html.heex:200
 #, elixir-autogen, elixir-format
 msgid "Approving…"
 msgstr "Одобрение…"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:378
+#: lib/phoenix_kit_comments/web/comments_component.ex:398
 #, elixir-autogen, elixir-format
 msgid "Comments are turned off here."
 msgstr "Комментарии здесь отключены."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1255
+#: lib/phoenix_kit_comments/web/comments_component.ex:1367
 #, elixir-autogen, elixir-format
 msgid "Could not start recording."
 msgstr "Не удалось начать запись."
 
-#: lib/phoenix_kit_comments/web/index.ex:770
+#: lib/phoenix_kit_comments/web/index.ex:788
 #: lib/phoenix_kit_comments/web/index.html.heex:208
 #, elixir-autogen, elixir-format
 msgid "Deleting…"
 msgstr "Удаление…"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1256
+#: lib/phoenix_kit_comments/web/comments_component.ex:1368
 #, elixir-autogen, elixir-format
 msgid "Failed to attach the recording."
 msgstr "Не удалось прикрепить запись."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1228
+#: lib/phoenix_kit_comments/web/comments_component.ex:1340
 #, elixir-autogen, elixir-format
 msgid "GIFs are turned off here."
 msgstr "GIF-файлы здесь отключены."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1225
-#: lib/phoenix_kit_comments/web/comments_component.ex:1233
+#: lib/phoenix_kit_comments/web/comments_component.ex:1337
+#: lib/phoenix_kit_comments/web/comments_component.ex:1345
 #, elixir-autogen, elixir-format
 msgid "Giphy search failed. Please try again."
 msgstr "Поиск Giphy не удался. Попробуйте ещё раз."
 
-#: lib/phoenix_kit_comments/web/index.ex:750
+#: lib/phoenix_kit_comments/web/index.ex:768
 #: lib/phoenix_kit_comments/web/index.html.heex:203
 #, elixir-autogen, elixir-format
 msgid "Hiding…"
 msgstr "Скрытие…"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1252
+#: lib/phoenix_kit_comments/web/comments_component.ex:1364
 #, elixir-autogen, elixir-format
 msgid "Microphone access is not supported by this browser."
 msgstr "Этот браузер не поддерживает доступ к микрофону."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1254
+#: lib/phoenix_kit_comments/web/comments_component.ex:1366
 #, elixir-autogen, elixir-format
 msgid "Microphone permission denied."
 msgstr "Доступ к микрофону запрещён."
@@ -1055,17 +1055,17 @@ msgstr "Шаблон пути должен содержать :uuid или :meta
 msgid "Path template must start with / or :prefix"
 msgstr "Шаблон пути должен начинаться с / или :prefix"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2235
+#: lib/phoenix_kit_comments/web/comments_component.ex:2461
 #, elixir-autogen, elixir-format
 msgid "Post as %{project}"
 msgstr "Опубликовать от имени %{project}"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2506
+#: lib/phoenix_kit_comments/web/comments_component.ex:2733
 #, elixir-autogen, elixir-format
 msgid "Posting…"
 msgstr "Отправка…"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1257
+#: lib/phoenix_kit_comments/web/comments_component.ex:1369
 #, elixir-autogen, elixir-format
 msgid "Recording failed. Please try again."
 msgstr "Запись не удалась. Попробуйте ещё раз."
@@ -1075,13 +1075,13 @@ msgstr "Запись не удалась. Попробуйте ещё раз."
 msgid "Resource type is required"
 msgstr "Требуется тип ресурса"
 
-#: lib/phoenix_kit_comments/web/index.ex:759
+#: lib/phoenix_kit_comments/web/index.ex:777
 #, elixir-autogen, elixir-format
 msgid "Restoring…"
 msgstr "Восстановление…"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1645
-#: lib/phoenix_kit_comments/web/comments_component.ex:1755
+#: lib/phoenix_kit_comments/web/comments_component.ex:1758
+#: lib/phoenix_kit_comments/web/comments_component.ex:1879
 #: lib/phoenix_kit_comments/web/settings.html.heex:289
 #: lib/phoenix_kit_comments/web/settings.html.heex:428
 #: lib/phoenix_kit_comments/web/settings.html.heex:551
@@ -1096,22 +1096,22 @@ msgstr "Сохранение..."
 msgid "Select all comments"
 msgstr "Выбрать все комментарии"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2205
+#: lib/phoenix_kit_comments/web/comments_component.ex:2429
 #, elixir-autogen, elixir-format
 msgid "Type @ to mention someone, # to link a record."
 msgstr "Введите @, чтобы упомянуть кого-то, # — чтобы сослаться на запись."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1339
+#: lib/phoenix_kit_comments/web/comments_component.ex:1452
 #, elixir-autogen, elixir-format
 msgid "Upload failed. Please try again."
 msgstr "Не удалось загрузить файл. Попробуйте ещё раз."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:444
+#: lib/phoenix_kit_comments/web/comments_component.ex:1105
 #, elixir-autogen, elixir-format
 msgid "Wait for uploads to finish."
 msgstr "Дождитесь окончания загрузки."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1270
+#: lib/phoenix_kit_comments/web/comments_component.ex:1383
 #, elixir-autogen, elixir-format
 msgid "You cannot edit this comment"
 msgstr "Вы не можете редактировать этот комментарий"
@@ -1121,22 +1121,22 @@ msgstr "Вы не можете редактировать этот коммен�
 msgid "You do not have access to comments settings."
 msgstr "У вас нет доступа к настройкам комментариев."
 
-#: lib/phoenix_kit_comments/web/index.ex:57
+#: lib/phoenix_kit_comments/web/index.ex:58
 #, elixir-autogen, elixir-format
 msgid "You do not have access to comments."
 msgstr "У вас нет доступа к комментариям."
 
-#: lib/phoenix_kit_comments/web/index.ex:270
+#: lib/phoenix_kit_comments/web/index.ex:268
 #, elixir-autogen, elixir-format
 msgid "approved"
 msgstr "Одобрен"
 
-#: lib/phoenix_kit_comments/web/index.ex:272
+#: lib/phoenix_kit_comments/web/index.ex:270
 #, elixir-autogen, elixir-format
 msgid "deleted"
 msgstr "Удалён"
 
-#: lib/phoenix_kit_comments/web/index.ex:271
+#: lib/phoenix_kit_comments/web/index.ex:269
 #, elixir-autogen, elixir-format
 msgid "hidden"
 msgstr "Скрыт"
@@ -1156,12 +1156,12 @@ msgstr "Пример: %{simple} или %{prefixed}"
 msgid "Use %{uuid} for the resource ID, %{metadata} for values from comment metadata, and %{prefix} to include the site URL prefix."
 msgstr "Используйте %{uuid} для идентификатора ресурса, %{metadata} для значений из метаданных комментария и %{prefix}, чтобы добавить префикс URL сайта."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1594
+#: lib/phoenix_kit_comments/web/comments_component.ex:1707
 #, elixir-autogen, elixir-format
 msgid "Deleting..."
 msgstr "Удаление…"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1588
+#: lib/phoenix_kit_comments/web/comments_component.ex:1701
 #, elixir-autogen, elixir-format
 msgid "Edit"
 msgstr "Редактировать"
@@ -1177,27 +1177,27 @@ msgstr "Удаление…"
 msgid "Resetting..."
 msgstr "Сброс…"
 
-#: lib/phoenix_kit_comments/web/index.ex:178
+#: lib/phoenix_kit_comments/web/index.ex:176
 #, elixir-autogen, elixir-format
 msgid "Could not approve this comment"
 msgstr "Не удалось одобрить этот комментарий"
 
-#: lib/phoenix_kit_comments/web/index.ex:194
+#: lib/phoenix_kit_comments/web/index.ex:192
 #, elixir-autogen, elixir-format
 msgid "Could not delete this comment"
 msgstr "Не удалось удалить этот комментарий"
 
-#: lib/phoenix_kit_comments/web/index.ex:186
+#: lib/phoenix_kit_comments/web/index.ex:184
 #, elixir-autogen, elixir-format
 msgid "Could not hide this comment"
 msgstr "Не удалось скрыть этот комментарий"
 
-#: lib/phoenix_kit_comments/web/index.ex:210
+#: lib/phoenix_kit_comments/web/index.ex:208
 #, elixir-autogen, elixir-format
 msgid "Could not restore this comment"
 msgstr "Не удалось восстановить этот комментарий"
 
-#: lib/phoenix_kit_comments/web/index.ex:374
+#: lib/phoenix_kit_comments/web/index.ex:382
 #, elixir-autogen, elixir-format
 msgid "Moderate comments on records you manage"
 msgstr "Модерация комментариев к записям, которыми вы управляете"
@@ -1206,3 +1206,28 @@ msgstr "Модерация комментариев к записям, кото�
 #, elixir-autogen, elixir-format
 msgid "This page shows comments on records you manage."
 msgstr "На этой странице показаны комментарии к записям, которыми вы управляете."
+
+#: lib/phoenix_kit_comments/web/comments_component.ex:1130
+#, elixir-autogen, elixir-format
+msgid "Files can't be added while editing a comment. Add them to a new comment."
+msgstr "При редактировании комментария нельзя добавлять файлы. Добавьте их в новый комментарий."
+
+#: lib/phoenix_kit_comments/web/comments_component.ex:1136
+#, elixir-autogen, elixir-format
+msgid "Files can't be attached to comments here."
+msgstr "Здесь к комментариям нельзя прикреплять файлы."
+
+#: lib/phoenix_kit_comments/web/comments_component.ex:1148
+#, elixir-autogen, elixir-format
+msgid "Images can't be pasted into the text. Paste the image again to attach it."
+msgstr "Изображения нельзя вставлять в текст. Вставьте изображение ещё раз, чтобы прикрепить его."
+
+#: lib/phoenix_kit_comments/web/comments_component.ex:1133
+#, elixir-autogen, elixir-format
+msgid "The pasted file could not be attached. Try the attach button."
+msgstr "Не удалось прикрепить вставленный файл. Попробуйте кнопку вложения."
+
+#: lib/phoenix_kit_comments/web/comments_component.ex:2325
+#, elixir-autogen, elixir-format
+msgid "Dismiss"
+msgstr "Закрыть"

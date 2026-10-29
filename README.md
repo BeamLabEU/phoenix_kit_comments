@@ -128,6 +128,17 @@ def parent_for(_kind, _actor_uuid, _subject), do: nil
 It is called once per comment. Anything other than `{:ok, folder_uuid}` leaves the
 files at the root, and a hook that raises or exits never fails the comment.
 
+### Pasted files
+
+With attachments on, a screenshot or other file pasted into the comment box is
+added to the comment's attachments, with the same type, count and size limits as
+the attach button. A paste that also carries text (cells copied from a
+spreadsheet) is pasted as text. Where a file cannot be attached (attachments
+off, or editing an existing comment) the paste is refused with a message in the
+form. This runs in the `PhoenixKitCommentsPasteFiles` hook, which core adds to
+the host's `LiveSocket` from the module's `js_sources/0` like the module's other
+hooks; no host setup.
+
 ### Live updates across sessions
 
 `CommentsComponent` keeps the **posting** user's own view fresh automatically.

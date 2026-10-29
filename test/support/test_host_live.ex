@@ -40,6 +40,9 @@ defmodule PhoenixKitComments.Test.HostLive do
      # `?no_scope=1` embeds the component WITHOUT `pk_scope`, the way the CRM
      # and projects hosts do, so it builds the viewer's scope itself.
      |> assign(:no_scope, params["no_scope"] == "1")
+     # `?second_thread=<uuid>` embeds a second thread on the same page, the
+     # way a host listing several records with their comments does.
+     |> assign(:second_thread, params["second_thread"])
      |> assign(:comments_updated, nil)}
   end
 
@@ -48,6 +51,7 @@ defmodule PhoenixKitComments.Test.HostLive do
     ~H"""
     <div>
       <div id="host-status">{inspect(@comments_updated)}</div>
+      <div id="first-thread">
       <.live_component
         :if={!@no_scope}
         module={CommentsComponent}
@@ -67,6 +71,17 @@ defmodule PhoenixKitComments.Test.HostLive do
         current_user={@current_user}
         decoration_keys={@decoration_keys}
       />
+      </div>
+      <div :if={@second_thread} id="second-thread">
+        <.live_component
+          module={CommentsComponent}
+          id="test-thread-2"
+          resource_type="test_resource"
+          resource_uuid={@second_thread}
+          current_user={@current_user}
+          pk_scope={@pk_scope}
+        />
+      </div>
     </div>
     """
   end
