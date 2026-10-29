@@ -159,8 +159,23 @@
             this.pushEventTo(this.el, "paste_refused", { reason: this.el.dataset.refuse || "attachments_off" });
             return;
           }
+          // Upload into THIS composer's file input. `this.upload(name)`
+          // searches the whole LiveView for an input of that name, so on a
+          // host page with two open comment threads it found two, logged
+          // "duplicate live file inputs" and dropped the paste in silence —
+          // and it only logs, never throws, so the catch below never saw it.
+          const name = this.el.dataset.uploadName || "attachment";
+          const form = this.el.closest("form");
+          const input = form && Array.prototype.find.call(
+            form.querySelectorAll('input[type="file"][data-phx-upload-ref]'),
+            (el) => el.name === name
+          );
+          if (!input) {
+            this.pushEventTo(this.el, "paste_refused", { reason: "attach_failed" });
+            return;
+          }
           try {
-            this.upload(this.el.dataset.uploadName || "attachment", files);
+            this.uploadTo(form, name, files);
           } catch (err) {
             this.pushEventTo(this.el, "paste_refused", { reason: "attach_failed" });
           }

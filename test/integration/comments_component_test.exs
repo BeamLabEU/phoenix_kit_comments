@@ -241,51 +241,288 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
     }
   end
 
-  describe "a pasted image" do
-    test "the composer catches a pasted file for the attachment upload",
-         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
-      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
-      view |> element("button[phx-click='open_composer']") |> render_click()
+  # `PhoenixKitCommentsPasteFiles` (priv/static/assets/phoenix_kit_comments.js)
+  # takes a paste with files and no text, and either hands the files to the
+  # composer's `:attachment` upload or pushes `paste_refused`. LiveViewTest
+  # runs no browser JS, so these drive the two server ends of that hook —
+  # the wrapper it reads, the upload it feeds, the refusal it pushes — across
+  # every shape a paste arrives in and every rule it meets.
+  describe "a pasted file" do
+    setup do
+      on_exit(fn ->
+        set_attachments(false)
+        PhoenixKit.Settings.update_setting("comments_max_attachments", "4")
+        PhoenixKit.Settings.update_setting("comments_attachment_max_size_mb", "20")
+      end)
 
-      assert has_element?(
-               view,
-               ~s([phx-hook="PhoenixKitCommentsPasteFiles"][data-upload-name="attachment"])
-             )
+      :ok
     end
 
-    # The component's flashes do not reach this test host's layout (none of
-    # its error flashes do), so these check the outcome: refused, alive.
-    test "a file pasted where it cannot be attached is refused, the thread intact",
-         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+    defp set_attachments(on?) do
+      PhoenixKit.Settings.update_boolean_setting_with_module(
+        "comments_attachments_enabled",
+        on?,
+        "comments"
+      )
+    end
+
+    defp open_composer(conn, scope, resource_uuid) do
       {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
       view |> element("button[phx-click='open_composer']") |> render_click()
+      view
+    end
+
+    defp open_edit(conn, scope, user, resource_uuid) do
+      {:ok, comment} =
+        PhoenixKitComments.create_comment("test_resource", resource_uuid, user.uuid, %{
+          content: "original"
+        })
+
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
 
       view
-      |> element(~s([phx-hook="PhoenixKitCommentsPasteFiles"]))
-      |> render_hook("paste_refused", %{"reason" => "attachments_off"})
+      |> element("button[phx-click='edit_comment'][phx-value-id='#{comment.uuid}']")
+      |> render_click()
 
-      assert render(view) =~ "comment-composer"
+      {view, comment}
+    end
+
+    defp paste_refused(view, wrapper, payload) do
+      view |> element(wrapper) |> render_hook("paste_refused", payload)
+    end
+
+    defp pasted(name, type, bytes) do
+      %{name: name, content: :binary.copy("x", bytes), type: type}
+    end
+
+    defp upload_pasted(view, files) do
+      input = file_input(view, "form[phx-submit='add_comment']", :attachment, files)
+      render_upload(input, hd(files).name)
+      render(view)
+    end
+
+    @composer_wrapper ~s(form[phx-submit='add_comment'] [phx-hook="PhoenixKitCommentsPasteFiles"])
+    @edit_wrapper ~s(form[phx-submit='save_edit'] [phx-hook="PhoenixKitCommentsPasteFiles"])
+
+    test "the hook wraps the editor only once the composer is open",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+      refute has_element?(view, ~s([phx-hook="PhoenixKitCommentsPasteFiles"]))
+
+      view |> element("button[phx-click='open_composer']") |> render_click()
+      assert has_element?(view, @composer_wrapper)
+    end
+
+    # The hook's whole decision is `data-attachments`: "true" uploads into
+    # the form's file input, anything else refuses. Both must agree with the
+    # setting, and the input must exist exactly when it says "true".
+    for {on?, attr} <- [{true, "true"}, {false, "false"}] do
+      test "with attachments #{if on?, do: "on", else: "off"} the composer says #{attr} and the input agrees",
+           %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+        set_attachments(unquote(on?))
+        view = open_composer(conn, scope, resource_uuid)
+
+        assert has_element?(
+                 view,
+                 ~s(form[phx-submit='add_comment'] [phx-hook="PhoenixKitCommentsPasteFiles"][data-attachments="#{unquote(attr)}"][data-refuse="attachments_off"][data-upload-name="attachment"])
+               )
+
+        assert has_element?(
+                 view,
+                 ~s(form[phx-submit='add_comment'] input[type="file"][name="attachment"])
+               ) ==
+                 unquote(on?)
+      end
+
+      test "with attachments #{if on?, do: "on", else: "off"} an edit refuses pasted files",
+           %{conn: conn, scope: scope, user: user, resource_uuid: resource_uuid} do
+        set_attachments(unquote(on?))
+        {view, _comment} = open_edit(conn, scope, user, resource_uuid)
+
+        assert has_element?(
+                 view,
+                 ~s(form[phx-submit='save_edit'] [phx-hook="PhoenixKitCommentsPasteFiles"][data-attachments="false"][data-refuse="editing"])
+               )
+
+        refute has_element?(view, ~s(form[phx-submit='save_edit'] input[type="file"]))
+      end
+    end
+
+    # A component's flash never reaches the page (LiveView copies it to the
+    # parent only on push_navigate/push_patch), so a refusal is shown in the
+    # form itself — asserted on the rendered page, where a person sees it.
+    for {reason, message} <- [
+          {"attachments_off", "Files can't be attached to comments here."},
+          {"attach_failed", "The pasted file could not be attached. Try the attach button."}
+        ] do
+      test "the #{reason} refusal is shown in the composer",
+           %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+        view = open_composer(conn, scope, resource_uuid)
+        paste_refused(view, @composer_wrapper, %{"reason" => unquote(reason)})
+
+        assert view |> element("[data-composer-notice=composer]") |> render() =~
+                 html_escape(unquote(message))
+
+        assert comments_for(resource_uuid) == []
+      end
+    end
+
+    test "an editing refusal is shown in the edit form, not the composer",
+         %{conn: conn, scope: scope, user: user, resource_uuid: resource_uuid} do
+      {view, comment} = open_edit(conn, scope, user, resource_uuid)
+      paste_refused(view, @edit_wrapper, %{"reason" => "editing"})
+
+      assert view
+             |> element("form[phx-submit='save_edit'] [data-composer-notice=edit]")
+             |> render() =~
+               html_escape(
+                 "Files can't be added while editing a comment. Add them to a new comment."
+               )
+
+      assert Repo.get!(Comment, comment.uuid).content == "original"
+
+      view |> element("button[phx-click='cancel_edit']") |> render_click()
+      refute has_element?(view, "[data-composer-notice]")
+    end
+
+    test "a refusal with no reason is the generic one, not a crash",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      view = open_composer(conn, scope, resource_uuid)
+      paste_refused(view, @composer_wrapper, %{})
+
+      assert render(view) =~ html_escape("Files can't be attached to comments here.")
+    end
+
+    test "typing clears the refusal",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      view = open_composer(conn, scope, resource_uuid)
+      paste_refused(view, @composer_wrapper, %{"reason" => "attachments_off"})
+      assert has_element?(view, "[data-composer-notice=composer]")
+
+      view
+      |> element("form[phx-submit='add_comment']")
+      |> render_change(%{"comment" => "never mind"})
+
+      refute has_element?(view, "[data-composer-notice]")
+    end
+
+    # What the hook hands over, through the input it targets. Every shape a
+    # paste can carry meets the same rules as the attach button.
+    test "one pasted image is staged as an attachment",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      set_attachments(true)
+      view = open_composer(conn, scope, resource_uuid)
+
+      html = upload_pasted(view, [pasted("pasted-2026-10-29T10-00-00.png", "image/png", 100)])
+
+      assert html =~ "pasted-2026-10-29T10-00-00.png"
+      refute html =~ "File type not allowed"
       assert comments_for(resource_uuid) == []
     end
 
-    test "an image written into the text is refused, not saved as a giant comment",
+    test "several pasted files are staged together",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      set_attachments(true)
+      view = open_composer(conn, scope, resource_uuid)
+
+      html =
+        upload_pasted(view, [
+          pasted("pasted-a.png", "image/png", 100),
+          pasted("pasted-a-2.jpg", "image/jpeg", 100),
+          pasted("notes.pdf", "application/pdf", 100)
+        ])
+
+      for name <- ["pasted-a.png", "pasted-a-2.jpg", "notes.pdf"], do: assert(html =~ name)
+      refute html =~ "Too many files"
+    end
+
+    test "a pasted file of a type comments do not take is refused by the upload",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      set_attachments(true)
+      view = open_composer(conn, scope, resource_uuid)
+
+      input =
+        file_input(view, "form[phx-submit='add_comment']", :attachment, [
+          pasted("setup.exe", "application/x-msdownload", 100)
+        ])
+
+      assert {:error, [[_ref, :not_accepted]]} = render_upload(input, "setup.exe")
+    end
+
+    test "more pasted files than the cap are refused",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      set_attachments(true)
+      PhoenixKit.Settings.update_setting("comments_max_attachments", "2")
+      view = open_composer(conn, scope, resource_uuid)
+
+      input =
+        file_input(view, "form[phx-submit='add_comment']", :attachment, [
+          pasted("a.png", "image/png", 100),
+          pasted("b.png", "image/png", 100),
+          pasted("c.png", "image/png", 100)
+        ])
+
+      assert {:error, [[_ref, :too_many_files]]} = render_upload(input, "a.png")
+    end
+
+    test "a pasted file over the size cap is refused",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      set_attachments(true)
+      PhoenixKit.Settings.update_setting("comments_attachment_max_size_mb", "1")
+      view = open_composer(conn, scope, resource_uuid)
+
+      input =
+        file_input(view, "form[phx-submit='add_comment']", :attachment, [
+          pasted("big.png", "image/png", 1_048_577)
+        ])
+
+      assert {:error, [[_ref, :too_large]]} = render_upload(input, "big.png")
+    end
+
+    # The text-side guard: an image the editor wrote INTO the text (a
+    # browser still running the script from before the hook) — on a new
+    # comment and on an edit alike.
+    @inline "the wall ![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAE=)"
+
+    test "an image written into a new comment's text is refused in words",
          %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
       {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
-
-      post_comment(view, %{
-        "comment" => "the wall ![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAE=)"
-      })
+      post_comment(view, %{"comment" => @inline})
 
       assert comments_for(resource_uuid) == []
 
-      # The composer stays open with the draft; without the image it posts.
+      assert render(view) =~
+               html_escape(
+                 "Images can't be pasted into the text. Paste the image again to attach it."
+               )
+
+      # The composer stays open; without the image it posts.
       view
       |> element("form[phx-submit='add_comment']")
       |> render_submit(%{"comment" => "the wall is 3420"})
 
       assert [_] = comments_for(resource_uuid)
     end
+
+    test "an image written into an edit's text is refused, the comment unchanged",
+         %{conn: conn, scope: scope, user: user, resource_uuid: resource_uuid} do
+      {view, comment} = open_edit(conn, scope, user, resource_uuid)
+
+      view
+      |> element("form[phx-submit='save_edit']")
+      |> render_submit(%{"content" => @inline})
+
+      assert Repo.get!(Comment, comment.uuid).content == "original"
+
+      assert view |> element("[data-composer-notice=edit]") |> render() =~
+               html_escape(
+                 "Files can't be added while editing a comment. Add them to a new comment."
+               )
+    end
   end
+
+  defp html_escape(text),
+    do: text |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
 
   describe "the giphy picker" do
     test "a logged-out viewer cannot spend the host's Giphy quota" do

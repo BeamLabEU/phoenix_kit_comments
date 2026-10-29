@@ -112,6 +112,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:new_comment, "")
      |> assign(:editing_uuid, nil)
      |> assign(:editing_content, "")
+     # `{:composer | :edit, message}` or nil: a refusal shown inside the
+     # form it concerns (a paste that cannot be attached, an image written
+     # into the text). Not a flash — a component's flash never reaches the
+     # page unless it navigates.
+     |> assign(:composer_notice, nil)
      # Per-decoration inline-edit state. The uuid is a
      # `{metadata_key, comment_uuid}` tuple (or nil) so two different
      # decoration kinds on the same comment don't collide.
@@ -409,16 +414,26 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     metadata_params = client_metadata(params, socket)
 
     if inline_image?(comment_text) do
-      {:noreply, put_flash(socket, :error, inline_image_message())}
+      {:noreply, assign(socket, :composer_notice, {:composer, inline_image_message()})}
     else
       create_comment_from(socket, params, comment_text, metadata_params)
     end
   end
 
   # A file pasted where it cannot be attached (`PhoenixKitCommentsPasteFiles`).
-  # A reason code, never text from the client.
+  # A reason code, never text from the client. Shown INSIDE the form the
+  # paste landed in (`composer_notice`), not as a flash: a LiveComponent's
+  # flash reaches the page only on a push_navigate/push_patch, so a flashed
+  # refusal was never seen — the paste just did nothing.
   def handle_event("paste_refused", %{"reason" => reason}, socket) do
-    {:noreply, put_flash(socket, :error, paste_refused_message(reason))}
+    place = if reason == "editing", do: :edit, else: :composer
+    {:noreply, assign(socket, :composer_notice, {place, paste_refused_message(reason)})}
+  end
+
+  # The hook always sends a reason; anything else must not take the host
+  # LiveView down with a FunctionClauseError.
+  def handle_event("paste_refused", _params, socket) do
+    {:noreply, assign(socket, :composer_notice, {:composer, paste_refused_message(nil)})}
   end
 
   def handle_event("cancel_upload", %{"ref" => ref}, socket) do
@@ -460,7 +475,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         _ -> :top
       end
 
-    {:noreply, assign(socket, :composer_open_at, position)}
+    {:noreply,
+     socket
+     |> assign(:composer_open_at, position)
+     |> assign(:composer_notice, nil)}
   end
 
   @impl true
@@ -482,7 +500,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   @impl true
   def handle_event("update_comment_draft", %{"comment" => text}, socket) when is_binary(text) do
-    {:noreply, assign(socket, :new_comment, text)}
+    {:noreply, socket |> assign(:new_comment, text) |> clear_notice(:composer)}
   end
 
   def handle_event("update_comment_draft", _params, socket), do: {:noreply, socket}
@@ -498,7 +516,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:giphy_open?, false)
      |> assign(:giphy_results, [])
      |> assign(:giphy_query, "")
-     |> assign(:attach_menu_open?, false)}
+     |> assign(:attach_menu_open?, false)
+     |> clear_notice(:composer)}
   end
 
   @impl true
@@ -600,7 +619,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
        |> assign(:composer_open_at, nil)
        |> assign(:new_comment, "")
        |> assign(:editing_uuid, nil)
-       |> assign(:editing_content, "")}
+       |> assign(:editing_content, "")
+       |> assign(:composer_notice, nil)}
     else
       {:noreply, socket}
     end
@@ -608,7 +628,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   @impl true
   def handle_event("cancel_reply", _params, socket) do
-    {:noreply, assign(socket, :reply_to, nil)}
+    {:noreply, socket |> assign(:reply_to, nil) |> clear_notice(:composer)}
   end
 
   @impl true
@@ -631,7 +651,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
            |> assign(:editing_uuid, comment_uuid)
            |> assign(:editing_content, comment.content)
            |> assign(:editing_decoration_value, decoration_label)
-           |> assign(:reply_to, nil)}
+           |> assign(:reply_to, nil)
+           |> clear_notice(:edit)}
         else
           {:noreply,
            put_flash(socket, :error, gettext("You don't have permission to edit this comment"))}
@@ -645,7 +666,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      socket
      |> assign(:editing_uuid, nil)
      |> assign(:editing_content, "")
-     |> assign(:editing_decoration_value, "")}
+     |> assign(:editing_decoration_value, "")
+     |> clear_notice(:edit)}
   end
 
   def handle_event({:write, "save_edit"}, params, socket) do
@@ -1073,6 +1095,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     end
   end
 
+  defp clear_notice(socket, place) do
+    case socket.assigns[:composer_notice] do
+      {^place, _message} -> assign(socket, :composer_notice, nil)
+      _ -> socket
+    end
+  end
+
   defp paste_refused_message("editing"),
     do: gettext("Files can't be added while editing a comment. Add them to a new comment.")
 
@@ -1130,6 +1159,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     content = String.trim(content)
 
     cond do
+      # An image written into the text as a data URL (a browser with the
+      # pre-paste-hook script cached). The same refusal a new comment gets,
+      # in the words for an edit, which cannot take attachments.
+      inline_image?(content) ->
+        {:noreply, assign(socket, :composer_notice, {:edit, paste_refused_message("editing")})}
+
       # Empty text is only rejected when there's nothing else to the comment.
       # A GIF- or attachment-only comment is valid (the changeset agrees), so
       # clearing its text must be allowed.
@@ -1791,6 +1826,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               ><%= @editing_content %></textarea>
             <% end %>
             </div>
+            <.composer_notice notice={@ctx.composer_notice} place={:edit} />
             <div class="flex flex-wrap justify-end gap-2">
               <button
                 type="button"
@@ -2218,6 +2254,22 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp parse_editor_id(_), do: :pass
 
+  # A refusal for the form it concerns (`:composer_notice`, set by a refused
+  # paste or an image written into the text). Rendered in the form because
+  # the component's flash never reaches the page.
+  attr(:notice, :any, required: true)
+  attr(:place, :atom, required: true)
+
+  defp composer_notice(assigns) do
+    ~H"""
+    <%= case @notice do %>
+      <% {place, message} when place == @place -> %>
+        <p class="text-sm text-error" role="alert" data-composer-notice={@place}>{message}</p>
+      <% _ -> %>
+    <% end %>
+    """
+  end
+
   # Shared comment-form body used by both the top/bottom composer and the
   # inline reply form. Everything inside `<.form>` (editor, char counter,
   # attach menu, GIF picker, audio recorder, staged-media list, submit
@@ -2289,6 +2341,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         </p>
       <% end %>
       </div>
+      <.composer_notice notice={@ctx.composer_notice} place={:composer} />
 
       <div class={[
         "text-xs text-right",
