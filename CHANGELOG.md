@@ -2,6 +2,12 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- **Comment attachments were taken for orphaned files on core 3.0.** The module now implements `file_references/0` (`PhoenixKitComments.FileReferences`, declaring `phoenix_kit_comment_media.file_uuid`). Core 3.0's built-in orphan check no longer covers this module's tables, so every comment attachment was listed under Media → Orphaned files and "Delete all orphaned" trashed it. 0.5.0's entry below said the callback was implemented; only `expected_schema/0` was.
+
 ## 0.5.0 - 2026-10-27
 
 ### Changed

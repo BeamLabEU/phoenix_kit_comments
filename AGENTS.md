@@ -85,6 +85,7 @@ Repo-local aliases:
 - Call `precheck_create/5` before `consume_uploaded_entries/3` so a depth/length/cap failure does not leak files into storage. Comment insert and attachment rows run in one transaction.
 - The `:phoenix_kit` requirement keeps the compound `>= 2.38.0 and < 3.0.0` form — patch-precise floor, open ceiling (a three-segment `~> 2.38.x` locks out every later core minor for consumers); `core_pin_conformance_test.exs` enforces it and rejects a committed `path:` override.
 - UUIDv7 primary keys everywhere; every table-backed schema has `use PhoenixKit.SchemaPrefix` right after `use Ecto.Schema` (`schema_prefix_conformance_test.exs`).
+- `file_references/0` (`PhoenixKitComments.FileReferences`) declares every column of this module's tables that names a stored file (today `phoenix_kit_comment_media.file_uuid`) to core's orphan-file check. Core 3.0's built-in list no longer covers these tables, so a missing entry lists live attachments as orphans and "Delete all orphaned" trashes them. A new file column goes into that list in the same change; `file_references_test.exs` (unit: from the schemas; integration: from the foreign keys and core's own finder) fails otherwise.
 - `css_sources/0` returns `[:phoenix_kit_comments]` (an atom list) so core adds the `@source` for this module's templates.
 - Content ceiling: the changeset allows 100_000 characters, matching the maximum the settings page lets `comments_max_length` be clamped to. Keep the two in step.
 
@@ -104,6 +105,7 @@ lib/
   phoenix_kit_comments/
     activity.ex                      # Activity-log wrapper (log/2, log_comment/3)
     embed.ex                         # `use PhoenixKitComments.Embed`: Leaf forwarding hook for hosts
+    file_references.ex               # file_references/0: file columns for core's orphan check
     gettext.ex                       # Own Gettext backend (priv/gettext)
     migrations.ex                    # Own migration chain (V1 adopts the four core-created tables)
     resource_handler.ex              # @behaviour for host handlers; callbacks/0, event_callbacks/0, lookup_callbacks/0

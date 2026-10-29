@@ -420,6 +420,14 @@ defmodule PhoenixKitComments do
   @impl PhoenixKit.Module
   def expected_schema, do: PhoenixKitComments.ExpectedSchema
 
+  @doc """
+  The columns of this module's tables that point at a stored file, so core's
+  orphan-file check never takes a comment attachment for an orphan; see
+  `PhoenixKitComments.FileReferences`.
+  """
+  @impl PhoenixKit.Module
+  def file_references, do: PhoenixKitComments.FileReferences.pairs()
+
   @impl PhoenixKit.Module
   def permission_metadata do
     %{
