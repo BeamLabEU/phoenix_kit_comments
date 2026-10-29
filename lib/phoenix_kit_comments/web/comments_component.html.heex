@@ -86,6 +86,7 @@
         <%!-- is always valid. --%>
         <div id={"pk-comments-body-#{@id}"}>
           <%= unless @collapsible and @collapsed? do %>
+            <.notice ctx={assigns} place={:thread} class="mb-3" />
             <%!-- Top composer --%>
             <%= if @composer_position in [:top, :both] do %>
               <.new_comment_composer ctx={assigns} position={:top} />

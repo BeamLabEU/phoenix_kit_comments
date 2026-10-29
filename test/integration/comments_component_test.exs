@@ -360,7 +360,7 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
         view = open_composer(conn, scope, resource_uuid)
         paste_refused(view, @composer_wrapper, %{"reason" => unquote(reason)})
 
-        assert view |> element("[data-composer-notice=composer]") |> render() =~
+        assert view |> element("[data-notice=composer]") |> render() =~
                  html_escape(unquote(message))
 
         assert comments_for(resource_uuid) == []
@@ -373,7 +373,7 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       paste_refused(view, @edit_wrapper, %{"reason" => "editing"})
 
       assert view
-             |> element("form[phx-submit='save_edit'] [data-composer-notice=edit]")
+             |> element("form[phx-submit='save_edit'] [data-notice=edit]")
              |> render() =~
                html_escape(
                  "Files can't be added while editing a comment. Add them to a new comment."
@@ -382,7 +382,7 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       assert Repo.get!(Comment, comment.uuid).content == "original"
 
       view |> element("button[phx-click='cancel_edit']") |> render_click()
-      refute has_element?(view, "[data-composer-notice]")
+      refute has_element?(view, "[data-notice]")
     end
 
     test "a refusal with no reason is the generic one, not a crash",
@@ -393,17 +393,25 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       assert render(view) =~ html_escape("Files can't be attached to comments here.")
     end
 
-    test "typing clears the refusal",
+    # A notice lasts until the next action in the thread; typing is not
+    # one (an error stays while it is being corrected).
+    test "typing keeps the refusal, its dismiss button clears it",
          %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
       view = open_composer(conn, scope, resource_uuid)
       paste_refused(view, @composer_wrapper, %{"reason" => "attachments_off"})
-      assert has_element?(view, "[data-composer-notice=composer]")
+      assert has_element?(view, "[data-notice=composer]")
 
       view
       |> element("form[phx-submit='add_comment']")
       |> render_change(%{"comment" => "never mind"})
 
-      refute has_element?(view, "[data-composer-notice]")
+      assert has_element?(view, "[data-notice=composer]")
+
+      view
+      |> element("[data-notice=composer] button[phx-click='dismiss_notice']")
+      |> render_click()
+
+      refute has_element?(view, "[data-notice]")
     end
 
     # What the hook hands over, through the input it targets. Every shape a
@@ -514,7 +522,7 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
 
       assert Repo.get!(Comment, comment.uuid).content == "original"
 
-      assert view |> element("[data-composer-notice=edit]") |> render() =~
+      assert view |> element("[data-notice=edit]") |> render() =~
                html_escape(
                  "Files can't be added while editing a comment. Add them to a new comment."
                )
@@ -523,6 +531,189 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
 
   defp html_escape(text),
     do: text |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
+
+  describe "notices" do
+    # A LiveComponent's flash reaches the page only when it navigates, and
+    # this one never does: every message used to be put_flash'd into the
+    # void. They render in the component now, where the person is looking,
+    # and last until their next action in the thread.
+    setup do
+      on_exit(fn ->
+        PhoenixKit.Settings.update_setting("comments_max_length", "10000")
+        set_attachments(false)
+      end)
+
+      :ok
+    end
+
+    # The component's root element (the host wraps it in #first-thread), so
+    # an event can be sent to the component without a button to click.
+    @thread_target "#first-thread > div"
+
+    defp notice_text(view, selector), do: view |> element(selector) |> render()
+
+    defp others_comment(resource_uuid) do
+      other = user_fixture()
+
+      {:ok, comment} =
+        PhoenixKitComments.create_comment("test_resource", resource_uuid, other.uuid, %{
+          content: "not yours"
+        })
+
+      comment
+    end
+
+    test "an empty comment is refused in the composer, and the next action clears it",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+      post_comment(view, %{"comment" => "   "})
+
+      assert notice_text(view, "form[phx-submit='add_comment'] [data-notice=composer]") =~
+               html_escape("Comment can't be empty")
+
+      assert comments_for(resource_uuid) == []
+
+      view |> element("button[phx-click='cancel_new_comment']") |> render_click()
+      refute has_element?(view, "[data-notice]")
+    end
+
+    test "a comment over the length limit is refused in the composer",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      PhoenixKit.Settings.update_setting("comments_max_length", "10")
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+      post_comment(view, %{"comment" => String.duplicate("a", 30)})
+
+      assert notice_text(view, "[data-notice=composer]") =~ "Comment exceeds maximum length"
+      assert comments_for(resource_uuid) == []
+    end
+
+    test "an edit over the length limit is refused in the edit form",
+         %{conn: conn, scope: scope, user: user, resource_uuid: resource_uuid} do
+      {:ok, comment} =
+        PhoenixKitComments.create_comment("test_resource", resource_uuid, user.uuid, %{
+          content: "short"
+        })
+
+      PhoenixKit.Settings.update_setting("comments_max_length", "10")
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+
+      view
+      |> element("button[phx-click='edit_comment'][phx-value-id='#{comment.uuid}']")
+      |> render_click()
+
+      view
+      |> element("form[phx-submit='save_edit']")
+      |> render_submit(%{"content" => String.duplicate("b", 30)})
+
+      assert notice_text(view, "form[phx-submit='save_edit'] [data-notice=edit]") =~
+               "Comment exceeds maximum length of 10 characters"
+
+      assert Repo.get!(Comment, comment.uuid).content == "short"
+    end
+
+    test "editing someone else's comment is refused under that comment",
+         %{conn: conn, user: user, resource_uuid: resource_uuid} do
+      comment = others_comment(resource_uuid)
+      scope = fake_scope(user: user, roles: ["User"], permissions: [])
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+
+      view |> with_target(@thread_target) |> render_click("edit_comment", %{"id" => comment.uuid})
+
+      assert notice_text(view, "[data-comment-uuid='#{comment.uuid}'] [data-notice=comment]") =~
+               html_escape("You don't have permission to edit this comment")
+    end
+
+    test "deleting someone else's comment is refused under that comment",
+         %{conn: conn, user: user, resource_uuid: resource_uuid} do
+      comment = others_comment(resource_uuid)
+      scope = fake_scope(user: user, roles: ["User"], permissions: [])
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+
+      view
+      |> with_target(@thread_target)
+      |> render_click("delete_comment", %{"id" => comment.uuid})
+
+      assert notice_text(view, "[data-comment-uuid='#{comment.uuid}'] [data-notice=comment]") =~
+               html_escape("You don't have permission to delete this comment")
+
+      assert Repo.get!(Comment, comment.uuid).status == "published"
+    end
+
+    test "a comment that is not in the thread is reported at the top of the thread",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+
+      view
+      |> with_target(@thread_target)
+      |> render_click("delete_comment", %{"id" => Ecto.UUID.generate()})
+
+      assert notice_text(view, "[data-notice=thread]") =~ "Comment not found"
+    end
+
+    test "turned-off comments say so instead of doing nothing",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+      view |> element("button[phx-click='open_composer']") |> render_click()
+
+      PhoenixKit.Settings.update_boolean_setting_with_module(
+        "comments_enabled",
+        false,
+        "comments"
+      )
+
+      view |> element("form[phx-submit='add_comment']") |> render_submit(%{"comment" => "hi"})
+
+      assert notice_text(view, "[data-notice=thread]") =~ "Comments are turned off here."
+      assert comments_for(resource_uuid) == []
+    end
+
+    test "a successful post and delete are confirmed once, then go",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+      post_comment(view, %{"comment" => "hello"})
+
+      assert notice_text(view, "[data-notice=thread][data-notice-kind=info]") =~ "Comment added"
+
+      [comment] = comments_for(resource_uuid)
+
+      view
+      |> element("button[phx-click='delete_comment'][phx-value-id='#{comment.uuid}']")
+      |> render_click()
+
+      assert render(view) =~ "Comment deleted"
+      refute render(view) =~ "Comment added"
+
+      view |> element("button[phx-click='open_composer']") |> render_click()
+      refute has_element?(view, "[data-notice]")
+    end
+
+    test "a post while a file is still uploading waits, and the notice goes when it finishes",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      set_attachments(true)
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+      view |> element("button[phx-click='open_composer']") |> render_click()
+
+      input =
+        file_input(view, "form[phx-submit='add_comment']", :attachment, [
+          %{name: "a.png", content: :binary.copy("x", 2_000), type: "image/png"}
+        ])
+
+      render_upload(input, "a.png", 50)
+
+      view |> element("form[phx-submit='add_comment']") |> render_submit(%{"comment" => "hi"})
+
+      assert notice_text(view, "[data-notice=composer]") =~ "Wait for uploads to finish."
+      assert comments_for(resource_uuid) == []
+
+      render_upload(input, "a.png", 50)
+      refute has_element?(view, "[data-notice]")
+    end
+
+    test "no put_flash is left in the component" do
+      source = File.read!("lib/phoenix_kit_comments/web/comments_component.ex")
+      refute source =~ ~r/^\s*[^#\s].*put_flash\(/m
+    end
+  end
 
   describe "two threads on one page" do
     # A host listing several records shows several threads. Each one's voice

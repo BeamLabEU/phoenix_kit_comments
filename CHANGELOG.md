@@ -7,6 +7,9 @@ All notable changes to PhoenixKitComments will be documented in this file.
 ### Fixed
 
 - **Comment attachments were taken for orphaned files on core 3.0.** The module now implements `file_references/0` (`PhoenixKitComments.FileReferences`, declaring `phoenix_kit_comment_media.file_uuid`). Core 3.0's built-in orphan check no longer covers this module's tables, so every comment attachment was listed under Media → Orphaned files and "Delete all orphaned" trashed it. 0.5.0's entry below said the callback was implemented; only `expected_schema/0` was.
+- **A pasted screenshot broke the comment.** The editor wrote it into the text as a base64 data URL, which then failed the length limit. A paste carrying files and no text now becomes the comment's attachments (same type, count and size limits as the attach button); where nothing can be attached it says why, and a body still carrying an inline image is refused in so many words.
+- **The comment thread's messages were never shown.** Every `put_flash` in `CommentsComponent` ("Comment can't be empty", "Comment exceeds maximum length", "Wait for uploads to finish.", the permission refusals, "Comment added"…) went nowhere: a LiveComponent's flash reaches the page only when it navigates. They now render inside the thread, where the person is looking (the composer, the edit form, under the comment concerned, or at the top of the thread), last until the person's next action, and have a dismiss button. A "still uploading" message goes away by itself when the upload finishes.
+- **The voice recorder answered every thread on the page.** Its start/stop button fired a window-wide event, so with two open threads one click recorded in both, and the recording could be dropped instead of attached. The buttons now address their own composer's recorder, and the recording is uploaded into that composer's form.
 
 ## 0.5.0 - 2026-10-27
 

@@ -113,11 +113,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:new_comment, "")
      |> assign(:editing_uuid, nil)
      |> assign(:editing_content, "")
-     # `{:composer | :edit, message}` or nil: a refusal shown inside the
-     # form it concerns (a paste that cannot be attached, an image written
-     # into the text). Not a flash — a component's flash never reaches the
-     # page unless it navigates.
-     |> assign(:composer_notice, nil)
+     # The component's one message area: nil or `{place, kind, message}`
+     # (`put_notice/4`). Not a flash — a LiveComponent's flash reaches the
+     # page only when it navigates, and this one never does.
+     |> assign(:notice, nil)
      # Per-decoration inline-edit state. The uuid is a
      # `{metadata_key, comment_uuid}` tuple (or nil) so two different
      # decoration kinds on the same comment don't collide.
@@ -370,8 +369,18 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   @write_events ~w(add_comment save_edit delete_comment toggle_like toggle_dislike
                    save_decoration begin_decoration_edit giphy_search)
 
+  # Every event starts by clearing the notice, then the handler sets one as
+  # needed: a message lasts until the person's next action in this thread,
+  # and nothing is cleared on a timer. Typing is the exception: an error
+  # ("too long", "can't be empty") stays while it is being corrected.
   @impl true
-  def handle_event(event, params, socket) when event in @write_events do
+  def handle_event("update_comment_draft" = event, params, socket),
+    do: handle(event, params, socket)
+
+  def handle_event(event, params, socket),
+    do: handle(event, params, assign(socket, :notice, nil))
+
+  defp handle(event, params, socket) when event in @write_events do
     # Asked NOW, not read off an assign. A `phx-submit` reaches this
     # function directly: `update/2` does not run first, so `@enabled` still
     # holds whatever the last render put there. A thread that was open when
@@ -384,17 +393,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     # asked. LiveView only ever calls this with a binary; the tagged form is
     # internal.
     if writes_enabled?(socket) do
-      handle_event({:write, event}, params, socket)
+      handle({:write, event}, params, socket)
     else
-      {:noreply, put_flash(socket, :error, gettext("Comments are turned off here."))}
+      {:noreply, put_notice(socket, :thread, :error, gettext("Comments are turned off here."))}
     end
   end
 
-  def handle_event({:write, "add_comment"}, _params, %{assigns: %{can_post?: false}} = socket) do
-    {:noreply, put_flash(socket, :error, gettext("Sign in to post a comment"))}
+  defp handle({:write, "add_comment"}, _params, %{assigns: %{can_post?: false}} = socket) do
+    {:noreply, put_notice(socket, :composer, :error, gettext("Sign in to post a comment"))}
   end
 
-  def handle_event({:write, "add_comment"}, params, socket) do
+  defp handle({:write, "add_comment"}, params, socket) do
     # When Leaf is the editor, content lives in socket.assigns
     # (kept fresh by forwarded `:leaf_changed` messages from the
     # host LV). The form submit doesn't carry Leaf's contenteditable.
@@ -415,7 +424,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     metadata_params = client_metadata(params, socket)
 
     if inline_image?(comment_text) do
-      {:noreply, assign(socket, :composer_notice, {:composer, inline_image_message()})}
+      {:noreply, put_notice(socket, :composer, :error, inline_image_message())}
     else
       create_comment_from(socket, params, comment_text, metadata_params)
     end
@@ -423,29 +432,29 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   # A file pasted where it cannot be attached (`PhoenixKitCommentsPasteFiles`).
   # A reason code, never text from the client. Shown INSIDE the form the
-  # paste landed in (`composer_notice`), not as a flash: a LiveComponent's
+  # paste landed in (`put_notice/4`), not as a flash: a LiveComponent's
   # flash reaches the page only on a push_navigate/push_patch, so a flashed
   # refusal was never seen — the paste just did nothing.
-  def handle_event("paste_refused", %{"reason" => reason}, socket) do
+  defp handle("paste_refused", %{"reason" => reason}, socket) do
     place = if reason == "editing", do: :edit, else: :composer
-    {:noreply, assign(socket, :composer_notice, {place, paste_refused_message(reason)})}
+    {:noreply, put_notice(socket, place, :error, paste_refused_message(reason))}
   end
 
   # The hook always sends a reason; anything else must not take the host
   # LiveView down with a FunctionClauseError.
-  def handle_event("paste_refused", _params, socket) do
-    {:noreply, assign(socket, :composer_notice, {:composer, paste_refused_message(nil)})}
+  defp handle("paste_refused", _params, socket) do
+    {:noreply, put_notice(socket, :composer, :error, paste_refused_message(nil))}
   end
 
-  def handle_event("cancel_upload", %{"ref" => ref}, socket) do
+  defp handle("cancel_upload", %{"ref" => ref}, socket) do
     {:noreply, cancel_upload(socket, :attachment, ref)}
   end
 
-  def handle_event("audio_recording_started", _params, socket) do
+  defp handle("audio_recording_started", _params, socket) do
     {:noreply, assign(socket, :recording_audio?, true)}
   end
 
-  def handle_event("audio_recording_stopped", _params, socket) do
+  defp handle("audio_recording_stopped", _params, socket) do
     {:noreply, assign(socket, :recording_audio?, false)}
   end
 
@@ -454,20 +463,19 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # locale, and an open invitation to paint arbitrary text in the app's own
   # error chrome ("Your session expired, sign in at …"). A non-binary value
   # also reached `put_flash/3` and raised.
-  def handle_event("audio_recording_error", %{"reason" => reason}, socket)
-      when is_binary(reason) do
+  defp handle("audio_recording_error", %{"reason" => reason}, socket)
+       when is_binary(reason) do
     {:noreply,
      socket
      |> assign(:recording_audio?, false)
-     |> put_flash(:error, audio_error_message(reason))}
+     |> put_notice(:composer, :error, audio_error_message(reason))}
   end
 
-  def handle_event("audio_recording_error", _params, socket) do
+  defp handle("audio_recording_error", _params, socket) do
     {:noreply, assign(socket, :recording_audio?, false)}
   end
 
-  @impl true
-  def handle_event("open_composer", params, socket) do
+  defp handle("open_composer", params, socket) do
     # Position comes from phx-value-position on the button; default :top
     # so an older caller without the value still opens the top composer.
     position =
@@ -478,17 +486,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
     {:noreply,
      socket
-     |> assign(:composer_open_at, position)
-     |> assign(:composer_notice, nil)}
+     |> assign(:composer_open_at, position)}
   end
 
-  @impl true
-  def handle_event("toggle_collapsed", _params, socket) do
+  defp handle("toggle_collapsed", _params, socket) do
     {:noreply, assign(socket, :collapsed?, not socket.assigns.collapsed?)}
   end
 
   # YouTube-style inline expand/collapse of a long comment body.
-  def handle_event("toggle_comment_expanded", %{"uuid" => uuid}, socket) do
+  defp handle("toggle_comment_expanded", %{"uuid" => uuid}, socket) do
     expanded = socket.assigns.expanded_comments
 
     expanded =
@@ -499,15 +505,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     {:noreply, assign(socket, :expanded_comments, expanded)}
   end
 
-  @impl true
-  def handle_event("update_comment_draft", %{"comment" => text}, socket) when is_binary(text) do
-    {:noreply, socket |> assign(:new_comment, text) |> clear_notice(:composer)}
+  defp handle("update_comment_draft", %{"comment" => text}, socket) when is_binary(text) do
+    {:noreply, assign(socket, :new_comment, text)}
   end
 
-  def handle_event("update_comment_draft", _params, socket), do: {:noreply, socket}
+  defp handle("update_comment_draft", _params, socket), do: {:noreply, socket}
 
-  @impl true
-  def handle_event("cancel_new_comment", _params, socket) do
+  defp handle("cancel_new_comment", _params, socket) do
     {:noreply,
      socket
      |> assign(:new_comment, "")
@@ -517,48 +521,49 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:giphy_open?, false)
      |> assign(:giphy_results, [])
      |> assign(:giphy_query, "")
-     |> assign(:attach_menu_open?, false)
-     |> clear_notice(:composer)}
+     |> assign(:attach_menu_open?, false)}
   end
 
-  @impl true
-  def handle_event("toggle_giphy_picker", _params, socket) do
+  defp handle("toggle_giphy_picker", _params, socket) do
     {:noreply, assign(socket, :giphy_open?, not socket.assigns.giphy_open?)}
   end
 
-  @impl true
-  def handle_event("close_giphy_picker", _params, socket) do
+  defp handle("close_giphy_picker", _params, socket) do
     {:noreply, assign(socket, :giphy_open?, false)}
   end
 
-  def handle_event("toggle_attach_menu", _params, socket) do
+  defp handle("toggle_attach_menu", _params, socket) do
     {:noreply, assign(socket, :attach_menu_open?, not socket.assigns.attach_menu_open?)}
   end
 
-  def handle_event("close_attach_menu", _params, socket) do
+  defp handle("close_attach_menu", _params, socket) do
     {:noreply, assign(socket, :attach_menu_open?, false)}
   end
 
-  def handle_event("open_giphy_from_menu", _params, socket) do
+  defp handle("open_giphy_from_menu", _params, socket) do
     {:noreply,
      socket
      |> assign(:attach_menu_open?, false)
      |> assign(:giphy_open?, true)}
   end
 
-  def handle_event("noop", _params, socket), do: {:noreply, socket}
+  defp handle("noop", _params, socket), do: {:noreply, socket}
+
+  # The notice's dismiss button. The clear itself is the one every event
+  # starts with (`handle_event/3`).
+  defp handle("dismiss_notice", _params, socket), do: {:noreply, socket}
 
   # Signed-in only. The picker never renders for a logged-out viewer, but the
   # markup is not the control: the component's cid is addressable by anyone
   # who can see the page, so an anonymous visitor could drive outbound calls
   # against the host's Giphy quota with query strings of their choosing. The
   # same question `add_comment` asks, asked here for the same reason.
-  def handle_event({:write, "giphy_search"}, _params, %{assigns: %{can_post?: false}} = socket) do
+  defp handle({:write, "giphy_search"}, _params, %{assigns: %{can_post?: false}} = socket) do
     {:noreply, socket}
   end
 
-  def handle_event({:write, "giphy_search"}, %{"value" => query}, socket)
-      when is_binary(query) do
+  defp handle({:write, "giphy_search"}, %{"value" => query}, socket)
+       when is_binary(query) do
     # Off the LiveView process. This called out to api.giphy.com INSIDE
     # `handle_event`, so a slow or unreachable Giphy blocked every other
     # event on the page — typing, likes, replies, navigation — for the full
@@ -574,10 +579,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> start_async(:giphy_search, fn -> PhoenixKitComments.search_giphy(query) end)}
   end
 
-  def handle_event({:write, "giphy_search"}, _params, socket), do: {:noreply, socket}
+  defp handle({:write, "giphy_search"}, _params, socket), do: {:noreply, socket}
 
-  @impl true
-  def handle_event("select_giphy", %{"id" => gif_id}, socket) do
+  defp handle("select_giphy", %{"id" => gif_id}, socket) do
     case Enum.find(socket.assigns.giphy_results, &(&1["id"] == gif_id)) do
       nil ->
         {:noreply, socket}
@@ -590,21 +594,19 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     end
   end
 
-  @impl true
-  def handle_event("remove_giphy", _params, socket) do
+  defp handle("remove_giphy", _params, socket) do
     {:noreply, assign(socket, :giphy_selected, nil)}
   end
 
-  def handle_event({:write, "toggle_like"}, %{"id" => comment_uuid}, socket) do
+  defp handle({:write, "toggle_like"}, %{"id" => comment_uuid}, socket) do
     toggle_reaction(socket, comment_uuid, :like)
   end
 
-  def handle_event({:write, "toggle_dislike"}, %{"id" => comment_uuid}, socket) do
+  defp handle({:write, "toggle_dislike"}, %{"id" => comment_uuid}, socket) do
     toggle_reaction(socket, comment_uuid, :dislike)
   end
 
-  @impl true
-  def handle_event("reply_to", %{"id" => comment_uuid}, socket) do
+  defp handle("reply_to", %{"id" => comment_uuid}, socket) do
     # Validated against THIS thread. The delete and edit paths already check
     # that a comment belongs to the current resource; the reply path took
     # any string. A uuid from another resource was accepted by
@@ -620,23 +622,20 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
        |> assign(:composer_open_at, nil)
        |> assign(:new_comment, "")
        |> assign(:editing_uuid, nil)
-       |> assign(:editing_content, "")
-       |> assign(:composer_notice, nil)}
+       |> assign(:editing_content, "")}
     else
       {:noreply, socket}
     end
   end
 
-  @impl true
-  def handle_event("cancel_reply", _params, socket) do
-    {:noreply, socket |> assign(:reply_to, nil) |> clear_notice(:composer)}
+  defp handle("cancel_reply", _params, socket) do
+    {:noreply, assign(socket, :reply_to, nil)}
   end
 
-  @impl true
-  def handle_event("edit_comment", %{"id" => comment_uuid}, socket) do
+  defp handle("edit_comment", %{"id" => comment_uuid}, socket) do
     case PhoenixKitComments.get_comment(comment_uuid) do
       nil ->
-        {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
+        {:noreply, put_notice(socket, :thread, :error, gettext("Comment not found"))}
 
       comment ->
         if can_edit_comment?(socket, comment) do
@@ -652,26 +651,28 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
            |> assign(:editing_uuid, comment_uuid)
            |> assign(:editing_content, comment.content)
            |> assign(:editing_decoration_value, decoration_label)
-           |> assign(:reply_to, nil)
-           |> clear_notice(:edit)}
+           |> assign(:reply_to, nil)}
         else
           {:noreply,
-           put_flash(socket, :error, gettext("You don't have permission to edit this comment"))}
+           put_notice(
+             socket,
+             {:comment, comment_uuid},
+             :error,
+             gettext("You don't have permission to edit this comment")
+           )}
         end
     end
   end
 
-  @impl true
-  def handle_event("cancel_edit", _params, socket) do
+  defp handle("cancel_edit", _params, socket) do
     {:noreply,
      socket
      |> assign(:editing_uuid, nil)
      |> assign(:editing_content, "")
-     |> assign(:editing_decoration_value, "")
-     |> clear_notice(:edit)}
+     |> assign(:editing_decoration_value, "")}
   end
 
-  def handle_event({:write, "save_edit"}, params, socket) do
+  defp handle({:write, "save_edit"}, params, socket) do
     comment_uuid = socket.assigns.editing_uuid
 
     # Same Leaf-vs-textarea source split as `add_comment`.
@@ -698,7 +699,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     # from clearing the text of a GIF/attachment comment (which is allowed).
     case PhoenixKitComments.get_comment(comment_uuid, preload: [:media]) do
       nil ->
-        {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
+        {:noreply, put_notice(socket, :thread, :error, gettext("Comment not found"))}
 
       comment ->
         save_edit_for(socket, comment, content, params)
@@ -714,7 +715,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   @decoration_label_max 200
 
-  def handle_event({:write, "begin_decoration_edit"}, %{"uuid" => comment_uuid}, socket) do
+  defp handle({:write, "begin_decoration_edit"}, %{"uuid" => comment_uuid}, socket) do
     case decoration_if_permitted(comment_uuid, socket) do
       %{label: label, on_save: on_save, metadata_key: metadata_key} when not is_nil(on_save) ->
         {:noreply,
@@ -727,20 +728,19 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     end
   end
 
-  @impl true
-  def handle_event("cancel_decoration_edit", _params, socket) do
+  defp handle("cancel_decoration_edit", _params, socket) do
     {:noreply,
      socket
      |> assign(:editing_decoration_uuid, nil)
      |> assign(:editing_decoration_value, "")}
   end
 
-  def handle_event(
-        {:write, "save_decoration"},
-        %{"uuid" => comment_uuid, "label" => label},
-        socket
-      )
-      when is_binary(label) do
+  defp handle(
+         {:write, "save_decoration"},
+         %{"uuid" => comment_uuid, "label" => label},
+         socket
+       )
+       when is_binary(label) do
     case decoration_if_permitted(comment_uuid, socket) do
       %{on_save: on_save, metadata_key: metadata_key, metadata_value: metadata_value}
       when not is_nil(on_save) ->
@@ -769,12 +769,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   # A non-binary `label` (`label[a]=b`) used to reach String.trim/1 and kill
   # the LiveView. Must sit AFTER the real clause, not before it.
-  def handle_event({:write, "save_decoration"}, _params, socket), do: {:noreply, socket}
+  defp handle({:write, "save_decoration"}, _params, socket), do: {:noreply, socket}
 
-  def handle_event({:write, "delete_comment"}, %{"id" => comment_uuid}, socket) do
+  defp handle({:write, "delete_comment"}, %{"id" => comment_uuid}, socket) do
     case PhoenixKitComments.get_comment(comment_uuid) do
       nil ->
-        {:noreply, socket |> put_flash(:error, gettext("Comment not found"))}
+        {:noreply, put_notice(socket, :thread, :error, gettext("Comment not found"))}
 
       comment ->
         do_delete_comment(socket, comment)
@@ -946,17 +946,24 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp find_comment_in_tree(_, _), do: nil
 
-  defp toggle_reaction(%{assigns: %{current_user: nil}} = socket, _comment_uuid, _reaction) do
-    {:noreply, put_flash(socket, :error, gettext("Sign in to react to comments"))}
+  defp toggle_reaction(%{assigns: %{current_user: nil}} = socket, comment_uuid, _reaction) do
+    {:noreply,
+     put_notice(socket, {:comment, comment_uuid}, :error, gettext("Sign in to react to comments"))}
   end
 
   defp toggle_reaction(socket, comment_uuid, reaction) do
     case find_comment_in_tree(socket.assigns.comments, comment_uuid) do
       nil ->
-        {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
+        {:noreply, put_notice(socket, :thread, :error, gettext("Comment not found"))}
 
       %{status: "deleted"} ->
-        {:noreply, put_flash(socket, :error, gettext("Cannot react to a deleted comment"))}
+        {:noreply,
+         put_notice(
+           socket,
+           {:comment, comment_uuid},
+           :error,
+           gettext("Cannot react to a deleted comment")
+         )}
 
       _comment ->
         user_uuid = socket.assigns.current_user.uuid
@@ -970,7 +977,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
              |> load_reaction_state()}
 
           {:error, _} ->
-            {:noreply, put_flash(socket, :error, gettext("Failed to update reaction"))}
+            {:noreply,
+             put_notice(
+               socket,
+               {:comment, comment_uuid},
+               :error,
+               gettext("Failed to update reaction")
+             )}
         end
     end
   end
@@ -994,7 +1007,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp do_create_comment(socket, base_attrs) do
     case consume_attachments(socket) do
       {:error, message} ->
-        {:noreply, put_flash(socket, :error, message)}
+        {:noreply, put_notice(socket, :composer, :error, message)}
 
       {:ok, file_uuids} ->
         attrs = Map.put(base_attrs, :attachment_file_uuids, file_uuids)
@@ -1037,14 +1050,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
              |> assign(:attach_menu_open?, false)
              |> assign(:recording_audio?, false)
              |> load_comments()
-             |> put_flash(:info, gettext("Comment added"))}
+             |> put_notice(:thread, :info, gettext("Comment added"))}
 
           {:error, %Ecto.Changeset{} = changeset} ->
             message = first_error_message(changeset) || gettext("Failed to add comment")
-            {:noreply, put_flash(socket, :error, message)}
+            {:noreply, put_notice(socket, :composer, :error, message)}
 
           {:error, reason} when is_atom(reason) ->
-            {:noreply, put_flash(socket, :error, create_error_message(reason))}
+            {:noreply, put_notice(socket, :composer, :error, create_error_message(reason))}
         end
     end
   end
@@ -1088,20 +1101,30 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         if uploads_done?(entries) do
           do_create_comment(socket, base_attrs)
         else
-          {:noreply, put_flash(socket, :error, gettext("Wait for uploads to finish."))}
+          {:noreply,
+           put_notice(socket, :composer, :uploading, gettext("Wait for uploads to finish."))}
         end
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, create_error_message(reason))}
+        {:noreply, put_notice(socket, :composer, :error, create_error_message(reason))}
     end
   end
 
-  defp clear_notice(socket, place) do
-    case socket.assigns[:composer_notice] do
-      {^place, _message} -> assign(socket, :composer_notice, nil)
-      _ -> socket
-    end
+  # The one way this component tells the person something. `place` is where
+  # they are looking: `:composer` (the open new-comment or reply form),
+  # `:edit` (the edit form), `{:comment, uuid}` (under that comment) or
+  # `:thread` (the top of the thread). A comment no longer in the tree falls
+  # back to the thread. `kind` is `:error`, `:info`, or `:uploading` (shown
+  # only while an upload is still running, so it goes away by itself).
+  defp put_notice(socket, {:comment, uuid} = place, kind, message) do
+    place =
+      if find_comment_in_tree(socket.assigns[:comments] || [], uuid), do: place, else: :thread
+
+    assign(socket, :notice, {place, kind, message})
   end
+
+  defp put_notice(socket, place, kind, message),
+    do: assign(socket, :notice, {place, kind, message})
 
   defp paste_refused_message("editing"),
     do: gettext("Files can't be added while editing a comment. Add them to a new comment.")
@@ -1144,11 +1167,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # First verify the comment belongs to the current resource (IDOR protection)
       comment.resource_type != socket.assigns.resource_type or
           comment.resource_uuid != socket.assigns.resource_uuid ->
-        {:noreply, socket |> put_flash(:error, gettext("Invalid comment for this resource"))}
+        {:noreply,
+         put_notice(socket, :thread, :error, gettext("Invalid comment for this resource"))}
 
       not can_delete_comment?(socket, comment) ->
         {:noreply,
-         socket |> put_flash(:error, gettext("You don't have permission to delete this comment"))}
+         put_notice(
+           socket,
+           {:comment, comment.uuid},
+           :error,
+           gettext("You don't have permission to delete this comment")
+         )}
 
       true ->
         execute_delete(socket, comment)
@@ -1164,18 +1193,19 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # pre-paste-hook script cached). The same refusal a new comment gets,
       # in the words for an edit, which cannot take attachments.
       inline_image?(content) ->
-        {:noreply, assign(socket, :composer_notice, {:edit, paste_refused_message("editing")})}
+        {:noreply, put_notice(socket, :edit, :error, paste_refused_message("editing"))}
 
       # Empty text is only rejected when there's nothing else to the comment.
       # A GIF- or attachment-only comment is valid (the changeset agrees), so
       # clearing its text must be allowed.
       content == "" and is_nil(comment_gif(comment)) and comment_media(comment) == [] ->
-        {:noreply, put_flash(socket, :error, gettext("Comment cannot be empty"))}
+        {:noreply, put_notice(socket, :edit, :error, gettext("Comment cannot be empty"))}
 
       String.length(content) > max_length ->
         {:noreply,
-         put_flash(
+         put_notice(
            socket,
+           :edit,
            :error,
            gettext("Comment exceeds maximum length of %{max_length} characters",
              max_length: max_length
@@ -1184,7 +1214,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
       not can_edit_comment?(socket, comment) ->
         {:noreply,
-         put_flash(socket, :error, gettext("You don't have permission to edit this comment"))}
+         put_notice(
+           socket,
+           :edit,
+           :error,
+           gettext("You don't have permission to edit this comment")
+         )}
 
       true ->
         do_update_comment(socket, comment, content)
@@ -1224,10 +1259,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
          |> assign(:editing_uuid, nil)
          |> assign(:editing_content, "")
          |> load_comments()
-         |> put_flash(:info, gettext("Comment updated"))}
+         |> put_notice({:comment, comment.uuid}, :info, gettext("Comment updated"))}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, gettext("Failed to update comment"))}
+        {:noreply, put_notice(socket, :edit, :error, gettext("Failed to update comment"))}
     end
   end
 
@@ -1250,10 +1285,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         {:noreply,
          socket
          |> load_comments()
-         |> put_flash(:info, gettext("Comment deleted"))}
+         |> put_notice({:comment, comment.uuid}, :info, gettext("Comment deleted"))}
 
       {:error, _} ->
-        {:noreply, socket |> put_flash(:error, gettext("Failed to delete comment"))}
+        {:noreply,
+         put_notice(socket, {:comment, comment.uuid}, :error, gettext("Failed to delete comment"))}
     end
   end
 
@@ -1290,7 +1326,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      socket
      |> assign(:giphy_searching?, false)
      |> assign(:giphy_results, [])
-     |> put_flash(:error, giphy_error_message(reason))}
+     |> put_notice(:composer, :error, giphy_error_message(reason))}
   end
 
   def handle_async(:giphy_search, {:exit, _reason}, socket) do
@@ -1298,7 +1334,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      socket
      |> assign(:giphy_searching?, false)
      |> assign(:giphy_results, [])
-     |> put_flash(:error, gettext("Giphy search failed. Please try again."))}
+     |> put_notice(:composer, :error, gettext("Giphy search failed. Please try again."))}
   end
 
   defp giphy_error_message(:giphy_disabled), do: gettext("GIFs are turned off here.")
@@ -1336,14 +1372,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     cond do
       comment.resource_type != socket.assigns.resource_type or
           comment.resource_uuid != socket.assigns.resource_uuid ->
-        {:noreply, put_flash(socket, :error, gettext("Invalid comment for this resource"))}
+        {:noreply,
+         put_notice(socket, :thread, :error, gettext("Invalid comment for this resource"))}
 
       # Permission FIRST. This used to forward the decoration and then let
       # `do_save_edit/3` do the check, so a caller whose edit rights had gone
       # still landed the label on the host record while their body edit was
       # refused — half an edit, from a refused request.
       not can_edit_comment?(socket, comment) ->
-        {:noreply, put_flash(socket, :error, gettext("You cannot edit this comment"))}
+        {:noreply, put_notice(socket, :edit, :error, gettext("You cannot edit this comment"))}
 
       true ->
         # If the edit form carried a "label" field (i.e. the comment has a
@@ -1827,7 +1864,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               ><%= @editing_content %></textarea>
             <% end %>
             </div>
-            <.composer_notice notice={@ctx.composer_notice} place={:edit} />
+            <.notice ctx={@ctx} place={:edit} />
             <div class="flex flex-wrap justify-end gap-2">
               <button
                 type="button"
@@ -1955,6 +1992,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           <% end %>
         </div>
         <% end %>
+
+        <.notice ctx={@ctx} place={{:comment, @comment.uuid}} class="mt-2" />
 
         <%= if @reply_to == @comment.uuid do %>
           <div class="mt-3 border-l-2 border-primary/40 pl-3">
@@ -2255,21 +2294,59 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp parse_editor_id(_), do: :pass
 
-  # A refusal for the form it concerns (`:composer_notice`, set by a refused
-  # paste or an image written into the text). Rendered in the form because
-  # the component's flash never reaches the page.
-  attr(:notice, :any, required: true)
-  attr(:place, :atom, required: true)
+  # The notice, where it belongs (`put_notice/4`). Each place renders it
+  # only when the notice is addressed there.
+  attr(:ctx, :map, required: true)
+  attr(:place, :any, required: true)
+  attr(:class, :string, default: nil)
 
-  defp composer_notice(assigns) do
+  defp notice(assigns) do
+    assigns = assign(assigns, :shown, shown_notice(assigns.ctx, assigns.place))
+
     ~H"""
-    <%= case @notice do %>
-      <% {place, message} when place == @place -> %>
-        <p class="text-sm text-error" role="alert" data-composer-notice={@place}>{message}</p>
-      <% _ -> %>
-    <% end %>
+    <div
+      :if={@shown}
+      class={[
+        "flex items-start gap-2 text-sm",
+        @class,
+        elem(@shown, 0) == :error && "text-error",
+        elem(@shown, 0) == :info && "text-success"
+      ]}
+      role={if elem(@shown, 0) == :error, do: "alert", else: "status"}
+      data-notice={notice_place_name(@place)}
+      data-notice-kind={elem(@shown, 0)}
+    >
+      <p class="flex-1 min-w-0">{elem(@shown, 1)}</p>
+      <button
+        type="button"
+        phx-click="dismiss_notice"
+        phx-target={@ctx.myself}
+        class="btn btn-ghost btn-xs btn-square shrink-0"
+        aria-label={gettext("Dismiss")}
+      >
+        <.icon name="hero-x-mark" class="w-4 h-4" />
+      </button>
+    </div>
     """
   end
+
+  # `{kind, message}` to show at `place`, or nil. An `:uploading` notice is
+  # an error only while an upload is still running.
+  defp shown_notice(ctx, place) do
+    case ctx[:notice] do
+      {^place, :uploading, message} -> if uploads_pending?(ctx), do: {:error, message}
+      {^place, kind, message} -> {kind, message}
+      _ -> nil
+    end
+  end
+
+  defp notice_place_name({:comment, _uuid}), do: "comment"
+  defp notice_place_name(place) when is_atom(place), do: Atom.to_string(place)
+
+  defp uploads_pending?(%{uploads: %{attachment: %{entries: entries}}}),
+    do: not uploads_done?(entries)
+
+  defp uploads_pending?(_ctx), do: false
 
   # The recorder hook of THIS composer, and the click that starts or stops
   # it. Dispatched on the recorder element, not on window: every recorder
@@ -2353,7 +2430,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         </p>
       <% end %>
       </div>
-      <.composer_notice notice={@ctx.composer_notice} place={:composer} />
+      <.notice ctx={@ctx} place={:composer} />
 
       <div class={[
         "text-xs text-right",
