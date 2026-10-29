@@ -24,13 +24,18 @@
         this.recorder = null;
         this.stream = null;
         this.chunks = [];
+        // The start/stop buttons dispatch the toggle ON THIS ELEMENT
+        // (`JS.dispatch(..., to: "#<this recorder's id>")`), never on
+        // window: a window-wide event was answered by every recorder on the
+        // page, so with two open comment threads one click started two
+        // recordings.
         this._onToggle = () => {
           if (this.recording) this.stop(); else this.start();
         };
-        window.addEventListener("phx-kit-comments-audio-toggle", this._onToggle);
+        this.el.addEventListener("phx-kit-comments-audio-toggle", this._onToggle);
       },
       destroyed() {
-        window.removeEventListener("phx-kit-comments-audio-toggle", this._onToggle);
+        this.el.removeEventListener("phx-kit-comments-audio-toggle", this._onToggle);
         this.cleanup();
       },
       async start() {
@@ -73,15 +78,28 @@
         const ext = mimeType.indexOf("webm") >= 0 ? "webm" : "ogg";
         const name = "voice-" + new Date().toISOString().replace(/[:.]/g, "-") + "." + ext;
         const file = new File([blob], name, { type: mimeType });
+        // Into THIS composer's file input, as the paste hook does:
+        // `this.upload(name)` searches the whole LiveView, so with two open
+        // composers it found two inputs, logged and dropped the recording
+        // (it only logs, never throws, so the catch never saw it).
         const uploadName = this.el.dataset.uploadName || "attachment";
-        try {
-          this.upload(uploadName, [file]);
-        } catch (err) {
-          this.pushError("attach_failed");
-        }
+        const form = this.el.closest("form");
+        const input = form && Array.prototype.find.call(
+          form.querySelectorAll('input[type="file"][data-phx-upload-ref]'),
+          (el) => el.name === uploadName
+        );
         this.recording = false;
         this.cleanup();
         this.pushEventTo(this.el, "audio_recording_stopped", {});
+        if (!input) {
+          this.pushError("attach_failed");
+          return;
+        }
+        try {
+          this.uploadTo(form, uploadName, [file]);
+        } catch (err) {
+          this.pushError("attach_failed");
+        }
       },
       cleanup() {
         if (this.stream) {

@@ -524,6 +524,84 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
   defp html_escape(text),
     do: text |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
 
+  describe "two threads on one page" do
+    # A host listing several records shows several threads. Each one's voice
+    # recorder must answer only its own buttons and attach into its own
+    # composer: the toggle used to be a window-wide event every recorder
+    # answered, so one click recorded in both threads.
+    setup %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      set_attachments(true)
+      on_exit(fn -> set_attachments(false) end)
+
+      {:ok, view, _html} =
+        live(
+          put_test_scope(conn, scope),
+          host_path(resource_uuid) <> "?second_thread=#{Ecto.UUID.generate()}"
+        )
+
+      for thread <- ["#first-thread", "#second-thread"] do
+        view |> element("#{thread} button[phx-click='open_composer']") |> render_click()
+      end
+
+      %{view: view}
+    end
+
+    @recorder ~s([phx-hook="PhoenixKitCommentsAudioRecorder"])
+
+    defp recorder_id(view, thread) do
+      html = view |> element("#{thread} #{@recorder}") |> render()
+      [_, id] = Regex.run(~r/id="([^"]+)"/, html)
+      id
+    end
+
+    defp record_buttons(view, thread, recorder_id) do
+      has_element?(view, "#{thread} button[phx-click*='\"to\":\"##{recorder_id}\"']")
+    end
+
+    test "each thread's record button targets its own recorder, nothing page-wide",
+         %{view: view} do
+      first = recorder_id(view, "#first-thread")
+      second = recorder_id(view, "#second-thread")
+      assert first != second
+
+      # The Record menu item lives in the attach menu.
+      for thread <- ["#first-thread", "#second-thread"] do
+        view |> element("#{thread} button[phx-click='toggle_attach_menu']") |> render_click()
+      end
+
+      assert record_buttons(view, "#first-thread", first)
+      refute record_buttons(view, "#first-thread", second)
+      assert record_buttons(view, "#second-thread", second)
+      refute record_buttons(view, "#second-thread", first)
+      refute render(view) =~ "window.dispatchEvent"
+    end
+
+    test "a recording started in one thread shows only in that thread", %{view: view} do
+      view |> element("#first-thread #{@recorder}") |> render_hook("audio_recording_started", %{})
+
+      assert has_element?(view, "#first-thread button", "Stop recording")
+      refute has_element?(view, "#second-thread button", "Stop recording")
+
+      # And the stop button dispatches to that same recorder.
+      first = recorder_id(view, "#first-thread")
+      assert record_buttons(view, "#first-thread", first)
+    end
+
+    test "each recorder sits in the form that holds its own file input", %{view: view} do
+      for thread <- ["#first-thread", "#second-thread"] do
+        assert has_element?(
+                 view,
+                 "#{thread} form[phx-submit='add_comment'] #{@recorder}[data-upload-name='attachment']"
+               )
+
+        assert has_element?(
+                 view,
+                 "#{thread} form[phx-submit='add_comment'] input[type='file'][name='attachment']"
+               )
+      end
+    end
+  end
+
   describe "the giphy picker" do
     test "a logged-out viewer cannot spend the host's Giphy quota" do
       assert {:noreply, socket} =

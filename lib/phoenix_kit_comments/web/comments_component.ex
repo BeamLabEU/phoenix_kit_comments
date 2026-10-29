@@ -65,6 +65,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   import PhoenixKitWeb.Components.Core.Icon
   import PhoenixKitComments.Web.Markdown, only: [comment_markdown: 1, comment_markdown_styles: 1]
 
+  alias Phoenix.LiveView.JS
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Users.Auth.Scope
@@ -1709,7 +1710,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                   name="label"
                   value={@editing_decoration_value}
                   maxlength="200"
-                  phx-mounted={Phoenix.LiveView.JS.focus()}
+                  phx-mounted={JS.focus()}
                   phx-keydown="cancel_decoration_edit"
                   phx-key="escape"
                   phx-target={@myself}
@@ -2270,6 +2271,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     """
   end
 
+  # The recorder hook of THIS composer, and the click that starts or stops
+  # it. Dispatched on the recorder element, not on window: every recorder
+  # on the page answered a window-wide event, so with two open threads one
+  # click recorded in both. Client-side, so the click itself starts
+  # `getUserMedia` (a browser may want the user's gesture for it).
+  defp recorder_id(ctx, suffix), do: "audio-recorder-#{ctx.myself}-#{suffix}"
+
+  defp toggle_recording(ctx, suffix) do
+    JS.dispatch("phx-kit-comments-audio-toggle", to: "#" <> recorder_id(ctx, suffix))
+  end
+
   # Shared comment-form body used by both the top/bottom composer and the
   # inline reply form. Everything inside `<.form>` (editor, char counter,
   # attach menu, GIF picker, audio recorder, staged-media list, submit
@@ -2380,7 +2392,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
            state and MediaRecorder lifecycle survive. --%>
       <%= if @ctx.attachments_enabled? do %>
         <div
-          id={"audio-recorder-#{@ctx.myself}-#{@suffix}"}
+          id={recorder_id(@ctx, @suffix)}
           phx-hook="PhoenixKitCommentsAudioRecorder"
           phx-target={@ctx.myself}
           data-upload-name="attachment"
@@ -2458,7 +2470,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             <% @ctx.recording_audio? -> %>
               <button
                 type="button"
-                onclick="window.dispatchEvent(new CustomEvent('phx-kit-comments-audio-toggle'))"
+                phx-click={toggle_recording(@ctx, @suffix)}
                 aria-label={gettext("Stop recording")}
                 class="btn btn-sm btn-error gap-1"
               >
@@ -2531,9 +2543,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                         <button
                           type="button"
                           role="menuitem"
-                          onclick="window.dispatchEvent(new CustomEvent('phx-kit-comments-audio-toggle'))"
-                          phx-click="close_attach_menu"
-                          phx-target={@ctx.myself}
+                          phx-click={
+                            toggle_recording(@ctx, @suffix)
+                            |> JS.push("close_attach_menu", target: @ctx.myself)
+                          }
                           class="flex items-center gap-2"
                         >
                           <.icon name="hero-microphone" class="w-4 h-4" /> {gettext("Record")}
