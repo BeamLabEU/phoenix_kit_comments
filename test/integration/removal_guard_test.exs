@@ -6,6 +6,29 @@ defmodule PhoenixKitComments.Integration.RemovalGuardTest do
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKitComments.{CommentMedia, RemovalGuard}
 
+  defmodule ScopedHandler do
+    @moduledoc false
+    def moderatable_resources(_type, %{user: %{uuid: uuid}}), do: [uuid]
+    def moderatable_resources(_type, _scope), do: []
+  end
+
+  setup do
+    previous = Application.get_env(:phoenix_kit, :comment_resource_handlers)
+
+    Application.put_env(:phoenix_kit, :comment_resource_handlers, %{
+      "managed" => ScopedHandler
+    })
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:phoenix_kit, :comment_resource_handlers, previous),
+        else: Application.delete_env(:phoenix_kit, :comment_resource_handlers)
+    end)
+
+    PhoenixKit.Settings.update_boolean_setting_with_module("comments_enabled", true, "comments")
+    :ok
+  end
+
   defp file_fixture!(user) do
     n = System.unique_integer([:positive])
     checksum = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
@@ -26,9 +49,9 @@ defmodule PhoenixKitComments.Integration.RemovalGuardTest do
     |> Repo.insert!()
   end
 
-  defp attach!(user, file, resource_type \\ "post") do
+  defp attach!(user, file, resource_type \\ "post", resource_uuid \\ Ecto.UUID.generate()) do
     {:ok, comment} =
-      PhoenixKitComments.create_comment(resource_type, Ecto.UUID.generate(), user.uuid, %{
+      PhoenixKitComments.create_comment(resource_type, resource_uuid, user.uuid, %{
         content: "see attached"
       })
 
@@ -39,9 +62,9 @@ defmodule PhoenixKitComments.Integration.RemovalGuardTest do
     comment
   end
 
-  defp ctx(keys) do
+  defp ctx(keys, user \\ nil) do
     scope = %Scope{
-      user: nil,
+      user: user,
       authenticated?: true,
       cached_permissions: MapSet.new(keys)
     }
@@ -67,7 +90,10 @@ defmodule PhoenixKitComments.Integration.RemovalGuardTest do
     attach!(user, used, "product")
 
     assert [%{file_uuid: uuid, label: label, detail: detail, href: nil}] =
-             RemovalGuard.places([used.uuid, loose.uuid], ctx(["comments"]))
+             RemovalGuard.places(
+               [used.uuid, loose.uuid],
+               ctx(["comments", "comments.moderate_all"])
+             )
 
     assert uuid == used.uuid
     assert label =~ "comment"
@@ -112,6 +138,56 @@ defmodule PhoenixKitComments.Integration.RemovalGuardTest do
              RemovalGuard.places([file.uuid], ctx(["media"]))
 
     assert [%{label: nil}] = RemovalGuard.places([file.uuid], %{scope: nil})
+  end
+
+  test "the base comments key does not disclose an unmanaged resource type" do
+    user = user_fixture()
+    file = file_fixture!(user)
+    attach!(user, file, "secret_thing")
+
+    assert [%{label: nil, detail: nil, href: nil}] =
+             RemovalGuard.places([file.uuid], ctx(["comments"], user))
+  end
+
+  test "a scoped moderator sees a managed use even when the oldest use is hidden" do
+    user = user_fixture()
+    file = file_fixture!(user)
+    attach!(user, file, "secret_thing")
+    attach!(user, file, "managed", user.uuid)
+
+    assert [%{label: label, detail: detail}] =
+             RemovalGuard.places([file.uuid], ctx(["comments"], user))
+
+    assert label =~ "comment"
+    assert detail =~ "managed"
+    refute detail =~ "secret"
+  end
+
+  test "the handler's current grant is checked on every call" do
+    user = user_fixture()
+    file = file_fixture!(user)
+    attach!(user, file, "managed", user.uuid)
+    context = ctx(["comments"], user)
+
+    assert [%{label: label}] = RemovalGuard.places([file.uuid], context)
+    assert is_binary(label)
+
+    Application.put_env(:phoenix_kit, :comment_resource_handlers, %{})
+    assert [%{label: nil, detail: nil, href: nil}] = RemovalGuard.places([file.uuid], context)
+  end
+
+  test "Owner and wildcard scopes retain full visibility" do
+    user = user_fixture()
+    file = file_fixture!(user)
+    attach!(user, file)
+
+    for scope <- [
+          PhoenixKitComments.LiveCase.fake_scope(user: user),
+          %Scope{authenticated?: true, cached_permissions: MapSet.new(["*"])}
+        ] do
+      assert [%{label: label}] = RemovalGuard.places([file.uuid], %{scope: scope})
+      assert is_binary(label)
+    end
   end
 
   test "it satisfies core's behaviour without release" do

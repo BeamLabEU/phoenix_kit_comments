@@ -157,6 +157,10 @@ config :phoenix_kit, :file_removal_guard, PhoenixKitComments.RemovalGuard
 and the media browser refuses to trash or delete a file a comment shows, and
 says so. Core takes one guard module, so a host with its own calls
 `PhoenixKitComments.RemovalGuard.places/2` from it and appends the result.
+The dialog names only resources the viewer may moderate; other uses still block
+removal with a private label. This integration requires a core version providing
+`PhoenixKit.Modules.Storage.RemovalGuard`. Older cores can compile the comments
+module and hosts can call `places/2` directly.
 
 ### Live updates across sessions
 
@@ -366,6 +370,7 @@ lib/
 ```bash
 mix deps.get       # Install dependencies
 mix test           # Run tests
+node --test test/js/comments_hooks_test.cjs # Exercise the shipped browser hooks (Node 20+)
 mix format         # Format code
 mix credo          # Static analysis
 mix dialyzer       # Type checking

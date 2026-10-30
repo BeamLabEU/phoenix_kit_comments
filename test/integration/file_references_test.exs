@@ -80,6 +80,34 @@ defmodule PhoenixKitComments.Integration.FileReferencesTest do
     refute Storage.file_orphaned?(file.uuid)
   end
 
+  test "a prefixed media table protects its files without changing search_path" do
+    schema = "comments_refs_#{System.unique_integer([:positive])}"
+    attached = Ecto.UUID.generate()
+    loose = Ecto.UUID.generate()
+
+    # Transactional DDL is rolled back by the sandbox. Public media contains
+    # neither uuid, so an unqualified fragment would report both as orphans.
+    Repo.query!(~s(CREATE SCHEMA "#{schema}"))
+    Repo.query!(~s|CREATE TABLE "#{schema}".phoenix_kit_files (uuid uuid PRIMARY KEY)|)
+
+    Repo.query!(~s|CREATE TABLE "#{schema}".phoenix_kit_comment_media (file_uuid uuid NOT NULL)|)
+
+    for uuid <- [attached, loose] do
+      Repo.query!(~s|INSERT INTO "#{schema}".phoenix_kit_files VALUES ($1)|, [
+        Ecto.UUID.dump!(uuid)
+      ])
+    end
+
+    Repo.query!(~s|INSERT INTO "#{schema}".phoenix_kit_comment_media VALUES ($1)|, [
+      Ecto.UUID.dump!(attached)
+    ])
+
+    [{_, condition}] = PhoenixKitComments.file_references()
+    query = from(f in Storage.File, where: ^condition, select: f.uuid)
+
+    assert Repo.all(query, prefix: schema) == [loose]
+  end
+
   test "without the declaration core takes the attachment for an orphan" do
     # What a core 3.0 site does today with a module version that predates
     # the callback: proves the test above is not passing for another reason.

@@ -21,37 +21,54 @@ defmodule PhoenixKitComments.RemovalGuard do
   picture from someone's comment, which is not a decision for a media-page
   button. Delete the comment, or detach the attachment in the comment.
 
-  The label is `nil` — "not available to you" in the browser — for a person
-  without access to the comments module, so the dialog never tells them where
-  a file they cannot see is used.
+  The label is `nil` — "not available to you" in the browser — unless the
+  viewer may moderate comments on the resource. The base comments key alone
+  does not reveal uses outside the handler's moderation scope.
+
+  Older core versions can compile this module and hosts can call `places/2`
+  directly; the media-browser integration requires a core with removal guards.
   """
-  @behaviour PhoenixKit.Modules.Storage.RemovalGuard
+  # Removal guards arrived after the oldest core this package supports.
+  if Code.ensure_loaded?(PhoenixKit.Modules.Storage.RemovalGuard) do
+    @behaviour PhoenixKit.Modules.Storage.RemovalGuard
+  end
 
   import Ecto.Query, only: [from: 2]
 
-  alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKitComments.{Comment, CommentMedia}
 
   use Gettext, backend: PhoenixKitComments.Gettext
 
-  @impl true
+  if Code.ensure_loaded?(PhoenixKit.Modules.Storage.RemovalGuard) do
+    @impl true
+  end
+
   def places([], _ctx), do: []
 
   def places(file_uuids, ctx) when is_list(file_uuids) do
-    visible? = visible?(ctx)
+    rule = moderation_rule(ctx)
 
-    # One place per file: a file shown by several comments is listed once, at
-    # the oldest, so the dialog stays as long as the selection.
+    # One place per file, preferring its oldest visible use. Hidden uses
+    # still block removal, but never reveal their resource type.
     from(m in CommentMedia,
       join: c in Comment,
       on: c.uuid == m.comment_uuid,
       where: m.file_uuid in ^file_uuids,
       order_by: [asc: c.inserted_at, asc: c.uuid],
-      select: {m.file_uuid, c.resource_type}
+      select: {m.file_uuid, c.resource_type, c.resource_uuid}
     )
     |> PhoenixKit.RepoHelper.repo().all()
-    |> Enum.uniq_by(&elem(&1, 0))
-    |> Enum.map(fn {file_uuid, resource_type} -> place(file_uuid, resource_type, visible?) end)
+    |> Enum.group_by(&elem(&1, 0))
+    |> Enum.map(&visible_place(&1, rule))
+  end
+
+  defp visible_place({file_uuid, uses}, rule) do
+    case Enum.find(uses, fn {_, type, uuid} ->
+           PhoenixKitComments.moderation_allows?(rule, type, uuid)
+         end) do
+      nil -> place(file_uuid, nil, false)
+      {_, type, _} -> place(file_uuid, type, true)
+    end
   end
 
   defp place(file_uuid, _resource_type, false),
@@ -66,8 +83,7 @@ defmodule PhoenixKitComments.RemovalGuard do
     }
   end
 
-  defp visible?(%{scope: %Scope{} = scope}),
-    do: Scope.has_module_access?(scope, PhoenixKitComments.module_key())
+  defp moderation_rule(%{scope: scope}), do: PhoenixKitComments.moderation_scope(scope)
 
-  defp visible?(_ctx), do: false
+  defp moderation_rule(_ctx), do: nil
 end

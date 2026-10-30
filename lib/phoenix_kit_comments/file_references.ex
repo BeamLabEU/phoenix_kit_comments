@@ -18,7 +18,9 @@ defmodule PhoenixKitComments.FileReferences do
   is missing.
   """
 
-  import Ecto.Query, only: [dynamic: 2]
+  import Ecto.Query, only: [dynamic: 2, from: 2]
+
+  alias PhoenixKitComments.CommentMedia
 
   @spec pairs() :: [{String.t(), Ecto.Query.dynamic_expr()}]
   def pairs do
@@ -29,7 +31,8 @@ defmodule PhoenixKitComments.FileReferences do
        dynamic(
          [f],
          fragment(
-           "NOT EXISTS (SELECT 1 FROM phoenix_kit_comment_media cm WHERE cm.file_uuid = ?)",
+           "NOT EXISTS (SELECT 1 FROM ? AS cm WHERE cm.file_uuid = ?)",
+           subquery(from(m in CommentMedia, select: %{file_uuid: m.file_uuid})),
            f.uuid
          )
        )}

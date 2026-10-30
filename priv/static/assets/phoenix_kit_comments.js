@@ -20,6 +20,8 @@
     if (window.PhoenixKitCommentsHooks.PhoenixKitCommentsAudioRecorder) return;
     window.PhoenixKitCommentsHooks.PhoenixKitCommentsAudioRecorder = {
       mounted() {
+        this._destroyed = false;
+        this.starting = false;
         this.recording = false;
         this.recorder = null;
         this.stream = null;
@@ -35,36 +37,50 @@
         this.el.addEventListener("phx-kit-comments-audio-toggle", this._onToggle);
       },
       destroyed() {
+        this._destroyed = true;
         this.el.removeEventListener("phx-kit-comments-audio-toggle", this._onToggle);
         this.cleanup();
       },
       async start() {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        if (this._destroyed || this.starting || this.recording) return;
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === "undefined") {
           this.pushError("unsupported");
           return;
         }
+        this.starting = true;
+        let stream;
         try {
-          this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         } catch (err) {
-          this.pushError("denied");
+          if (!this._destroyed) this.pushError("denied");
+          return;
+        } finally {
+          this.starting = false;
+        }
+        // Permission may resolve after cancel, navigation, or moving to a
+        // reply destroyed this hook. A late stream still owns a microphone.
+        if (this._destroyed) {
+          stream.getTracks().forEach((t) => t.stop());
           return;
         }
-        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-          ? "audio/webm;codecs=opus"
-          : "audio/webm";
+        this.stream = stream;
         try {
-          this.recorder = new MediaRecorder(this.stream, { mimeType });
+          const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+            ? "audio/webm;codecs=opus"
+            : "audio/webm";
+          const recorder = this.recorder = new MediaRecorder(this.stream, { mimeType });
+          this.chunks = [];
+          recorder.addEventListener("dataavailable", (ev) => {
+            if (this.recorder === recorder && ev.data && ev.data.size > 0) this.chunks.push(ev.data);
+          });
+          recorder.addEventListener("stop", () => {
+            if (this.recorder === recorder) this.finalize(mimeType);
+          });
+          recorder.start();
         } catch (err) {
-          this.cleanup();
           this.pushError("start_failed");
           return;
         }
-        this.chunks = [];
-        this.recorder.addEventListener("dataavailable", (ev) => {
-          if (ev.data && ev.data.size > 0) this.chunks.push(ev.data);
-        });
-        this.recorder.addEventListener("stop", () => this.finalize(mimeType));
-        this.recorder.start();
         this.recording = true;
         this.pushEventTo(this.el, "audio_recording_started", {});
       },
@@ -102,11 +118,13 @@
         }
       },
       cleanup() {
+        const recorder = this.recorder;
+        this.recorder = null;
+        if (recorder && recorder.state !== "inactive") recorder.stop();
         if (this.stream) {
           this.stream.getTracks().forEach((t) => t.stop());
           this.stream = null;
         }
-        this.recorder = null;
         this.chunks = [];
       },
       // A reason CODE, never prose. The server maps it to a translated
@@ -203,6 +221,11 @@
         const hint = this.el.querySelector("[data-drop-hint]");
         if (hint) hint.classList.toggle("hidden", !on);
         this.el.classList.toggle("pk-comments-dropping", on);
+      },
+      updated() {
+        // LiveView patches restore the server's `hidden` class while a
+        // file is over the editor (for example after an upload update).
+        this.setDragging(this._depth > 0);
       },
       mounted() {
         this._depth = 0;

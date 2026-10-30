@@ -7,7 +7,11 @@ defmodule PhoenixKitComments.FileReferencesTest do
   # orphan finder itself) is `PhoenixKitComments.Integration.FileReferencesTest`.
   use ExUnit.Case, async: true
 
+  import Ecto.Query
+
+  alias Ecto.Adapters.SQL
   alias PhoenixKit.Modules.Storage.File, as: StorageFile
+  alias PhoenixKitComments.Test.Repo
 
   defp schemas do
     {:ok, modules} = :application.get_key(:phoenix_kit_comments, :modules)
@@ -55,5 +59,16 @@ defmodule PhoenixKitComments.FileReferencesTest do
   test "core accepts the declaration" do
     assert {:ok, pairs} = PhoenixKit.ModuleRegistry.file_reference_pairs(PhoenixKitComments)
     assert pairs != []
+  end
+
+  test "the media lookup inherits the query's schema prefix" do
+    [{_, condition}] = PhoenixKitComments.file_references()
+
+    query =
+      from(f in StorageFile, where: ^condition)
+      |> put_query_prefix("comments_tenant")
+
+    {sql, _params} = SQL.to_sql(:all, Repo, query)
+    assert sql =~ ~s("comments_tenant"."phoenix_kit_comment_media")
   end
 end
