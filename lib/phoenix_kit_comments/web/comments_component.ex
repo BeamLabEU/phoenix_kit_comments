@@ -2394,7 +2394,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         data-upload-name="attachment"
         data-attachments={to_string(@ctx.attachments_enabled?)}
         data-refuse="attachments_off"
+        class="relative"
       >
+        <%!-- Shown by the hook while a file is dragged over the composer. --%>
+        <div
+          data-drop-hint
+          class="hidden pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-base-100/80 text-sm font-medium text-primary"
+        >
+          {if @ctx.attachments_enabled?,
+            do: gettext("Drop files to attach"),
+            else: gettext("Attachments are disabled")}
+        </div>
       <%!-- Comment editor. When the optional :leaf dep is present,    --%>
       <%!-- render the rich-text Leaf editor; the host LV must forward --%>
       <%!-- {:leaf_changed, ...} via forward_leaf_event/2 so the       --%>

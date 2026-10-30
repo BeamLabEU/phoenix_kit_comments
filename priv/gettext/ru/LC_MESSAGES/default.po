@@ -1231,3 +1231,18 @@ msgstr "Не удалось прикрепить вставленный файл
 #, elixir-autogen, elixir-format
 msgid "Dismiss"
 msgstr "Закрыть"
+
+#: lib/phoenix_kit_comments/web/comments_component.ex
+#, elixir-autogen, elixir-format
+msgid "Drop files to attach"
+msgstr "Перетащите файлы сюда, чтобы прикрепить"
+
+#: lib/phoenix_kit_comments/removal_guard.ex
+#, elixir-autogen, elixir-format
+msgid "Attached to a comment"
+msgstr "Прикреплён к комментарию"
+
+#: lib/phoenix_kit_comments/removal_guard.ex
+#, elixir-autogen, elixir-format
+msgid "On: %{type}"
+msgstr "К: %{type}"

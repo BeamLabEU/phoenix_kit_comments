@@ -313,6 +313,22 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       assert has_element?(view, @composer_wrapper)
     end
 
+    # The drop hint the hook shows while a file is dragged over the composer
+    # says what a drop will do, so it must agree with the setting too.
+    for {on?, text} <- [{true, "Drop files to attach"}, {false, "Attachments are disabled"}] do
+      test "with attachments #{if on?, do: "on", else: "off"} the drop hint reads #{inspect(text)}",
+           %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+        set_attachments(unquote(on?))
+        view = open_composer(conn, scope, resource_uuid)
+
+        assert view
+               |> element(
+                 ~s(form[phx-submit='add_comment'] [phx-hook="PhoenixKitCommentsPasteFiles"] [data-drop-hint].hidden)
+               )
+               |> render() =~ unquote(text)
+      end
+    end
+
     # The hook's whole decision is `data-attachments`: "true" uploads into
     # the form's file input, anything else refuses. Both must agree with the
     # setting, and the input must exist exactly when it says "true".

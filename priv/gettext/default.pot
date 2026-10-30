@@ -1227,3 +1227,18 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "Dismiss"
 msgstr ""
+
+#: lib/phoenix_kit_comments/web/comments_component.ex
+#, elixir-autogen, elixir-format
+msgid "Drop files to attach"
+msgstr ""
+
+#: lib/phoenix_kit_comments/removal_guard.ex
+#, elixir-autogen, elixir-format
+msgid "Attached to a comment"
+msgstr ""
+
+#: lib/phoenix_kit_comments/removal_guard.ex
+#, elixir-autogen, elixir-format
+msgid "On: %{type}"
+msgstr ""
