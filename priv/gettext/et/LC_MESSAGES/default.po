@@ -1227,3 +1227,18 @@ msgstr "Kleebitud faili ei õnnestunud lisada. Proovi manuse nuppu."
 #, elixir-autogen, elixir-format
 msgid "Dismiss"
 msgstr "Sulge"
+
+#: lib/phoenix_kit_comments/web/comments_component.ex
+#, elixir-autogen, elixir-format
+msgid "Drop files to attach"
+msgstr "Lohista failid siia, et need lisada"
+
+#: lib/phoenix_kit_comments/removal_guard.ex
+#, elixir-autogen, elixir-format
+msgid "Attached to a comment"
+msgstr "Lisatud kommentaarile"
+
+#: lib/phoenix_kit_comments/removal_guard.ex
+#, elixir-autogen, elixir-format
+msgid "On: %{type}"
+msgstr "Kuhu: %{type}"

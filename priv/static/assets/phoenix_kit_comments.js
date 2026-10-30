@@ -164,44 +164,98 @@
       return files;
     }
 
+    function hasFiles(dt) {
+      return !!dt && Array.prototype.indexOf.call(dt.types || [], "Files") !== -1;
+    }
+
     window.PhoenixKitCommentsHooks.PhoenixKitCommentsPasteFiles = {
+      // Puts `files` into THIS composer's upload; says so when it cannot.
+      // Shared by paste and drop, so both refuse and fail the same way.
+      attach(files) {
+        // Where a file cannot be attached (attachments off, an edit),
+        // say so — never let the editor bake it into the text instead.
+        if (this.el.dataset.attachments !== "true") {
+          this.pushEventTo(this.el, "paste_refused", { reason: this.el.dataset.refuse || "attachments_off" });
+          return;
+        }
+        // Upload into THIS composer's file input. `this.upload(name)`
+        // searches the whole LiveView for an input of that name, so on a
+        // host page with two open comment threads it found two, logged
+        // "duplicate live file inputs" and dropped the paste in silence —
+        // and it only logs, never throws, so the catch below never saw it.
+        const name = this.el.dataset.uploadName || "attachment";
+        const form = this.el.closest("form");
+        const input = form && Array.prototype.find.call(
+          form.querySelectorAll('input[type="file"][data-phx-upload-ref]'),
+          (el) => el.name === name
+        );
+        if (!input) {
+          this.pushEventTo(this.el, "paste_refused", { reason: "attach_failed" });
+          return;
+        }
+        try {
+          this.uploadTo(form, name, files);
+        } catch (err) {
+          this.pushEventTo(this.el, "paste_refused", { reason: "attach_failed" });
+        }
+      },
+      setDragging(on) {
+        const hint = this.el.querySelector("[data-drop-hint]");
+        if (hint) hint.classList.toggle("hidden", !on);
+        this.el.classList.toggle("pk-comments-dropping", on);
+      },
       mounted() {
+        this._depth = 0;
         this._onPaste = (e) => {
           const files = pastedFiles(e.clipboardData || window.clipboardData);
           if (files.length === 0) return;
           e.preventDefault();
           e.stopPropagation();
-          // Where a file cannot be attached (attachments off, an edit),
-          // say so — never let the editor bake it into the text instead.
-          if (this.el.dataset.attachments !== "true") {
-            this.pushEventTo(this.el, "paste_refused", { reason: this.el.dataset.refuse || "attachments_off" });
-            return;
-          }
-          // Upload into THIS composer's file input. `this.upload(name)`
-          // searches the whole LiveView for an input of that name, so on a
-          // host page with two open comment threads it found two, logged
-          // "duplicate live file inputs" and dropped the paste in silence —
-          // and it only logs, never throws, so the catch below never saw it.
-          const name = this.el.dataset.uploadName || "attachment";
-          const form = this.el.closest("form");
-          const input = form && Array.prototype.find.call(
-            form.querySelectorAll('input[type="file"][data-phx-upload-ref]'),
-            (el) => el.name === name
-          );
-          if (!input) {
-            this.pushEventTo(this.el, "paste_refused", { reason: "attach_failed" });
-            return;
-          }
-          try {
-            this.uploadTo(form, name, files);
-          } catch (err) {
-            this.pushEventTo(this.el, "paste_refused", { reason: "attach_failed" });
-          }
+          this.attach(files);
+        };
+        // A file dragged in from the desktop. The editor inside does not
+        // take it, so without this the browser opens the file in the tab
+        // and the page is gone. Claimed in the capture phase, before the
+        // editor sees it; only drags that carry files, so text and the
+        // editor's own drags are left alone.
+        this._onDragEnter = (e) => {
+          if (!hasFiles(e.dataTransfer)) return;
+          e.preventDefault();
+          this._depth += 1;
+          this.setDragging(true);
+        };
+        this._onDragOver = (e) => {
+          if (!hasFiles(e.dataTransfer)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+        };
+        this._onDragLeave = (e) => {
+          if (!hasFiles(e.dataTransfer)) return;
+          this._depth = Math.max(0, this._depth - 1);
+          if (this._depth === 0) this.setDragging(false);
+        };
+        this._onDrop = (e) => {
+          if (!hasFiles(e.dataTransfer)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          this._depth = 0;
+          this.setDragging(false);
+          const files = Array.prototype.map.call(e.dataTransfer.files || [], (f, i) => named(f, i));
+          if (files.length > 0) this.attach(files);
         };
         this.el.addEventListener("paste", this._onPaste, true);
+        this.el.addEventListener("dragenter", this._onDragEnter, true);
+        this.el.addEventListener("dragover", this._onDragOver, true);
+        this.el.addEventListener("dragleave", this._onDragLeave, true);
+        this.el.addEventListener("drop", this._onDrop, true);
       },
       destroyed() {
         this.el.removeEventListener("paste", this._onPaste, true);
+        this.el.removeEventListener("dragenter", this._onDragEnter, true);
+        this.el.removeEventListener("dragover", this._onDragOver, true);
+        this.el.removeEventListener("dragleave", this._onDragLeave, true);
+        this.el.removeEventListener("drop", this._onDrop, true);
       }
     };
   })();

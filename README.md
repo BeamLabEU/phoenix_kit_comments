@@ -139,6 +139,25 @@ form. This runs in the `PhoenixKitCommentsPasteFiles` hook, which core adds to
 the host's `LiveSocket` from the module's `js_sources/0` like the module's other
 hooks; no host setup.
 
+### Dropped files
+
+A file dragged from the desktop onto the comment box is attached the same way as
+a pasted one, with the same limits and refusals; the box shows a dashed "Drop
+files to attach" overlay while the file is over it. (Before, the browser could
+open the file in the tab instead.) Same hook, no host setup.
+
+### Keeping attachments out of the media trash
+
+An attached file is in use, but the media page cannot tell. Set
+
+```elixir
+config :phoenix_kit, :file_removal_guard, PhoenixKitComments.RemovalGuard
+```
+
+and the media browser refuses to trash or delete a file a comment shows, and
+says so. Core takes one guard module, so a host with its own calls
+`PhoenixKitComments.RemovalGuard.places/2` from it and appends the result.
+
 ### Live updates across sessions
 
 `CommentsComponent` keeps the **posting** user's own view fresh automatically.
