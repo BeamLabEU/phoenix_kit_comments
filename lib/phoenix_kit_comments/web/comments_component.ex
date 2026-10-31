@@ -63,6 +63,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   use Gettext, backend: PhoenixKitComments.Gettext
 
   import PhoenixKitWeb.Components.Core.Icon
+  import PhoenixKitWeb.Components.Core.TimeDisplay, only: [time_ago: 1]
+  import PhoenixKitWeb.Components.Core.UserInfo, only: [user_avatar: 1]
   import PhoenixKitComments.Web.Markdown, only: [comment_markdown: 1, comment_markdown_styles: 1]
 
   alias Phoenix.LiveView.JS
@@ -1640,26 +1642,68 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       data-comment-uuid={@comment.uuid}
       data-annotation-uuid={@annotation_uuid}
       class={[
-        if(@comment.depth > 0, do: "ml-2 sm:ml-4 border-l-2 border-base-300", else: "")
+        if(@comment.depth > 0,
+          do: "ml-1 mt-1 border-l-2 border-base-200 pl-3",
+          else: "py-2"
+        )
       ]}
     >
-      <div class="group/comment bg-base-200 rounded-lg p-3 sm:p-4">
+      <div class="group/comment min-w-0">
         <%= if @comment.status == "deleted" do %>
-          <div class="text-sm text-base-content/50 italic">{gettext("[removed]")}</div>
+          <div class="text-sm text-base-content/50 italic py-1">{gettext("[removed]")}</div>
         <% else %>
-        <%!-- Comment Header — avatar + email only. Date moves below the    --%>
-        <%!-- body and actions sit in a footer row so a narrow embed        --%>
-        <%!-- container (sidebar, info panel) can't squeeze the email into  --%>
-        <%!-- "te…" with the action buttons hogging the row.                 --%>
-        <div class="flex items-center gap-2 text-sm mb-2 min-w-0">
-          <.icon name="hero-user-circle" class="w-5 h-5 text-base-content/60 shrink-0" />
-          <span class="font-semibold truncate min-w-0">
+        <%!-- One line (the compact look, 2026-10-31): a small avatar, the  --%>
+        <%!-- name and the time, and the actions at the right — quiet until --%>
+        <%!-- the row is hovered or focused, always shown on touch. The     --%>
+        <%!-- name truncates before the actions are squeezed out.           --%>
+        <div class="flex items-center gap-2 text-sm min-w-0">
+          <.comment_avatar comment={@comment} />
+          <span class="font-medium truncate min-w-0">
             <%= if @comment.user do %>
               {author_name(@comment)}
             <% else %>
               {gettext("Unknown")}
             <% end %>
           </span>
+          <.time_ago
+            datetime={@comment.inserted_at}
+            class="text-xs text-base-content/50 whitespace-nowrap shrink-0"
+          />
+          <div class="ml-auto flex items-center gap-0.5 shrink-0">
+            <button
+              :if={@ctx.can_post?}
+              type="button"
+              phx-click="reply_to"
+              phx-value-id={@comment.uuid}
+              phx-target={@myself}
+              title={gettext("Reply")}
+              aria-label={gettext("Reply")}
+              class="btn btn-ghost btn-xs btn-square opacity-0 group-hover/comment:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
+            >
+              <.icon name="hero-arrow-uturn-left" class="w-3.5 h-3.5" />
+            </button>
+            <%= if @show_likes do %>
+              <.reaction_button
+                event="toggle_like"
+                icon="hero-hand-thumb-up"
+                label={gettext("Like")}
+                count={@comment.like_count || 0}
+                active={reaction_active?(@liked_comment_uuids, @comment.uuid)}
+                comment_uuid={@comment.uuid}
+                current_user={@current_user}
+                myself={@myself}
+              />
+              <.reaction_button
+                event="toggle_dislike"
+                icon="hero-hand-thumb-down"
+                label={gettext("Dislike")}
+                count={@comment.dislike_count || 0}
+                active={reaction_active?(@disliked_comment_uuids, @comment.uuid)}
+                comment_uuid={@comment.uuid}
+                current_user={@current_user}
+                myself={@myself}
+              />
+            <% end %>
           <%!-- "…" actions menu — Edit / Delete live here, top right,     --%>
           <%!-- revealed on hover (focus-within keeps an OPEN menu and     --%>
           <%!-- keyboard users visible) so a card at rest is just          --%>
@@ -1672,11 +1716,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             <%!-- Delete were unreachable on a phone or tablet — the control --%>
             <%!-- rendered, at zero opacity, and nothing the user could do   --%>
             <%!-- revealed it. Coarse pointers get the row at rest.          --%>
-            <div class="dropdown dropdown-end ml-auto shrink-0 opacity-0 group-hover/comment:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
+            <div class="dropdown dropdown-end shrink-0 opacity-0 group-hover/comment:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
               <div
                 tabindex="0"
                 role="button"
-                class="btn btn-ghost btn-xs"
+                class="btn btn-ghost btn-xs btn-square"
                 aria-label={gettext("Comment actions")}
               >
                 <.icon name="hero-ellipsis-horizontal" class="w-4 h-4" />
@@ -1717,8 +1761,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               </ul>
             </div>
           <% end %>
+          </div>
         </div>
 
+        <%!-- Everything under the name line sits indented to the name, past
+             the avatar. --%>
+        <div class="pl-8 min-w-0">
         <%!-- Decoration label (when this comment matches an entry in   --%>
         <%!-- :comment_decorations). Sits BETWEEN the user-info         --%>
         <%!-- header and the comment body so the hierarchy reads:       --%>
@@ -1732,7 +1780,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         <%!-- Suppressed during comment-edit (@editing_uuid matches) —  --%>
         <%!-- the unified edit form below carries its own label input.  --%>
         <%= if @decoration && @editing_uuid != @comment.uuid do %>
-          <div class="mt-2 mb-2">
+          <div class="mt-1 mb-1">
             <%= if @decoration_editing? do %>
               <.form
                 for={%{}}
@@ -1804,7 +1852,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             id={"comment-edit-form-#{@myself}-#{@comment.uuid}"}
             phx-submit="save_edit"
             phx-target={@myself}
-            class="space-y-2"
+            class="mt-1 space-y-2"
           >
             <%!-- When this comment has a decoration with an `on_save`    --%>
             <%!-- action, the edit form opens label + body together.      --%>
@@ -1846,7 +1894,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 mode={@ctx.editor_mode}
                 preset={:advanced}
                 placeholder={gettext("Edit your comment...")}
-                height="200px"
+                height="auto"
+                min_height="4.5rem"
+                max_height="16rem"
                 debounce={400}
                 upload_handler={nil}
                 sync_input_name="content"
@@ -1887,7 +1937,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           <%= if @comment.content && @comment.content != "" do %>
             <% expanded = MapSet.member?(@ctx.expanded_comments, @comment.uuid) %>
             <% is_long = long_comment?(@comment.content) %>
-            <div class="text-base-content break-words pk-comment-md">
+            <div class="text-sm text-base-content break-words pk-comment-md">
               <%!-- Mentions resolve for THIS reader before markdown runs:
                    a link if they may open it, the author's words if it's
                    gone, "no access" if it isn't theirs. --%>
@@ -1903,7 +1953,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               phx-click="toggle_comment_expanded"
               phx-value-uuid={@comment.uuid}
               phx-target={@myself}
-              class="mt-1 inline-flex items-center gap-0.5 text-sm font-semibold text-primary hover:underline"
+              class="mt-0.5 inline-flex items-center gap-0.5 text-xs font-semibold text-primary hover:underline"
             >
               {if expanded, do: gettext("Show less"), else: gettext("Read more")}
               <.icon
@@ -1913,18 +1963,20 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             </button>
           <% end %>
           <%= if gif = comment_gif(@comment) do %>
-            <div class="mt-2">
+            <div class="mt-1">
               <img
                 src={gif["url"]}
                 loading="lazy"
                 alt={gettext("GIF")}
-                class="rounded-lg w-full max-w-xs h-auto"
+                class="rounded-lg max-w-[12rem] w-auto h-auto max-h-40 object-contain"
               />
             </div>
           <% end %>
 
           <%= if comment_media(@comment) != [] do %>
-            <div class="mt-2 space-y-2">
+            <%!-- A strip: pictures as thumbnails keeping their proportions
+                 (open full size on click), other files as chips. --%>
+            <div class="mt-1 flex flex-wrap items-end gap-2">
               <%= for media <- comment_media(@comment) do %>
                 <.render_attachment media={media} />
               <% end %>
@@ -1932,72 +1984,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           <% end %>
         <% end %>
 
-        <%!-- Footer — date on its own row above the action buttons, both --%>
-        <%!-- stacked under the body. Narrow embeds get a stable layout    --%>
-        <%!-- (email never truncates under action chips), wide embeds keep --%>
-        <%!-- the action row from looking centered next to a half-empty    --%>
-        <%!-- email line.                                                   --%>
-        <div class="text-xs text-base-content/60 mt-2">
-          {Calendar.strftime(@comment.inserted_at, "%b %d, %Y %I:%M %p")}
-        </div>
-
-        <%!-- Bottom-right action row: Reply first (hover-revealed —     --%>
-        <%!-- focus-visible keeps keyboard users covered), reactions     --%>
-        <%!-- always visible so counts read at rest without the row      --%>
-        <%!-- feeling crowded.                                            --%>
-        <div class="flex flex-wrap items-center justify-end gap-1.5 mt-2">
-          <button
-            phx-click="reply_to"
-            phx-value-id={@comment.uuid}
-            phx-target={@myself}
-            class="btn btn-ghost btn-xs opacity-0 group-hover/comment:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
-          >
-            <.icon name="hero-arrow-uturn-left" class="w-4 h-4" /> {gettext("Reply")}
-          </button>
-
-          <%= if @show_likes do %>
-            <button
-              type="button"
-              phx-click="toggle_like"
-              phx-value-id={@comment.uuid}
-              phx-target={@myself}
-              disabled={is_nil(@current_user)}
-              title={gettext("Like")}
-              class={[
-                "btn btn-xs",
-                reaction_active?(@liked_comment_uuids, @comment.uuid) && "btn-primary",
-                !reaction_active?(@liked_comment_uuids, @comment.uuid) && "btn-ghost"
-              ]}
-            >
-              <.icon name="hero-hand-thumb-up" class="w-4 h-4" />
-              <span>{@comment.like_count || 0}</span>
-            </button>
-
-            <button
-              type="button"
-              phx-click="toggle_dislike"
-              phx-value-id={@comment.uuid}
-              phx-target={@myself}
-              disabled={is_nil(@current_user)}
-              title={gettext("Dislike")}
-              class={[
-                "btn btn-xs",
-                reaction_active?(@disliked_comment_uuids, @comment.uuid) && "btn-primary",
-                !reaction_active?(@disliked_comment_uuids, @comment.uuid) && "btn-ghost"
-              ]}
-            >
-              <.icon name="hero-hand-thumb-down" class="w-4 h-4" />
-              <span>{@comment.dislike_count || 0}</span>
-            </button>
-          <% end %>
         </div>
         <% end %>
 
-        <.notice ctx={@ctx} place={{:comment, @comment.uuid}} class="mt-2" />
+        <div class="pl-8 min-w-0">
+        <.notice ctx={@ctx} place={{:comment, @comment.uuid}} class="mt-1" />
 
         <%= if @reply_to == @comment.uuid do %>
-          <div class="mt-3 border-l-2 border-primary/40 pl-3">
-            <div class="text-xs font-medium text-base-content/60 mb-2">{gettext("Replying here")}</div>
+          <div class="mt-2 ml-1 border-l-2 border-primary/40 pl-3">
+            <div class="text-xs font-medium text-base-content/60 mb-1">{gettext("Replying here")}</div>
             <%!-- Same composer body as the top/bottom "Write comment"     --%>
             <%!-- form (Leaf editor + attach menu + GIF picker + audio),   --%>
             <%!-- scoped to this comment's reply editor id. Replies now    --%>
@@ -2014,7 +2009,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
         <%!-- Nested Comments (Replies) --%>
         <%= if @comment.children && length(@comment.children) > 0 do %>
-          <div class="mt-4 space-y-3">
+          <div class="mt-1 space-y-1">
             <%= for child <- @comment.children do %>
               <.render_comment
                 comment={child}
@@ -2035,8 +2030,70 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             <% end %>
           </div>
         <% end %>
+        </div>
       </div>
     </div>
+    """
+  end
+
+  # The author's face at 24px. A comment posted as the project (`author_display_name`)
+  # speaks for the project, not the person, so it gets the project mark
+  # instead of the poster's avatar.
+  attr(:comment, :map, required: true)
+
+  defp comment_avatar(%{comment: %{author_display_name: name}} = assigns)
+       when is_binary(name) and name != "" do
+    ~H"""
+    <span class="w-6 h-6 rounded-full bg-base-200 flex items-center justify-center shrink-0">
+      <.icon name="hero-building-office-2" class="w-3.5 h-3.5 text-base-content/60" />
+    </span>
+    """
+  end
+
+  defp comment_avatar(%{comment: %{user: %User{} = _user}} = assigns) do
+    ~H"""
+    <.user_avatar user={@comment.user} size="xs" class="shrink-0" />
+    """
+  end
+
+  defp comment_avatar(assigns) do
+    ~H"""
+    <.icon name="hero-user-circle" class="w-6 h-6 text-base-content/40 shrink-0" />
+    """
+  end
+
+  # A like/dislike: shown at rest only when it has a count or is the
+  # viewer's own; otherwise it waits with the other actions for a hover.
+  attr(:event, :string, required: true)
+  attr(:icon, :string, required: true)
+  attr(:label, :string, required: true)
+  attr(:count, :integer, required: true)
+  attr(:active, :boolean, required: true)
+  attr(:comment_uuid, :string, required: true)
+  attr(:current_user, :any, required: true)
+  attr(:myself, :any, required: true)
+
+  defp reaction_button(assigns) do
+    ~H"""
+    <button
+      type="button"
+      phx-click={@event}
+      phx-value-id={@comment_uuid}
+      phx-target={@myself}
+      disabled={is_nil(@current_user)}
+      title={@label}
+      aria-label={@label}
+      aria-pressed={to_string(@active)}
+      class={[
+        "btn btn-xs gap-0.5 px-1.5",
+        if(@active, do: "btn-primary btn-soft", else: "btn-ghost text-base-content/60"),
+        @count == 0 and not @active &&
+          "opacity-0 group-hover/comment:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
+      ]}
+    >
+      <.icon name={@icon} class="w-3.5 h-3.5" />
+      <span :if={@count > 0} class="text-xs">{@count}</span>
+    </button>
     """
   end
 
@@ -2056,7 +2113,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         src={@src}
         loading="lazy"
         alt={@media.caption || @media.file.original_file_name}
-        class="rounded-lg w-full h-auto max-h-96 object-contain"
+        class="rounded-lg w-auto h-auto max-w-[12rem] max-h-32 object-contain bg-base-200"
       />
     </a>
     """
@@ -2069,7 +2126,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> assign(:poster, signed_url(file, "video_thumbnail"))
 
     ~H"""
-    <video controls preload="metadata" poster={@poster} class="rounded-lg max-w-md w-full">
+    <video controls preload="metadata" poster={@poster} class="rounded-lg max-w-xs w-full h-auto">
       <source src={@src} type={@media.file.mime_type} />
       {gettext("Your browser does not support video playback.")}
     </video>
@@ -2080,7 +2137,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     assigns = assign(assigns, :src, signed_url(file, "original"))
 
     ~H"""
-    <audio controls preload="metadata" class="w-full max-w-md">
+    <audio controls preload="metadata" class="w-full max-w-xs h-9">
       <source src={@src} type={@media.file.mime_type} />
       {gettext("Your browser does not support audio playback.")}
     </audio>
@@ -2097,12 +2154,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     <a
       href={@href}
       download={@media.file.original_file_name}
-      class="inline-flex items-center gap-2 px-3 py-2 bg-base-200 rounded hover:bg-base-300"
+      class="inline-flex items-center gap-2 px-2 py-1 bg-base-200 rounded hover:bg-base-300 max-w-[16rem]"
     >
-      <.icon name="hero-document-arrow-down" class="w-5 h-5 shrink-0" />
+      <.icon name="hero-document-arrow-down" class="w-4 h-4 shrink-0" />
       <div class="min-w-0">
-        <div class="text-sm font-medium truncate">{@media.file.original_file_name}</div>
-        <div class="text-xs text-base-content/60">{@size_kb} KB</div>
+        <div class="text-xs font-medium truncate">{@media.file.original_file_name}</div>
+        <div class="text-[0.65rem] text-base-content/60">{@size_kb} KB</div>
       </div>
     </a>
     """
@@ -2382,7 +2439,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       phx-submit="add_comment"
       phx-change="update_comment_draft"
       phx-target={@ctx.myself}
-      class="space-y-2"
+      class="space-y-1.5"
     >
       <%!-- A file pasted into the editor (a screenshot) is attached to
            the comment through the upload below, not written into its
@@ -2418,7 +2475,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           mode={@ctx.editor_mode}
           preset={:advanced}
           placeholder={@placeholder}
-          height="200px"
+          height="auto"
+          min_height="2.75rem"
+          max_height="16rem"
           debounce={400}
           upload_handler={nil}
           sync_input_name="comment"
@@ -2429,8 +2488,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         <textarea
           name="comment"
           placeholder={@placeholder}
-          class="textarea w-full"
-          rows="3"
+          class="textarea textarea-sm w-full min-h-0 field-sizing-content max-h-64"
+          rows="1"
           phx-debounce="150"
           phx-hook={@ctx.mentions_on && "MentionInput"}
           id={@ctx.mentions_on && "#{@ctx.id}-new-comment"}
@@ -2442,13 +2501,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       </div>
       <.notice ctx={@ctx} place={:composer} />
 
-      <div class={[
-        "text-xs text-right",
-        if(String.length(@ctx.new_comment) > @ctx.max_length,
-          do: "text-error font-semibold",
-          else: "text-base-content/60"
-        )
-      ]}>
+      <%!-- The count shows only near the limit (the last tenth) and past it. --%>
+      <div
+        :if={String.length(@ctx.new_comment) >= @ctx.max_length * 0.9}
+        class={[
+          "text-xs text-right",
+          if(String.length(@ctx.new_comment) > @ctx.max_length,
+            do: "text-error font-semibold",
+            else: "text-base-content/60"
+          )
+        ]}
+      >
         {String.length(@ctx.new_comment)} / {@ctx.max_length}
       </div>
 
@@ -2559,7 +2622,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 type="button"
                 phx-click={toggle_recording(@ctx, @suffix)}
                 aria-label={gettext("Stop recording")}
-                class="btn btn-sm btn-error gap-1"
+                class="btn btn-xs btn-error gap-1"
               >
                 <span class="inline-block w-2 h-2 rounded-full bg-base-100 animate-pulse"></span>
                 <.icon name="hero-stop-circle" class="w-4 h-4" /> {gettext("Stop recording")}
@@ -2576,11 +2639,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                   aria-label={gettext("Attach media")}
                   title={gettext("Attach media")}
                   class={[
-                    "btn btn-sm",
+                    "btn btn-xs btn-square",
                     if(@ctx.attach_menu_open?, do: "btn-primary", else: "btn-ghost")
                   ]}
                 >
-                  <.icon name="hero-paper-clip" class="w-5 h-5" />
+                  <.icon name="hero-paper-clip" class="w-4 h-4" />
                 </button>
 
                 <%= if @ctx.attach_menu_open? do %>
@@ -2730,7 +2793,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             type="button"
             phx-click="cancel_new_comment"
             phx-target={@ctx.myself}
-            class="btn btn-ghost btn-sm"
+            class="btn btn-ghost btn-xs"
           >
             {gettext("Hide")}
           </button>
@@ -2741,9 +2804,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           <button
             type="submit"
             phx-disable-with={gettext("Posting…")}
-            class="btn btn-primary btn-sm"
+            class="btn btn-primary btn-xs gap-1"
           >
-            <.icon name="hero-paper-airplane" class="w-4 h-4 mr-2" /> {@submit_label}
+            <.icon name="hero-paper-airplane" class="w-3.5 h-3.5" /> {@submit_label}
           </button>
         </div>
       </div>
@@ -2764,7 +2827,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp new_comment_composer(assigns) do
     # Top composer sits above the list (mb), bottom sits below it (mt).
     assigns =
-      assign(assigns, :spacing, if(assigns.position == :top, do: "mb-6", else: "mt-6"))
+      assign(assigns, :spacing, if(assigns.position == :top, do: "mb-2", else: "mt-2"))
 
     ~H"""
     <%= cond do %>
@@ -2792,9 +2855,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             phx-click="open_composer"
             phx-value-position={@position}
             phx-target={@ctx.myself}
-            class="btn btn-primary w-full sm:w-auto"
+            class="w-full flex items-center gap-2 rounded-field border border-base-300 bg-base-100 px-3 py-2 text-left text-sm text-base-content/50 hover:border-base-content/30 cursor-text"
           >
-            <.icon name="hero-pencil-square" class="w-5 h-5 mr-2" /> {gettext("Write comment")}
+            <.icon name="hero-chat-bubble-left" class="w-4 h-4 shrink-0" />
+            <span class="truncate">{gettext("Write comment")}</span>
           </button>
         </div>
       <% true -> %>
