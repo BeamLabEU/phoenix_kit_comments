@@ -47,6 +47,160 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
     |> render_submit(params)
   end
 
+  # The boss, 2026-11-01: a new comment shows up next to the box it was
+  # written in — a box on top lists the newest first, a box at the bottom
+  # the oldest first; replies keep the order they were written in.
+  describe "the order follows the box" do
+    defp roots_in_order(html, uuids) do
+      uuids
+      |> Enum.map(fn uuid -> {uuid, :binary.match(html, ~s(data-comment-uuid="#{uuid}"))} end)
+      |> Enum.sort_by(fn {_uuid, {pos, _}} -> pos end)
+      |> Enum.map(&elem(&1, 0))
+    end
+
+    defp two_comments(user, resource_uuid) do
+      {:ok, first} =
+        PhoenixKitComments.create_comment("test_resource", resource_uuid, user.uuid, %{
+          content: "first"
+        })
+
+      {:ok, second} =
+        PhoenixKitComments.create_comment("test_resource", resource_uuid, user.uuid, %{
+          content: "second"
+        })
+
+      {first, second}
+    end
+
+    test "a box on top lists the newest first", %{
+      conn: conn,
+      scope: scope,
+      user: user,
+      resource_uuid: r
+    } do
+      {first, second} = two_comments(user, r)
+      {:ok, _view, html} = conn |> put_test_scope(scope) |> live(host_path(r))
+      assert roots_in_order(html, [first.uuid, second.uuid]) == [second.uuid, first.uuid]
+      refute html =~ "PhoenixKitCommentsStickToBottom"
+    end
+
+    test "a box at the bottom lists the oldest first and follows the newest",
+         %{conn: conn, scope: scope, user: user, resource_uuid: r} do
+      {first, second} = two_comments(user, r)
+
+      {:ok, _view, html} =
+        conn |> put_test_scope(scope) |> live(host_path(r) <> "?composer=bottom")
+
+      assert roots_in_order(html, [first.uuid, second.uuid]) == [first.uuid, second.uuid]
+      assert html =~ "PhoenixKitCommentsStickToBottom"
+    end
+
+    test "replies keep the order they were written in, under the newest-first roots",
+         %{conn: conn, scope: scope, user: user, resource_uuid: r} do
+      {first, _second} = two_comments(user, r)
+
+      replies =
+        for text <- ~w(r1 r2) do
+          {:ok, c} =
+            PhoenixKitComments.create_comment("test_resource", r, user.uuid, %{
+              content: text,
+              parent_uuid: first.uuid
+            })
+
+          c.uuid
+        end
+
+      {:ok, _view, html} = conn |> put_test_scope(scope) |> live(host_path(r))
+      assert roots_in_order(html, replies) == replies
+    end
+
+    test "the order can be fixed whatever the box" do
+      assert CommentsComponent.effective_order(%{order: :oldest_first, composer_position: :top}) ==
+               :oldest_first
+
+      assert CommentsComponent.effective_order(%{order: :auto, composer_position: :both}) ==
+               :newest_first
+    end
+  end
+
+  # The boss's third list, 2026-11-02.
+  describe "the thread's small things" do
+    test "an empty thread has no 'No comments yet' line", %{
+      conn: conn,
+      scope: scope,
+      resource_uuid: r
+    } do
+      {:ok, _view, html} = conn |> put_test_scope(scope) |> live(host_path(r))
+      refute html =~ "No comments yet"
+    end
+
+    test "a person's comment shows their face, not the project's buildings",
+         %{conn: conn, scope: scope, resource_uuid: r} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(r))
+      post_comment(view, %{"comment" => "hello"})
+      html = render(view)
+      assert html =~ "hello"
+      refute html =~ "hero-building-office-2"
+    end
+
+    test "a success is a toast that leaves by itself, with no close cross",
+         %{conn: conn, scope: scope, resource_uuid: r} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(r))
+      post_comment(view, %{"comment" => "hello"})
+
+      toast = view |> element("[data-notice-kind=info]") |> render()
+      assert toast =~ "toast"
+      assert toast =~ "pk-comments-toast"
+      assert toast =~ "Comment added"
+      refute toast =~ "hero-x-mark"
+    end
+
+    # A second success is a new toast (its own id), so its fade plays again.
+    test "a second success is a new toast", %{conn: conn, scope: scope, resource_uuid: r} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(r))
+      post_comment(view, %{"comment" => "one"})
+
+      [first] =
+        Regex.run(~r/id="(pk-comments-toast-[^"]+)"/, render(view), capture: :all_but_first)
+
+      post_comment(view, %{"comment" => "two"})
+
+      [second] =
+        Regex.run(~r/id="(pk-comments-toast-[^"]+)"/, render(view), capture: :all_but_first)
+
+      refute first == second
+    end
+
+    test "a comment's time is kept current in the browser",
+         %{conn: conn, scope: scope, user: user, resource_uuid: r} do
+      {:ok, c} =
+        PhoenixKitComments.create_comment("test_resource", r, user.uuid, %{content: "x"})
+
+      {:ok, _view, html} = conn |> put_test_scope(scope) |> live(host_path(r))
+      assert html =~ ~s(id="pk-comment-time-test-thread-#{c.uuid}")
+      assert html =~ ~s(phx-hook="PhoenixKitCommentsTimeAgo")
+    end
+
+    test "a reply sits under its parent's hover group, not inside it",
+         %{conn: conn, scope: scope, user: user, resource_uuid: r} do
+      {:ok, parent} =
+        PhoenixKitComments.create_comment("test_resource", r, user.uuid, %{content: "parent"})
+
+      {:ok, reply} =
+        PhoenixKitComments.create_comment("test_resource", r, user.uuid, %{
+          content: "reply",
+          parent_uuid: parent.uuid
+        })
+
+      {:ok, view, _html} = conn |> put_test_scope(scope) |> live(host_path(r))
+
+      refute has_element?(
+               view,
+               ~s([data-comment-uuid="#{parent.uuid}"] .group\\/comment [data-comment-uuid="#{reply.uuid}"])
+             )
+    end
+  end
+
   describe "the module kill switch" do
     test "an explicit enabled host attr still respects the module switch",
          %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
@@ -688,7 +842,8 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(resource_uuid))
       post_comment(view, %{"comment" => "hello"})
 
-      assert notice_text(view, "[data-notice=thread][data-notice-kind=info]") =~ "Comment added"
+      # On the new comment, where the eye is, not at the top of the thread.
+      assert notice_text(view, "[data-notice=comment][data-notice-kind=info]") =~ "Comment added"
 
       [comment] = comments_for(resource_uuid)
 

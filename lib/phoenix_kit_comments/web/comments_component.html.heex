@@ -4,6 +4,15 @@
        truth for the CSS. --%>
   <.comment_markdown_styles />
   <style>
+    /* A success toast leaves by itself. */
+    @keyframes pk-comments-toast-out {
+      0%, 80% { opacity: 1; visibility: visible; }
+      100% { opacity: 0; visibility: hidden; }
+    }
+    .pk-comments-toast { animation: pk-comments-toast-out 3.5s ease-in forwards; }
+    @media (prefers-reduced-motion: reduce) {
+      .pk-comments-toast { animation-duration: 4s; animation-timing-function: steps(1, end); }
+    }
     /* Mobile: centered modal with backdrop */
     .pk-giphy-backdrop {
       position: fixed;
@@ -47,86 +56,83 @@
     }
   </style>
   <%= if @enabled do %>
-    <div class="card bg-base-100 shadow-xl">
-      <div class="card-body overflow-hidden">
-        <%!-- Header. `show_title` gates the whole line. When           --%>
-        <%!-- `collapsible`, the line becomes a disclosure toggle for   --%>
-        <%!-- the body below (chevron + aria-expanded/-controls);        --%>
-        <%!-- otherwise it's the plain static heading.                   --%>
-        <%= if @show_title do %>
-          <%= if @collapsible do %>
-            <button
-              type="button"
-              phx-click="toggle_collapsed"
-              phx-target={@myself}
-              aria-expanded={to_string(not @collapsed?)}
-              aria-controls={"pk-comments-body-#{@id}"}
-              class="card-title text-xl sm:text-2xl mb-4 flex items-center justify-between w-full text-left gap-2"
-            >
-              <span class="flex items-center gap-2 min-w-0">
-                <.icon name="hero-chat-bubble-left-right" class="w-6 h-6 shrink-0" />
-                <span class="break-words">{@title} ({@comment_count})</span>
-              </span>
-              <.icon
-                name={if @collapsed?, do: "hero-chevron-right", else: "hero-chevron-down"}
-                class="w-5 h-5 shrink-0"
-              />
-            </button>
-          <% else %>
-            <h2 class="card-title text-xl sm:text-2xl mb-4 flex-wrap">
-              <.icon name="hero-chat-bubble-left-right" class="w-6 h-6 shrink-0" />
-              <span class="break-words">{@title} ({@comment_count})</span>
-            </h2>
-          <% end %>
-        <% end %>
-
-        <%!-- Body — collapsed away when collapsible + collapsed. The   --%>
-        <%!-- wrapper id is the header toggle's aria-controls target and --%>
-        <%!-- stays in the DOM (empty when collapsed) so the reference   --%>
-        <%!-- is always valid. --%>
-        <div id={"pk-comments-body-#{@id}"}>
-          <%= unless @collapsible and @collapsed? do %>
-            <.notice ctx={assigns} place={:thread} class="mb-3" />
-            <%!-- Top composer --%>
-            <%= if @composer_position in [:top, :both] do %>
-              <.new_comment_composer ctx={assigns} position={:top} />
-            <% end %>
-
-        <%!-- Comments List --%>
-        <%= if length(@comments) > 0 do %>
-          <div class="space-y-4">
-            <%= for comment <- @comments do %>
-              <.render_comment
-                comment={comment}
-                current_user={@current_user}
-                myself={@myself}
-                component_id={@id}
-                editing_uuid={@editing_uuid}
-                editing_content={@editing_content}
-                comment_decorations={@comment_decorations}
-                editing_decoration_uuid={@editing_decoration_uuid}
-                editing_decoration_value={@editing_decoration_value}
-                show_likes={@show_likes}
-                liked_comment_uuids={@liked_comment_uuids}
-                disliked_comment_uuids={@disliked_comment_uuids}
-                reply_to={@reply_to}
-                ctx={assigns}
-              />
-            <% end %>
-          </div>
+    <%!-- Compact by default (the boss, 2026-10-31: "bulky", and the
+         "Comments (N)" header): no card or shadow around the thread — the
+         host already draws its panel — flat rows, a slim title line with
+         no count. --%>
+    <div class="pk-comments min-w-0">
+      <%!-- Header. `show_title` gates the whole line. When           --%>
+      <%!-- `collapsible`, the line becomes a disclosure toggle for   --%>
+      <%!-- the body below (chevron + aria-expanded/-controls);        --%>
+      <%!-- otherwise it's the plain static heading.                   --%>
+      <%= if @show_title do %>
+        <%= if @collapsible do %>
+          <button
+            type="button"
+            phx-click="toggle_collapsed"
+            phx-target={@myself}
+            aria-expanded={to_string(not @collapsed?)}
+            aria-controls={"pk-comments-body-#{@id}"}
+            class="mb-2 flex items-center justify-between w-full text-left gap-2 text-sm font-semibold"
+          >
+            <span class="break-words min-w-0">{@title}</span>
+            <.icon
+              name={if @collapsed?, do: "hero-chevron-right", else: "hero-chevron-down"}
+              class="w-4 h-4 shrink-0"
+            />
+          </button>
         <% else %>
-          <div class="text-center py-8 text-base-content/60">
-            <.icon name="hero-chat-bubble-left" class="w-12 h-12 mx-auto mb-2 opacity-50" />
-            <p>{gettext("No comments yet. Be the first to comment!")}</p>
-          </div>
+          <h2 class="mb-2 text-sm font-semibold break-words">{@title}</h2>
         <% end %>
+      <% end %>
 
-            <%!-- Bottom composer (off by default) --%>
-            <%= if @composer_position in [:bottom, :both] do %>
-              <.new_comment_composer ctx={assigns} position={:bottom} />
-            <% end %>
+      <%!-- Body — collapsed away when collapsible + collapsed. The   --%>
+      <%!-- wrapper id is the header toggle's aria-controls target and --%>
+      <%!-- stays in the DOM (empty when collapsed) so the reference   --%>
+      <%!-- is always valid. --%>
+      <div id={"pk-comments-body-#{@id}"}>
+        <%= unless @collapsible and @collapsed? do %>
+          <.notice ctx={assigns} place={:thread} class="mb-2" />
+          <%!-- Top composer --%>
+          <%= if @composer_position in [:top, :both] do %>
+            <.new_comment_composer ctx={assigns} position={:top} />
           <% end %>
-        </div>
+
+          <%!-- Comments List --%>
+          <%= if length(@comments) > 0 do %>
+            <div
+              id={"pk-comments-list-#{@id}"}
+              class="divide-y divide-base-200"
+              phx-hook={PhoenixKitComments.Web.CommentsComponent.chat?(assigns) && "PhoenixKitCommentsStickToBottom"}
+            >
+              <%= for comment <- @comments do %>
+                <.render_comment
+                  comment={comment}
+                  current_user={@current_user}
+                  myself={@myself}
+                  component_id={@id}
+                  editing_uuid={@editing_uuid}
+                  editing_content={@editing_content}
+                  comment_decorations={@comment_decorations}
+                  editing_decoration_uuid={@editing_decoration_uuid}
+                  editing_decoration_value={@editing_decoration_value}
+                  show_likes={@show_likes}
+                  liked_comment_uuids={@liked_comment_uuids}
+                  disliked_comment_uuids={@disliked_comment_uuids}
+                  reply_to={@reply_to}
+                  ctx={assigns}
+                />
+              <% end %>
+            </div>
+          <% end %>
+          <%!-- No "No comments yet" line: the box's own hint says it
+               (the boss, 2026-11-02). --%>
+
+          <%!-- Bottom composer (off by default) --%>
+          <%= if @composer_position in [:bottom, :both] do %>
+            <.new_comment_composer ctx={assigns} position={:bottom} />
+          <% end %>
+        <% end %>
       </div>
     </div>
   <% end %>
