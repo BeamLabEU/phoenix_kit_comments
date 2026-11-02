@@ -31,6 +31,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     hasn't registered Leaf's JS hook, since the Leaf editor otherwise hangs
     on its loading text with no server-side error. See the README's
     "JavaScript wiring" section.
+  - `composer_position` - Where the "Write comment" box renders: `:top`
+    (default), `:bottom`, `:both`, or `nil` for none (read-only).
+  - `order` - Which way the top-level comments run: `:auto` (default) puts
+    a new comment next to the box — newest first, except with the box at
+    the `:bottom`, where the oldest come first and the thread follows the
+    newest like a chat. `:newest_first` / `:oldest_first` fix it. Replies
+    always keep the order they were written in.
 
   ## Slots
 
@@ -341,7 +348,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     # (ephemeral within the component's lifetime, host sets the start).
     socket = assign_new(socket, :collapsed?, fn -> socket.assigns.initial_collapsed end)
 
-    reload? = changed?(socket, :resource_uuid) or not socket.assigns.loaded?
+    reload? = reload_comments?(socket)
 
     socket =
       if reload? do
@@ -361,6 +368,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       end
 
     {:ok, socket}
+  end
+
+  # The list is stored in display order (`display_order/2`), so a host that
+  # moves the box or fixes the order later gets it turned round too —
+  # otherwise the old order stayed, under a scroll hook that now assumed
+  # the other one.
+  defp reload_comments?(socket) do
+    not socket.assigns.loaded? or
+      Enum.any?([:resource_uuid, :order, :composer_position], &changed?(socket, &1))
   end
 
   # `@enabled` used to wrap the TEMPLATE only. The component still rendered
@@ -608,9 +624,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   # Reactions are refused where the host turned them off (`show_likes`),
-  # not only hidden: the event can be sent without the button.
-  defp handle({:write, "toggle_" <> _}, _params, %{assigns: %{show_likes: false}} = socket),
-    do: {:noreply, socket}
+  # not only hidden: the event can be sent without the button. Named, not
+  # a `"toggle_" <> _` prefix: a later write event called `toggle_…` would
+  # have been silently dropped on every thread without reactions.
+  defp handle({:write, event}, _params, %{assigns: %{show_likes: false}} = socket)
+       when event in ["toggle_like", "toggle_dislike"],
+       do: {:noreply, socket}
 
   defp handle({:write, "toggle_like"}, %{"id" => comment_uuid}, socket) do
     toggle_reaction(socket, comment_uuid, :like)

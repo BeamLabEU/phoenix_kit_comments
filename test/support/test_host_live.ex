@@ -45,6 +45,8 @@ defmodule PhoenixKitComments.Test.HostLive do
      |> assign(:second_thread, params["second_thread"])
      # `?composer=bottom` puts the box at the bottom (a chat-like thread).
      |> assign(:composer_position, if(params["composer"] == "bottom", do: :bottom, else: :top))
+     # `?likes=off` is a host that turned reactions off (`show_likes`).
+     |> assign(:show_likes, params["likes"] != "off")
      |> assign(:comments_updated, nil)}
   end
 
@@ -61,6 +63,7 @@ defmodule PhoenixKitComments.Test.HostLive do
         resource_type="test_resource"
         resource_uuid={@resource_uuid}
         composer_position={@composer_position}
+        show_likes={@show_likes}
         current_user={@current_user}
         pk_scope={@pk_scope}
         decoration_keys={@decoration_keys}
@@ -72,6 +75,7 @@ defmodule PhoenixKitComments.Test.HostLive do
         resource_type="test_resource"
         resource_uuid={@resource_uuid}
         composer_position={@composer_position}
+        show_likes={@show_likes}
         current_user={@current_user}
         decoration_keys={@decoration_keys}
       />
@@ -96,6 +100,12 @@ defmodule PhoenixKitComments.Test.HostLive do
   @impl true
   def handle_event("host_refresh", _params, socket) do
     {:noreply, assign(socket, :comments_updated, :refreshed)}
+  end
+
+  # A host that moves the box while the thread is open.
+  def handle_event("host_composer", %{"position" => position}, socket) do
+    {:noreply,
+     assign(socket, :composer_position, if(position == "bottom", do: :bottom, else: :top))}
   end
 
   @impl true

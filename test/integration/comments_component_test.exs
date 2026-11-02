@@ -114,6 +114,19 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       assert roots_in_order(html, replies) == replies
     end
 
+    # The list is stored turned round; a host moving the box later used to
+    # keep the old order under a scroll hook that assumed the new one.
+    test "a box moved while the thread is open turns the list round with it",
+         %{conn: conn, scope: scope, user: user, resource_uuid: r} do
+      {first, second} = two_comments(user, r)
+      {:ok, view, _html} = conn |> put_test_scope(scope) |> live(host_path(r))
+
+      html = render_click(view, "host_composer", %{"position" => "bottom"})
+
+      assert roots_in_order(html, [first.uuid, second.uuid]) == [first.uuid, second.uuid]
+      assert html =~ "PhoenixKitCommentsStickToBottom"
+    end
+
     test "the order can be fixed whatever the box" do
       assert CommentsComponent.effective_order(%{order: :oldest_first, composer_position: :top}) ==
                :oldest_first
@@ -125,6 +138,23 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
 
   # The boss's third list, 2026-11-02.
   describe "the thread's small things" do
+    # Hidden is not refused: the event can be sent without the button.
+    test "a reaction sent where the host turned reactions off changes nothing",
+         %{conn: conn, scope: scope, user: user, resource_uuid: r} do
+      {:ok, c} =
+        PhoenixKitComments.create_comment("test_resource", r, user.uuid, %{content: "x"})
+
+      {:ok, view, html} = conn |> put_test_scope(scope) |> live(host_path(r) <> "?likes=off")
+      refute html =~ ~s(phx-click="toggle_like")
+
+      for event <- ~w(toggle_like toggle_dislike) do
+        view |> with_target("#first-thread > div") |> render_click(event, %{"id" => c.uuid})
+      end
+
+      reloaded = Repo.get!(Comment, c.uuid)
+      assert {reloaded.like_count, reloaded.dislike_count} == {0, 0}
+    end
+
     test "an empty thread has no 'No comments yet' line", %{
       conn: conn,
       scope: scope,

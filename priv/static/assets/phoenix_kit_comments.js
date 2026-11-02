@@ -348,48 +348,86 @@
 
   // PhoenixKitCommentsStickToBottom: a thread whose box is at the bottom
   // (oldest first, a chat) opens at its newest comment and follows new ones
-  // while the reader is at the bottom; someone reading back is never pulled
+  // while the reader is at its end; someone reading back is never pulled
   // down. The thread does not scroll itself: the nearest scrolling ancestor
   // (a drawer, a popup) or the page does.
+  //
+  // "The end" is the end of the THREAD (the list and the box under it, the
+  // hook element's parent), not the bottom of what scrolls it: a page or a
+  // panel with more below the thread was scrolled past it to its own end.
+  // The scroller is looked up every time, not once at mount: a drawer
+  // opened on two comments does not scroll yet, and a lookup at mount
+  // settled on the page for good — it scrolled the page behind the drawer
+  // and never followed the drawer once it filled. A thread that starts out
+  // of sight is not moved to on opening: the reader is looking at something
+  // else. Nothing listens to the page's scroll: whether the reader is at
+  // the end is measured when it matters (before a patch, on a resize).
   (function() {
     window.PhoenixKitCommentsHooks = window.PhoenixKitCommentsHooks || {};
     if (window.PhoenixKitCommentsHooks.PhoenixKitCommentsStickToBottom) return;
 
+    // Within this much of the visible bottom counts as "at the end".
+    var SLACK = 48;
+
+    // The nearest ancestor that scrolls now; null for the page.
     function scroller(el) {
-      for (var p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      for (var p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
         var y = window.getComputedStyle(p).overflowY;
         if ((y === "auto" || y === "scroll") && p.scrollHeight > p.clientHeight + 1) return p;
       }
-      return document.scrollingElement || document.documentElement;
+      return null;
     }
 
-    function atBottom(box) {
-      return box.scrollHeight - box.scrollTop - box.clientHeight < 48;
+    // The bottom of what the reader can see, in viewport coordinates.
+    function visibleBottom(box) {
+      return box ? box.getBoundingClientRect().bottom : window.innerHeight;
     }
 
-    function toBottom(box) { box.scrollTop = box.scrollHeight; }
+    // How far the thread's end is below what can be seen (negative: above).
+    function gap(hook) {
+      return hook.target.getBoundingClientRect().bottom - visibleBottom(scroller(hook.el));
+    }
+
+    // Brings the thread's end into sight. Only ever down.
+    function toEnd(hook) {
+      var box = scroller(hook.el);
+      var dy = hook.target.getBoundingClientRect().bottom - visibleBottom(box);
+      if (dy <= 0) return;
+      if (box) box.scrollTop += dy; else window.scrollBy(0, dy);
+    }
 
     window.PhoenixKitCommentsHooks.PhoenixKitCommentsStickToBottom = {
       mounted: function() {
         var self = this;
-        this.box = scroller(this.el);
-        this.stuck = true;
-        // A comment link (`#…`) keeps its own place.
-        if (!window.location.hash) requestAnimationFrame(function() { toBottom(self.box); });
-        this.onScroll = function() { self.stuck = atBottom(self.box); };
-        (this.box === document.scrollingElement ? window : this.box)
-          .addEventListener("scroll", this.onScroll, { passive: true });
-        // Pictures and GIFs size themselves after loading.
+        this.target = this.el.parentElement || this.el;
+        this.height = this.target.offsetHeight;
+        requestAnimationFrame(function() {
+          // A comment link (`#…`) keeps its own place.
+          if (self.gone || window.location.hash) return;
+          if (self.el.getBoundingClientRect().top < visibleBottom(scroller(self.el))) toEnd(self);
+        });
+        // Pictures and GIFs size themselves after loading; the box under
+        // the list opens. Followed when the thread's end was in sight
+        // before it grew: the growth is what moved it away. (The first
+        // call, on observe, sees no growth — it used to scroll a comment
+        // link's thread to the end regardless.)
         if (window.ResizeObserver) {
-          this.ro = new ResizeObserver(function() { if (self.stuck) toBottom(self.box); });
-          this.ro.observe(this.el);
+          this.ro = new window.ResizeObserver(function() {
+            var h = self.target.offsetHeight;
+            var grown = h - self.height;
+            self.height = h;
+            if (grown > 0 && gap(self) - grown < SLACK) toEnd(self);
+          });
+          this.ro.observe(this.target);
         }
       },
-      beforeUpdate: function() { this.stuck = atBottom(this.box); },
-      updated: function() { if (this.stuck) toBottom(this.box); },
+      beforeUpdate: function() { this.stuck = gap(this) < SLACK; },
+      updated: function() {
+        if (this.stuck) toEnd(this);
+        this.height = this.target.offsetHeight;
+      },
       destroyed: function() {
-        if (this.box && this.onScroll)
-          (this.box === document.scrollingElement ? window : this.box).removeEventListener("scroll", this.onScroll);
+        this.gone = true;
         if (this.ro) this.ro.disconnect();
       }
     };
