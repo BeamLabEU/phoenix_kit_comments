@@ -4,6 +4,15 @@
        truth for the CSS. --%>
   <.comment_markdown_styles />
   <style>
+    /* A success toast leaves by itself. */
+    @keyframes pk-comments-toast-out {
+      0%, 80% { opacity: 1; visibility: visible; }
+      100% { opacity: 0; visibility: hidden; }
+    }
+    .pk-comments-toast { animation: pk-comments-toast-out 3.5s ease-in forwards; }
+    @media (prefers-reduced-motion: reduce) {
+      .pk-comments-toast { animation-duration: 4s; animation-timing-function: steps(1, end); }
+    }
     /* Mobile: centered modal with backdrop */
     .pk-giphy-backdrop {
       position: fixed;
@@ -115,12 +124,9 @@
                 />
               <% end %>
             </div>
-          <% else %>
-            <p class="py-3 text-sm text-base-content/50 flex items-center gap-2">
-              <.icon name="hero-chat-bubble-left" class="w-4 h-4 shrink-0" />
-              {gettext("No comments yet. Be the first to comment!")}
-            </p>
           <% end %>
+          <%!-- No "No comments yet" line: the box's own hint says it
+               (the boss, 2026-11-02). --%>
 
           <%!-- Bottom composer (off by default) --%>
           <%= if @composer_position in [:bottom, :both] do %>

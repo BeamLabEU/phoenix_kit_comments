@@ -394,4 +394,55 @@
       }
     };
   })();
+
+  // PhoenixKitCommentsTimeAgo: a comment's "… ago" kept current in the page's
+  // language (Intl.RelativeTimeFormat: "now", "1 min ago", "2 h ago"; a
+  // week and more shows the date). Re-applied after every LiveView patch,
+  // which puts the server's text back. One timer for all of them.
+  (function() {
+    window.PhoenixKitCommentsHooks = window.PhoenixKitCommentsHooks || {};
+    if (window.PhoenixKitCommentsHooks.PhoenixKitCommentsTimeAgo) return;
+
+    var live = new Set();
+    var timer = null;
+
+    function phrase(iso, locale) {
+      var then = new Date(iso);
+      if (isNaN(then)) return null;
+      var secs = Math.round((then.getTime() - Date.now()) / 1000);
+      var abs = Math.abs(secs);
+      try {
+        var rtf = new Intl.RelativeTimeFormat(locale || undefined, { numeric: "auto", style: "short" });
+        if (abs < 45) return rtf.format(0, "second");
+        if (abs < 3600) return rtf.format(Math.round(secs / 60), "minute");
+        if (abs < 86400) return rtf.format(Math.round(secs / 3600), "hour");
+        if (abs < 7 * 86400) return rtf.format(Math.round(secs / 86400), "day");
+        return new Intl.DateTimeFormat(locale || undefined, { day: "numeric", month: "short", year: "numeric" }).format(then);
+      } catch (_e) {
+        return null;
+      }
+    }
+
+    function apply(hook) {
+      var t = hook.el.querySelector("time[datetime]");
+      if (!t) return;
+      var text = phrase(t.getAttribute("datetime"), hook.el.dataset.locale);
+      if (text && t.textContent !== text) t.textContent = text;
+    }
+
+    function tick() { live.forEach(apply); }
+
+    window.PhoenixKitCommentsHooks.PhoenixKitCommentsTimeAgo = {
+      mounted: function() {
+        live.add(this);
+        apply(this);
+        if (!timer) timer = setInterval(tick, 30000);
+      },
+      updated: function() { apply(this); },
+      destroyed: function() {
+        live.delete(this);
+        if (live.size === 0 && timer) { clearInterval(timer); timer = null; }
+      }
+    };
+  })();
 })();

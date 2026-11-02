@@ -1676,13 +1676,19 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       data-comment-uuid={@comment.uuid}
       data-annotation-uuid={@annotation_uuid}
       class={[
+        # A reply hangs off a line under the centre of its parent's 24px
+        # avatar (ml-[11px] + the 2px line), not past the parent's text:
+        # the text was indented twice (2026-11-02).
         if(@comment.depth > 0,
-          do: "ml-1 mt-1 border-l-2 border-base-200 pl-3",
+          do: "ml-[11px] mt-1 border-l-2 border-base-200 pl-3",
           else: "py-2"
         )
       ]}
     >
-      <div class="group/comment min-w-0">
+      <div class="min-w-0">
+        <%!-- The hover group is the comment itself, not its replies: hovering
+             a reply showed the parent's actions too (2026-11-02). --%>
+        <div class="group/comment min-w-0">
         <%= if @comment.status == "deleted" do %>
           <div class="text-sm text-base-content/50 italic py-1">{gettext("[removed]")}</div>
         <% else %>
@@ -1699,10 +1705,20 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               {gettext("Unknown")}
             <% end %>
           </span>
-          <.time_ago
-            datetime={@comment.inserted_at}
-            class="text-xs text-base-content/50 whitespace-nowrap shrink-0"
-          />
+          <%!-- Kept current in the browser ("now", "1 min ago", … in the
+               page's language): a stuck "0s ago" read as broken (the boss,
+               2026-11-02). The server's text is the first paint. --%>
+          <span
+            id={"pk-comment-time-#{@component_id}-#{@comment.uuid}"}
+            phx-hook="PhoenixKitCommentsTimeAgo"
+            data-locale={Gettext.get_locale(PhoenixKitComments.Gettext)}
+            class="shrink-0"
+          >
+            <.time_ago
+              datetime={@comment.inserted_at}
+              class="text-xs text-base-content/50 whitespace-nowrap"
+            />
+          </span>
           <div class="ml-auto flex items-center gap-0.5 shrink-0">
             <button
               :if={@ctx.can_post?}
@@ -2020,9 +2036,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
         </div>
         <% end %>
+        </div>
 
-        <div class="pl-8 min-w-0">
-        <.notice ctx={@ctx} place={{:comment, @comment.uuid}} class="mt-1" />
+        <div class="min-w-0">
+        <div class="pl-8"><.notice ctx={@ctx} place={{:comment, @comment.uuid}} class="mt-1" /></div>
 
         <%!-- Nested Comments (Replies) --%>
         <%= if @comment.children && length(@comment.children) > 0 do %>
@@ -2051,7 +2068,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         <%!-- The reply box under the replies already there, where the new
              reply will show up (the boss, 2026-11-01). --%>
         <%= if @reply_to == @comment.uuid do %>
-          <div class="mt-2 ml-1 border-l-2 border-primary/40 pl-3">
+          <div class="mt-2 ml-[11px] border-l-2 border-primary/40 pl-3">
             <div class="text-xs font-medium text-base-content/60 mb-1">{gettext("Replying here")}</div>
             <%!-- Same composer body as the top/bottom "Write comment"     --%>
             <%!-- form (Leaf editor + attach menu + GIF picker + audio),   --%>
@@ -2072,13 +2089,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     """
   end
 
-  # The author's face at 24px. A comment posted as the project (`author_display_name`)
-  # speaks for the project, not the person, so it gets the project mark
-  # instead of the poster's avatar.
+  # The author's face at 24px. A comment posted AS THE PROJECT
+  # (`attribution_mode: "project"`) speaks for the project, not the person,
+  # so it gets the project mark instead of the poster's avatar. A personal
+  # comment has a frozen `author_display_name` too (the name it was signed
+  # with), which once gave every person the project's buildings (the boss,
+  # 2026-11-02): the name is not the test, the mode is.
   attr(:comment, :map, required: true)
 
-  defp comment_avatar(%{comment: %{author_display_name: name}} = assigns)
-       when is_binary(name) and name != "" do
+  defp comment_avatar(%{comment: %{attribution_mode: "project"}} = assigns) do
     ~H"""
     <span class="w-6 h-6 rounded-full bg-base-200 flex items-center justify-center shrink-0">
       <.icon name="hero-building-office-2" class="w-3.5 h-3.5 text-base-content/60" />
@@ -2397,8 +2416,29 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     assigns = assign(assigns, :shown, shown_notice(assigns.ctx, assigns.place))
 
     ~H"""
+    <%!-- A success ("Comment added", "Comment deleted") is a toast at the
+         top right that goes by itself (the boss, 2026-11-02: no line of
+         green text to close with an ✕); a click closes it sooner. Errors
+         stay where they are read, next to what failed. --%>
     <div
-      :if={@shown}
+      :if={@shown && elem(@shown, 0) == :info}
+      class="toast toast-top toast-end z-[1000] pointer-events-none"
+      role="status"
+      data-notice={notice_place_name(@place)}
+      data-notice-kind="info"
+    >
+      <button
+        type="button"
+        phx-click="dismiss_notice"
+        phx-target={@ctx.myself}
+        class="pk-comments-toast alert alert-success shadow-lg text-sm py-2 pointer-events-auto"
+      >
+        <.icon name="hero-check-circle" class="w-5 h-5 shrink-0" />
+        <span>{elem(@shown, 1)}</span>
+      </button>
+    </div>
+    <div
+      :if={@shown && elem(@shown, 0) != :info}
       class={[
         "flex items-start gap-2 text-sm",
         @class,

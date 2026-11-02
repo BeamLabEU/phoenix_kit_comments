@@ -123,6 +123,68 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
     end
   end
 
+  # The boss's third list, 2026-11-02.
+  describe "the thread's small things" do
+    test "an empty thread has no 'No comments yet' line", %{
+      conn: conn,
+      scope: scope,
+      resource_uuid: r
+    } do
+      {:ok, _view, html} = conn |> put_test_scope(scope) |> live(host_path(r))
+      refute html =~ "No comments yet"
+    end
+
+    test "a person's comment shows their face, not the project's buildings",
+         %{conn: conn, scope: scope, resource_uuid: r} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(r))
+      post_comment(view, %{"comment" => "hello"})
+      html = render(view)
+      assert html =~ "hello"
+      refute html =~ "hero-building-office-2"
+    end
+
+    test "a success is a toast that leaves by itself, with no close cross",
+         %{conn: conn, scope: scope, resource_uuid: r} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(r))
+      post_comment(view, %{"comment" => "hello"})
+
+      toast = view |> element("[data-notice-kind=info]") |> render()
+      assert toast =~ "toast"
+      assert toast =~ "pk-comments-toast"
+      assert toast =~ "Comment added"
+      refute toast =~ "hero-x-mark"
+    end
+
+    test "a comment's time is kept current in the browser",
+         %{conn: conn, scope: scope, user: user, resource_uuid: r} do
+      {:ok, c} =
+        PhoenixKitComments.create_comment("test_resource", r, user.uuid, %{content: "x"})
+
+      {:ok, _view, html} = conn |> put_test_scope(scope) |> live(host_path(r))
+      assert html =~ ~s(id="pk-comment-time-test-thread-#{c.uuid}")
+      assert html =~ ~s(phx-hook="PhoenixKitCommentsTimeAgo")
+    end
+
+    test "a reply sits under its parent's hover group, not inside it",
+         %{conn: conn, scope: scope, user: user, resource_uuid: r} do
+      {:ok, parent} =
+        PhoenixKitComments.create_comment("test_resource", r, user.uuid, %{content: "parent"})
+
+      {:ok, reply} =
+        PhoenixKitComments.create_comment("test_resource", r, user.uuid, %{
+          content: "reply",
+          parent_uuid: parent.uuid
+        })
+
+      {:ok, view, _html} = conn |> put_test_scope(scope) |> live(host_path(r))
+
+      refute has_element?(
+               view,
+               ~s([data-comment-uuid="#{parent.uuid}"] .group\\/comment [data-comment-uuid="#{reply.uuid}"])
+             )
+    end
+  end
+
   describe "the module kill switch" do
     test "an explicit enabled host attr still respects the module switch",
          %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
