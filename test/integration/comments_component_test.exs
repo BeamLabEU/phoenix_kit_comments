@@ -155,6 +155,22 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       refute toast =~ "hero-x-mark"
     end
 
+    # A second success is a new toast (its own id), so its fade plays again.
+    test "a second success is a new toast", %{conn: conn, scope: scope, resource_uuid: r} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(r))
+      post_comment(view, %{"comment" => "one"})
+
+      [first] =
+        Regex.run(~r/id="(pk-comments-toast-[^"]+)"/, render(view), capture: :all_but_first)
+
+      post_comment(view, %{"comment" => "two"})
+
+      [second] =
+        Regex.run(~r/id="(pk-comments-toast-[^"]+)"/, render(view), capture: :all_but_first)
+
+      refute first == second
+    end
+
     test "a comment's time is kept current in the browser",
          %{conn: conn, scope: scope, user: user, resource_uuid: r} do
       {:ok, c} =

@@ -607,6 +607,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     {:noreply, assign(socket, :giphy_selected, nil)}
   end
 
+  # Reactions are refused where the host turned them off (`show_likes`),
+  # not only hidden: the event can be sent without the button.
+  defp handle({:write, "toggle_" <> _}, _params, %{assigns: %{show_likes: false}} = socket),
+    do: {:noreply, socket}
+
   defp handle({:write, "toggle_like"}, %{"id" => comment_uuid}, socket) do
     toggle_reaction(socket, comment_uuid, :like)
   end
@@ -1136,11 +1141,19 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     place =
       if find_comment_in_tree(socket.assigns[:comments] || [], uuid), do: place, else: :thread
 
-    assign(socket, :notice, {place, kind, message})
+    set_notice(socket, place, kind, message)
   end
 
-  defp put_notice(socket, place, kind, message),
-    do: assign(socket, :notice, {place, kind, message})
+  defp put_notice(socket, place, kind, message), do: set_notice(socket, place, kind, message)
+
+  # Every notice is a new one, numbered: the toast's id carries the number,
+  # so a second "Comment added" is a new element whose fade plays again
+  # (an unchanged element kept its finished, hidden animation).
+  defp set_notice(socket, place, kind, message) do
+    socket
+    |> assign(:notice_seq, (socket.assigns[:notice_seq] || 0) + 1)
+    |> assign(:notice, {place, kind, message})
+  end
 
   defp paste_refused_message("editing"),
     do: gettext("Files can't be added while editing a comment. Add them to a new comment.")
@@ -2428,6 +2441,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       data-notice-kind="info"
     >
       <button
+        id={"pk-comments-toast-#{@ctx[:id]}-#{@ctx[:notice_seq] || 0}"}
         type="button"
         phx-click="dismiss_notice"
         phx-target={@ctx.myself}
