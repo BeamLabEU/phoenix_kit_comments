@@ -91,7 +91,11 @@
 
           <%!-- Comments List --%>
           <%= if length(@comments) > 0 do %>
-            <div class="divide-y divide-base-200">
+            <div
+              id={"pk-comments-list-#{@id}"}
+              class="divide-y divide-base-200"
+              phx-hook={PhoenixKitComments.Web.CommentsComponent.chat?(assigns) && "PhoenixKitCommentsStickToBottom"}
+            >
               <%= for comment <- @comments do %>
                 <.render_comment
                   comment={comment}

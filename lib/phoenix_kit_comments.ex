@@ -961,7 +961,9 @@ defmodule PhoenixKitComments do
           c.resource_type == ^resource_type and
             c.resource_uuid == ^resource_uuid and
             c.status in ["published", "deleted"],
-        order_by: [asc: c.inserted_at],
+        # The uuid settles two comments of the same instant, so turning the
+        # list round (the component's `:order`) never swaps them.
+        order_by: [asc: c.inserted_at, asc: c.uuid],
         preload: [:user, media: :file]
       )
       |> repo().all()

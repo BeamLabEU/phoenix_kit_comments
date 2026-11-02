@@ -43,6 +43,8 @@ defmodule PhoenixKitComments.Test.HostLive do
      # `?second_thread=<uuid>` embeds a second thread on the same page, the
      # way a host listing several records with their comments does.
      |> assign(:second_thread, params["second_thread"])
+     # `?composer=bottom` puts the box at the bottom (a chat-like thread).
+     |> assign(:composer_position, if(params["composer"] == "bottom", do: :bottom, else: :top))
      |> assign(:comments_updated, nil)}
   end
 
@@ -58,6 +60,7 @@ defmodule PhoenixKitComments.Test.HostLive do
         id="test-thread"
         resource_type="test_resource"
         resource_uuid={@resource_uuid}
+        composer_position={@composer_position}
         current_user={@current_user}
         pk_scope={@pk_scope}
         decoration_keys={@decoration_keys}
@@ -68,6 +71,7 @@ defmodule PhoenixKitComments.Test.HostLive do
         id="test-thread"
         resource_type="test_resource"
         resource_uuid={@resource_uuid}
+        composer_position={@composer_position}
         current_user={@current_user}
         decoration_keys={@decoration_keys}
       />

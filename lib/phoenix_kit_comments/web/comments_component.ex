@@ -224,6 +224,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # Where the "Write comment" composer renders: :top (default),
       # :bottom, or :both. Bottom is off by default.
       |> assign_new(:composer_position, fn -> :top end)
+      # Which way the comments run: `:auto` (default) puts a new comment
+      # next to the box it was written in — a box on top lists the newest
+      # first, a box at the bottom the oldest first (a chat), a box at both
+      # ends newest first (the top one is the main one). `:newest_first` /
+      # `:oldest_first` fix it. Only the comments themselves turn round:
+      # each one's replies stay in the order they were written.
+      |> assign_new(:order, fn -> :auto end)
       |> assign_new(:form_extras, fn -> [] end)
       |> assign_new(:current_user, fn -> nil end)
       # Optional per-comment decoration registry. Generic surface
@@ -1006,6 +1013,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     end
   end
 
+  # "Comment added" shows on the new comment, where the eye already is —
+  # not at the top of the thread, which a bottom box's writer never sees.
+  # A comment waiting for approval is not shown, so its word stays on the
+  # thread.
+  defp added_notice_place(%{status: "published", uuid: uuid}), do: {:comment, uuid}
+  defp added_notice_place(_comment), do: :thread
+
   defp do_create_comment(socket, base_attrs) do
     case consume_attachments(socket) do
       {:error, message} ->
@@ -1052,7 +1066,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
              |> assign(:attach_menu_open?, false)
              |> assign(:recording_audio?, false)
              |> load_comments()
-             |> put_notice(:thread, :info, gettext("Comment added"))}
+             |> put_notice(added_notice_place(comment), :info, gettext("Comment added"))}
 
           {:error, %Ecto.Changeset{} = changeset} ->
             message = first_error_message(changeset) || gettext("Failed to add comment")
@@ -1470,9 +1484,29 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       )
 
     socket
-    |> assign(:comments, comments)
+    |> assign(:comments, display_order(comments, socket.assigns))
     |> assign(:comment_count, comment_count)
   end
+
+  # The roots as the box's place says (see `:order`); the tree comes
+  # oldest first, and replies keep that order.
+  defp display_order(comments, assigns) do
+    case effective_order(assigns) do
+      :newest_first -> Enum.reverse(comments)
+      :oldest_first -> comments
+    end
+  end
+
+  @doc false
+  def effective_order(%{order: order}) when order in [:newest_first, :oldest_first], do: order
+  def effective_order(%{composer_position: :bottom}), do: :oldest_first
+  def effective_order(_assigns), do: :newest_first
+
+  # A chat (the box at the bottom, the oldest first) opens at its newest
+  # comment and follows new ones while the reader is at the bottom.
+  @doc false
+  def chat?(assigns),
+    do: assigns[:composer_position] == :bottom and effective_order(assigns) == :oldest_first
 
   defp load_reaction_state(%{assigns: %{show_likes: false}} = socket) do
     socket
@@ -1990,23 +2024,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         <div class="pl-8 min-w-0">
         <.notice ctx={@ctx} place={{:comment, @comment.uuid}} class="mt-1" />
 
-        <%= if @reply_to == @comment.uuid do %>
-          <div class="mt-2 ml-1 border-l-2 border-primary/40 pl-3">
-            <div class="text-xs font-medium text-base-content/60 mb-1">{gettext("Replying here")}</div>
-            <%!-- Same composer body as the top/bottom "Write comment"     --%>
-            <%!-- form (Leaf editor + attach menu + GIF picker + audio),   --%>
-            <%!-- scoped to this comment's reply editor id. Replies now    --%>
-            <%!-- reach feature parity with top-level comments.             --%>
-            <.composer_form
-              ctx={@ctx}
-              editor_id={reply_editor_id(@component_id, @comment.uuid)}
-              suffix={@comment.uuid}
-              placeholder={gettext("Write a reply...")}
-              submit_label={gettext("Post Reply")}
-            />
-          </div>
-        <% end %>
-
         <%!-- Nested Comments (Replies) --%>
         <%= if @comment.children && length(@comment.children) > 0 do %>
           <div class="mt-1 space-y-1">
@@ -2028,6 +2045,25 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 ctx={@ctx}
               />
             <% end %>
+          </div>
+        <% end %>
+
+        <%!-- The reply box under the replies already there, where the new
+             reply will show up (the boss, 2026-11-01). --%>
+        <%= if @reply_to == @comment.uuid do %>
+          <div class="mt-2 ml-1 border-l-2 border-primary/40 pl-3">
+            <div class="text-xs font-medium text-base-content/60 mb-1">{gettext("Replying here")}</div>
+            <%!-- Same composer body as the top/bottom "Write comment"     --%>
+            <%!-- form (Leaf editor + attach menu + GIF picker + audio),   --%>
+            <%!-- scoped to this comment's reply editor id. Replies now    --%>
+            <%!-- reach feature parity with top-level comments.             --%>
+            <.composer_form
+              ctx={@ctx}
+              editor_id={reply_editor_id(@component_id, @comment.uuid)}
+              suffix={@comment.uuid}
+              placeholder={gettext("Write a reply...")}
+              submit_label={gettext("Post Reply")}
+            />
           </div>
         <% end %>
         </div>

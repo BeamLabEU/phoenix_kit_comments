@@ -345,4 +345,53 @@
       }
     };
   })();
+
+  // PhoenixKitCommentsStickToBottom: a thread whose box is at the bottom
+  // (oldest first, a chat) opens at its newest comment and follows new ones
+  // while the reader is at the bottom; someone reading back is never pulled
+  // down. The thread does not scroll itself: the nearest scrolling ancestor
+  // (a drawer, a popup) or the page does.
+  (function() {
+    window.PhoenixKitCommentsHooks = window.PhoenixKitCommentsHooks || {};
+    if (window.PhoenixKitCommentsHooks.PhoenixKitCommentsStickToBottom) return;
+
+    function scroller(el) {
+      for (var p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        var y = window.getComputedStyle(p).overflowY;
+        if ((y === "auto" || y === "scroll") && p.scrollHeight > p.clientHeight + 1) return p;
+      }
+      return document.scrollingElement || document.documentElement;
+    }
+
+    function atBottom(box) {
+      return box.scrollHeight - box.scrollTop - box.clientHeight < 48;
+    }
+
+    function toBottom(box) { box.scrollTop = box.scrollHeight; }
+
+    window.PhoenixKitCommentsHooks.PhoenixKitCommentsStickToBottom = {
+      mounted: function() {
+        var self = this;
+        this.box = scroller(this.el);
+        this.stuck = true;
+        // A comment link (`#…`) keeps its own place.
+        if (!window.location.hash) requestAnimationFrame(function() { toBottom(self.box); });
+        this.onScroll = function() { self.stuck = atBottom(self.box); };
+        (this.box === document.scrollingElement ? window : this.box)
+          .addEventListener("scroll", this.onScroll, { passive: true });
+        // Pictures and GIFs size themselves after loading.
+        if (window.ResizeObserver) {
+          this.ro = new ResizeObserver(function() { if (self.stuck) toBottom(self.box); });
+          this.ro.observe(this.el);
+        }
+      },
+      beforeUpdate: function() { this.stuck = atBottom(this.box); },
+      updated: function() { if (this.stuck) toBottom(this.box); },
+      destroyed: function() {
+        if (this.box && this.onScroll)
+          (this.box === document.scrollingElement ? window : this.box).removeEventListener("scroll", this.onScroll);
+        if (this.ro) this.ro.disconnect();
+      }
+    };
+  })();
 })();
