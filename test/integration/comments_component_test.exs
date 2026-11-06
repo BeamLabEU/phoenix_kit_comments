@@ -918,9 +918,10 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
 
   describe "two threads on one page" do
     # A host listing several records shows several threads. Each one's voice
-    # recorder must answer only its own buttons and attach into its own
-    # composer: the toggle used to be a window-wide event every recorder
-    # answered, so one click recorded in both threads.
+    # recorder (core's `<.audio_recorder>`) must answer only its own Record
+    # item and attach into its own composer: the toggle used to be a
+    # window-wide event every recorder answered, so one click recorded in
+    # both threads.
     setup %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
       set_attachments(true)
       on_exit(fn -> set_attachments(false) end)
@@ -938,7 +939,14 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       %{view: view}
     end
 
-    @recorder ~s([phx-hook="PhoenixKitCommentsAudioRecorder"])
+    # Voice notes need core's recorder seam (`upload=`, `start/2`), which is
+    # newer than this module's core floor; against an older core the Record
+    # item is not offered at all (the last test here).
+    @core_recorder? Code.ensure_loaded?(PhoenixKitWeb.Components.Core.AudioRecorder) and
+                      function_exported?(PhoenixKitWeb.Components.Core.AudioRecorder, :start, 2)
+    @needs_core_recorder if(@core_recorder?, do: false, else: "core without the recorder seam")
+
+    @recorder ~s([phx-hook="AudioRecorder"])
 
     defp recorder_id(view, thread) do
       html = view |> element("#{thread} #{@recorder}") |> render()
@@ -947,10 +955,14 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
     end
 
     defp record_buttons(view, thread, recorder_id) do
-      has_element?(view, "#{thread} button[phx-click*='\"to\":\"##{recorder_id}\"']")
+      has_element?(
+        view,
+        "#{thread} button[phx-click*='phoenix_kit:audio_recorder_start'][phx-click*='\"to\":\"##{recorder_id}\"']"
+      )
     end
 
-    test "each thread's record button targets its own recorder, nothing page-wide",
+    @tag skip: @needs_core_recorder
+    test "each thread's Record item starts its own recorder, nothing page-wide",
          %{view: view} do
       first = recorder_id(view, "#first-thread")
       second = recorder_id(view, "#second-thread")
@@ -968,29 +980,55 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       refute render(view) =~ "window.dispatchEvent"
     end
 
-    test "a recording started in one thread shows only in that thread", %{view: view} do
-      view |> element("#first-thread #{@recorder}") |> render_hook("audio_recording_started", %{})
+    @tag skip: @needs_core_recorder
+    test "the recorder has no button of its own and no upload of its own", %{view: view} do
+      for thread <- ["#first-thread", "#second-thread"] do
+        assert has_element?(view, "#{thread} #{@recorder}[data-start-button='false']")
+        refute has_element?(view, "#{thread} #{@recorder} [data-recorder-start]")
+        refute has_element?(view, "#{thread} #{@recorder}[data-upload-form]")
+      end
 
-      assert has_element?(view, "#first-thread button", "Stop recording")
-      refute has_element?(view, "#second-thread button", "Stop recording")
-
-      # And the stop button dispatches to that same recorder.
-      first = recorder_id(view, "#first-thread")
-      assert record_buttons(view, "#first-thread", first)
+      refute render(view) =~ "audio_recorder_audio-recorder"
     end
 
-    test "each recorder sits in the form that holds its own file input", %{view: view} do
+    @tag skip: @needs_core_recorder
+    test "each recorder hands its clip to the file input of its own form", %{view: view} do
       for thread <- ["#first-thread", "#second-thread"] do
-        assert has_element?(
-                 view,
-                 "#{thread} form[phx-submit='add_comment'] #{@recorder}[data-upload-name='attachment']"
-               )
+        input =
+          view
+          |> element(
+            "#{thread} form[phx-submit='add_comment'] input[type='file'][name='attachment']"
+          )
+          |> render()
+
+        [_, ref] = Regex.run(~r/id="([^"]+)"/, input)
 
         assert has_element?(
                  view,
-                 "#{thread} form[phx-submit='add_comment'] input[type='file'][name='attachment']"
+                 "#{thread} form[phx-submit='add_comment'] " <>
+                   "#{@recorder}[data-upload-name='attachment'][data-upload-ref='#{ref}']"
                )
       end
+    end
+
+    @tag skip: @needs_core_recorder
+    test "a recorder's problem shows in its own thread's composer, translated",
+         %{view: view} do
+      view
+      |> element("#first-thread #{@recorder}")
+      |> render_hook("recorder_error", %{"reason" => "denied"})
+
+      assert has_element?(view, "#first-thread", "Microphone access was refused")
+      refute has_element?(view, "#second-thread", "Microphone access was refused")
+    end
+
+    @tag skip: if(@core_recorder?, do: "core has the recorder seam", else: false)
+    test "an older core offers no Record item and renders no recorder", %{view: view} do
+      view |> element("#first-thread button[phx-click='toggle_attach_menu']") |> render_click()
+
+      assert has_element?(view, "#first-thread [role='menu']")
+      refute has_element?(view, "#first-thread button", "Record")
+      refute render(view) =~ "audio-recorder-"
     end
   end
 

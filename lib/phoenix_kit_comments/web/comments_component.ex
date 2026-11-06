@@ -137,7 +137,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:giphy_selected, nil)
      |> assign(:giphy_searching?, false)
      |> assign(:attach_menu_open?, false)
-     |> assign(:recording_audio?, false)
+     |> assign(:voice_notes?, core_recorder?())
      |> assign(:liked_comment_uuids, MapSet.new())
      |> assign(:disliked_comment_uuids, MapSet.new())
      |> assign(:expanded_comments, MapSet.new())
@@ -168,6 +168,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   def update(%{leaf_content_changed: %{kind: :edit, content: content}}, socket) do
     {:ok, assign(socket, :editing_content, content)}
+  end
+
+  # Core's recorder (`errors={:notify}`, `target={@myself}`) reports what went
+  # wrong before the clip reached the upload; the upload's own errors (too many
+  # files, too large) show in the staged list like any other file's.
+  def update(%{audio_recorder_error: {_recorder_id, reason}}, socket) do
+    {:ok, put_notice(socket, :composer, :error, core_recorder_call(:error_message, [reason]))}
   end
 
   def update(assigns, socket) do
@@ -473,31 +480,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp handle("cancel_upload", %{"ref" => ref}, socket) do
     {:noreply, cancel_upload(socket, :attachment, ref)}
-  end
-
-  defp handle("audio_recording_started", _params, socket) do
-    {:noreply, assign(socket, :recording_audio?, true)}
-  end
-
-  defp handle("audio_recording_stopped", _params, socket) do
-    {:noreply, assign(socket, :recording_audio?, false)}
-  end
-
-  # Mapped from a fixed set of reason codes. This used to take the client's
-  # own string and put it straight into the flash — untranslated in every
-  # locale, and an open invitation to paint arbitrary text in the app's own
-  # error chrome ("Your session expired, sign in at …"). A non-binary value
-  # also reached `put_flash/3` and raised.
-  defp handle("audio_recording_error", %{"reason" => reason}, socket)
-       when is_binary(reason) do
-    {:noreply,
-     socket
-     |> assign(:recording_audio?, false)
-     |> put_notice(:composer, :error, audio_error_message(reason))}
-  end
-
-  defp handle("audio_recording_error", _params, socket) do
-    {:noreply, assign(socket, :recording_audio?, false)}
   end
 
   defp handle("open_composer", params, socket) do
@@ -1088,7 +1070,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
              |> assign(:giphy_results, [])
              |> assign(:giphy_query, "")
              |> assign(:attach_menu_open?, false)
-             |> assign(:recording_audio?, false)
              |> load_comments()
              |> put_notice(added_notice_place(comment), :info, gettext("Comment added"))}
 
@@ -1407,14 +1388,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   defp safe_filename(_name), do: "attachment"
-
-  defp audio_error_message("unsupported"),
-    do: gettext("Microphone access is not supported by this browser.")
-
-  defp audio_error_message("denied"), do: gettext("Microphone permission denied.")
-  defp audio_error_message("start_failed"), do: gettext("Could not start recording.")
-  defp audio_error_message("attach_failed"), do: gettext("Failed to attach the recording.")
-  defp audio_error_message(_other), do: gettext("Recording failed. Please try again.")
 
   defp save_edit_for(socket, comment, content, params) do
     cond do
@@ -2514,16 +2487,34 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp uploads_pending?(_ctx), do: false
 
-  # The recorder hook of THIS composer, and the click that starts or stops
-  # it. Dispatched on the recorder element, not on window: every recorder
-  # on the page answered a window-wide event, so with two open threads one
-  # click recorded in both. Client-side, so the click itself starts
-  # `getUserMedia` (a browser may want the user's gesture for it).
+  # Voice notes are core's `<.audio_recorder>`, one per composer: the attach
+  # menu's Record item starts it (`AudioRecorder.start/2`, a `JS.dispatch` on
+  # this composer's recorder, so the click itself asks for the microphone and
+  # two open threads never both record), and the clip goes into this
+  # component's own `:attachment` upload, staged, limited, cancelled and
+  # consumed exactly like a picked file. The id carries `@myself`, so two
+  # comment components on one page do not collide.
   defp recorder_id(ctx, suffix), do: "audio-recorder-#{ctx.myself}-#{suffix}"
 
-  defp toggle_recording(ctx, suffix) do
-    JS.dispatch("phx-kit-comments-audio-toggle", to: "#" <> recorder_id(ctx, suffix))
-  end
+  # The recorder's page-upload seam (`upload=`, `start_button=`, `start/2`)
+  # ships in a core release newer than this module's floor, so it is probed
+  # at runtime and called through `apply/3`; on an older core the composer
+  # simply offers no Record item.
+  @core_recorder PhoenixKitWeb.Components.Core.AudioRecorder
+
+  defp core_recorder?,
+    do: Code.ensure_loaded?(@core_recorder) and function_exported?(@core_recorder, :start, 2)
+
+  defp core_recorder, do: @core_recorder
+
+  defp core_recorder_call(fun, args), do: credo_safe_apply(@core_recorder, fun, args)
+
+  # Five minutes: a voice note, not a podcast. The upload's own size limit
+  # (the attachment setting) still applies on top.
+  defp voice_note_max_seconds, do: 300
+
+  defp start_recording(ctx, suffix),
+    do: core_recorder_call(:start, [%JS{}, recorder_id(ctx, suffix)])
 
   # Shared comment-form body used by both the top/bottom composer and the
   # inline reply form. Everything inside `<.form>` (editor, char counter,
@@ -2646,16 +2637,26 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
       <%= if @with_extras and @ctx.form_extras != [], do: render_slot(@ctx.form_extras) %>
 
-      <%!-- Persistent: recorder hook + live file input. Both must
-           stay in the DOM across menu open/close so the upload
-           state and MediaRecorder lifecycle survive. --%>
+      <%!-- Persistent: recorder + live file input. Both must stay in the
+           DOM across menu open/close so the upload state and the
+           recording survive. The recorder shows nothing until the Record
+           item starts it, then its timer, Send and Cancel; the clip it
+           sends lands in the staged list below. --%>
       <%= if @ctx.attachments_enabled? do %>
-        <div
+        <.live_component
+          :if={@ctx.voice_notes?}
+          module={core_recorder()}
           id={recorder_id(@ctx, @suffix)}
-          phx-hook="PhoenixKitCommentsAudioRecorder"
-          phx-target={@ctx.myself}
-          data-upload-name="attachment"
-          class="hidden"
+          format={:native}
+          max_seconds={voice_note_max_seconds()}
+          label={nil}
+          busy={false}
+          errors={:notify}
+          target={@ctx.myself}
+          portal={false}
+          start_button={false}
+          upload={@ctx.uploads.attachment}
+          class={nil}
         />
         <.live_file_input upload={@ctx.uploads.attachment} class="sr-only" />
       <% end %>
@@ -2725,19 +2726,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2">
-          <%= cond do %>
-            <% @ctx.recording_audio? -> %>
-              <button
-                type="button"
-                phx-click={toggle_recording(@ctx, @suffix)}
-                aria-label={gettext("Stop recording")}
-                class="btn btn-xs btn-error gap-1"
-              >
-                <span class="inline-block w-2 h-2 rounded-full bg-base-100 animate-pulse"></span>
-                <.icon name="hero-stop-circle" class="w-4 h-4" /> {gettext("Stop recording")}
-              </button>
-
-            <% @ctx.attachments_enabled? or @ctx.giphy_enabled? -> %>
+          <%= if @ctx.attachments_enabled? or @ctx.giphy_enabled? do %>
               <div class="relative inline-block">
                 <button
                   type="button"
@@ -2798,12 +2787,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                         </label>
                       </li>
 
-                      <li role="none">
+                      <li :if={@ctx.voice_notes?} role="none">
                         <button
                           type="button"
                           role="menuitem"
                           phx-click={
-                            toggle_recording(@ctx, @suffix)
+                            start_recording(@ctx, @suffix)
                             |> JS.push("close_attach_menu", target: @ctx.myself)
                           }
                           class="flex items-center gap-2"
@@ -2892,8 +2881,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                   </div>
                 <% end %>
               </div>
-
-            <% true -> %>
           <% end %>
         </div>
 
