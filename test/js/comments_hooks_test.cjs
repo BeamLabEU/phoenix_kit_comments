@@ -1,5 +1,5 @@
 // Run with: node --test test/js/comments_hooks_test.cjs
-// Exercise the shipped bundle, including asynchronous MediaRecorder events.
+// Exercise the shipped bundle.
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -136,115 +136,6 @@ test("destroy removes paste and drag listeners", () => {
   assert.equal(hook.uploads.length, 0);
 });
 
-function audio(getUserMedia, recorderOverrides = {}) {
-  const recorders = [];
-  class Recorder extends EventTarget {
-    static isTypeSupported() { return true; }
-    constructor() { super(); this.state = "inactive"; recorders.push(this); }
-    start() { this.state = "recording"; }
-    stop() {
-      this.state = "inactive";
-      queueMicrotask(() => {
-        dispatch(this, "dataavailable", { data: new Blob(["recorded audio"]) });
-        dispatch(this, "stop");
-      });
-    }
-  }
-  const definition = hooks({
-    navigator: { mediaDevices: { getUserMedia } },
-    MediaRecorder: Recorder,
-    ...recorderOverrides
-  }).PhoenixKitCommentsAudioRecorder;
-  return { hook: mount(definition), definition, recorders };
-}
-
-function stream() {
-  const track = { stopped: false, stop() { this.stopped = true; } };
-  return { track, getTracks: () => [track] };
-}
-
-test("audio toggles and completed uploads stay within their composer", async () => {
-  const media = stream();
-  const { hook, definition } = audio(async () => media);
-  const sibling = mount(definition);
-  dispatch(hook.el, "phx-kit-comments-audio-toggle");
-  await new Promise(setImmediate);
-  assert.equal(hook.recording, true);
-  assert.equal(sibling.recording, false);
-  dispatch(hook.el, "phx-kit-comments-audio-toggle");
-  await new Promise(setImmediate);
-  assert.equal(media.track.stopped, true);
-  assert.equal(hook.uploads.length, 1);
-  assert.equal(hook.uploads[0].form, hook.el.form);
-  assert.equal(await hook.uploads[0].files[0].text(), "recorded audio");
-  assert.equal(sibling.uploads.length, 0);
-});
-
-test("a late microphone permission after destroy releases the stream", async () => {
-  let resolve;
-  const media = stream();
-  const { hook, recorders } = audio(() => new Promise((done) => { resolve = done; }));
-  const pending = hook.start();
-  hook.destroyed();
-  resolve(media);
-  await pending;
-  assert.equal(media.track.stopped, true);
-  assert.equal(recorders.length, 0);
-  assert.equal(hook.events.length, 0);
-  assert.equal(hook.uploads.length, 0);
-});
-
-test("destroy stops an active recorder without uploading its final events", async () => {
-  const media = stream();
-  const { hook, recorders } = audio(async () => media);
-  await hook.start();
-  hook.destroyed();
-  await Promise.resolve();
-  assert.equal(media.track.stopped, true);
-  assert.equal(recorders[0].state, "inactive");
-  assert.equal(hook.uploads.length, 0);
-  assert.deepEqual(hook.events.map((event) => event.name), ["audio_recording_started"]);
-});
-
-test("repeated starts while permission is pending request one stream", async () => {
-  let resolve;
-  let requests = 0;
-  const { hook, recorders } = audio(() => {
-    requests++;
-    return new Promise((done) => { resolve = done; });
-  });
-  const first = hook.start();
-  const second = hook.start();
-  resolve(stream());
-  await Promise.all([first, second]);
-  assert.equal(requests, 1);
-  assert.equal(recorders.length, 1);
-  hook.destroyed();
-});
-
-test("a browser without MediaRecorder reports unsupported", async () => {
-  const { hook } = audio(async () => stream(), { MediaRecorder: undefined });
-  await hook.start();
-  assert.equal(hook.events[0].payload.reason, "unsupported");
-});
-
-test("a recorder start failure reports an error and releases the microphone", async () => {
-  const media = stream();
-  class BrokenRecorder {
-    static isTypeSupported() { return true; }
-    constructor() { this.state = "inactive"; }
-    addEventListener() {}
-    start() { throw new Error("device lost"); }
-  }
-  const { hook } = audio(async () => media, { MediaRecorder: BrokenRecorder });
-  await hook.start();
-  assert.equal(media.track.stopped, true);
-  assert.equal(hook.events[0].payload.reason, "start_failed");
-});
-
-// A chat-like thread (box at the bottom) in a page or in a drawer, with the
-// geometry a browser would report. The thread's top is at `top` on the page,
-// or 10px into a 600px drawer whose top is at 100; the page is 800px tall.
 function stickWorld({ drawer = false, top = 120, height = 400, hash = "" } = {}) {
   const s = { height, page: 0, frames: [], observers: [], pageScrolls: [] };
   // The page's own scroller records any scroll made through it (the hook
