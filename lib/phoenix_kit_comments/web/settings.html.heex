@@ -17,7 +17,7 @@
 
     <div class={["card bg-base-100 shadow-xl", @active_tab == "links" && "hidden"]}>
       <div class="card-body overflow-hidden">
-        <.form for={%{}} phx-submit="save" class="space-y-6">
+        <.form for={%{}} id="comments-settings-form" phx-submit="save" class="space-y-6">
           <div class={@active_tab != "general" && "hidden"}>
           <.settings_section_header
             icon="hero-cog-6-tooth"
@@ -171,11 +171,14 @@
               <label class="label">
                 <span class="fieldset-legend text-base font-medium">{gettext("Giphy API Key")}</span>
               </label>
+              <%!-- `new-password`, not `off`: browsers ignore `off` on a password
+                   field and may fill in the admin's own site password, which would be
+                   saved as the key and sent to Giphy in a query string. --%>
               <input
                 type="password"
                 name="settings[comments_giphy_api_key]"
                 value={@comments_giphy_api_key}
-                autocomplete="off"
+                autocomplete="new-password"
                 placeholder={gettext("Paste your Giphy API key")}
                 class="input w-full focus:input-primary"
               />
@@ -284,17 +287,15 @@
           <%!-- Action Buttons — save/reset apply to the whole form, not just
                the visible tab, so they stay outside the tab-hidden wrappers. --%>
           <div class="flex gap-3 pt-4">
+            <%!-- `phx-disable-with` covers the request in flight. A `@saving`
+                 assign was set and cleared inside the same callback, so it
+                 never rendered true. --%>
             <button
               type="submit"
               phx-disable-with={gettext("Saving…")}
-              class={["btn btn-primary flex-1", if(@saving, do: "loading", else: "")]}
-              disabled={@saving}
+              class="btn btn-primary flex-1"
             >
-              <%= if @saving do %>
-                {gettext("Saving…")}
-              <% else %>
-                {gettext("Save Settings")}
-              <% end %>
+              {gettext("Save Settings")}
             </button>
             <button
               type="button"
@@ -371,6 +372,7 @@
                           phx-hook="PhoenixKitCommentsInsertAtCursor"
                         >
                           <.form
+                            id={"edit-path-form-#{resource_type}"}
                             for={%{}}
                             phx-submit="save_resource_path"
                             phx-change="live_edit_path"
@@ -496,6 +498,7 @@
                     <span class="badge badge-ghost badge-sm">{resource_type}</span>
                   </div>
                   <.form
+                    id={"edit-path-mobile-form-#{resource_type}"}
                     for={%{}}
                     phx-submit="save_resource_path"
                     phx-change="live_edit_path"
@@ -616,6 +619,7 @@
                   class="bg-base-200 rounded-lg p-3"
                 >
                   <.form
+                    id={"draft-path-form-#{resource_type}"}
                     for={%{}}
                     phx-submit="add_resource_path"
                     phx-change="live_draft_path"
@@ -646,7 +650,7 @@
                         type="text"
                         name="resource_path[path_template]"
                         value={Map.get(@draft_paths, resource_type, "")}
-                        placeholder={"e.g. /#{resource_type}/:uuid"}
+                        placeholder={gettext("e.g. %{path}", path: "/#{resource_type}/:uuid")}
                         class="input input-sm w-full"
                         required
                       />
@@ -695,7 +699,7 @@
 
         <%!-- Add new pattern manually --%>
         <div class="bg-base-200 rounded-lg p-3">
-          <.form for={%{}} phx-submit="add_resource_path" class="space-y-2">
+          <.form for={%{}} id="add-path-form" phx-submit="add_resource_path" class="space-y-2">
             <div class="fieldset">
               <label class="label py-0">
                 <span class="fieldset-legend text-xs font-semibold">{gettext("Resource Type")}</span>

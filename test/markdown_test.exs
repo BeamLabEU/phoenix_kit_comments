@@ -43,6 +43,45 @@ defmodule PhoenixKitComments.Web.MarkdownTest do
     end
   end
 
+  # MDEx's allow-list keeps `style` and `class` on these four. Inline CSS
+  # positions an element over the page directly; a class does it through the
+  # host's own stylesheet (`fixed inset-0`, daisyUI's `toast`/`alert`/`btn`).
+  # Either draws a fake banner over every reader's page and over the
+  # moderation page, which renders the same component.
+  describe "render_markdown/1 lets no comment restyle the page" do
+    for tag <- ~w(div span code pre) do
+      test "#{tag}: no style" do
+        html =
+          Markdown.render_markdown(
+            ~s(<#{unquote(tag)} style="position:fixed;inset:0;z-index:9999">x</#{unquote(tag)}>)
+          )
+
+        assert html =~ "x"
+        refute html =~ "style="
+        refute html =~ "position:fixed"
+      end
+
+      test "#{tag}: no class" do
+        html =
+          Markdown.render_markdown(
+            ~s(<#{unquote(tag)} class="toast toast-top fixed inset-0 z-50">x</#{unquote(tag)}>)
+          )
+
+        assert html =~ "x"
+        refute html =~ "class="
+        refute html =~ "toast"
+      end
+    end
+
+    test "a fenced code block still renders as code" do
+      html = Markdown.render_markdown("```elixir\ndef a, do: 1\n```")
+
+      assert html =~ "<pre>"
+      assert html =~ "<code>"
+      assert html =~ "def a, do: 1"
+    end
+  end
+
   describe "render_markdown/1 keeps what comments are for" do
     test "ordinary markdown still renders" do
       html = Markdown.render_markdown("**bold** _em_ `code`\n\n- a\n- b")

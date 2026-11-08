@@ -95,7 +95,6 @@
       setDragging(on) {
         const hint = this.el.querySelector("[data-drop-hint]");
         if (hint) hint.classList.toggle("hidden", !on);
-        this.el.classList.toggle("pk-comments-dropping", on);
       },
       updated() {
         // LiveView patches restore the server's `hidden` class while a
@@ -112,10 +111,10 @@
           this.attach(files);
         };
         // A file dragged in from the desktop. The editor inside does not
-        // take it, so without this the browser opens the file in the tab
-        // and the page is gone. Claimed in the capture phase, before the
-        // editor sees it; only drags that carry files, so text and the
-        // editor's own drags are left alone.
+        // take it (LiveView's own window-level handler only stops the
+        // browser opening it), so without this a drop did nothing. Claimed
+        // in the capture phase, before the editor sees it; only drags that
+        // carry files, so text and the editor's own drags are left alone.
         this._onDragEnter = (e) => {
           if (!hasFiles(e.dataTransfer)) return;
           e.preventDefault();
@@ -139,7 +138,10 @@
           e.stopPropagation();
           this._depth = 0;
           this.setDragging(false);
-          const files = Array.prototype.map.call(e.dataTransfer.files || [], (f, i) => named(f, i));
+          // As they are: a file from the desktop has its real name, and
+          // `named/2` would have renamed a photo called "image.png" to
+          // "pasted-…" — it is for screenshots, which arrive nameless.
+          const files = Array.prototype.slice.call(e.dataTransfer.files || []);
           if (files.length > 0) this.attach(files);
         };
         this.el.addEventListener("paste", this._onPaste, true);
@@ -327,9 +329,15 @@
       try {
         var rtf = new Intl.RelativeTimeFormat(locale || undefined, { numeric: "auto", style: "short" });
         if (abs < 45) return rtf.format(0, "second");
-        if (abs < 3600) return rtf.format(Math.round(secs / 60), "minute");
-        if (abs < 86400) return rtf.format(Math.round(secs / 3600), "hour");
-        if (abs < 7 * 86400) return rtf.format(Math.round(secs / 86400), "day");
+        // The unit is chosen from the ROUNDED value: choosing it from the
+        // raw seconds wrote 3590 s as "60 min. ago", 86350 s as "24 hr.
+        // ago" and 6.8 days as "7 days ago".
+        var mins = Math.round(secs / 60);
+        if (Math.abs(mins) < 60) return rtf.format(mins, "minute");
+        var hours = Math.round(secs / 3600);
+        if (Math.abs(hours) < 24) return rtf.format(hours, "hour");
+        var days = Math.round(secs / 86400);
+        if (Math.abs(days) < 7) return rtf.format(days, "day");
         return new Intl.DateTimeFormat(locale || undefined, { day: "numeric", month: "short", year: "numeric" }).format(then);
       } catch (_e) {
         return null;

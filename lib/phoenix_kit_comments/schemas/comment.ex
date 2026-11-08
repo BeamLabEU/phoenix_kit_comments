@@ -1,6 +1,10 @@
 defmodule PhoenixKitComments.Comment do
   @moduledoc """
-  Schema for polymorphic comments with unlimited threading depth.
+  Schema for polymorphic comments with threaded replies.
+
+  Replies nest up to the `comments_max_depth` setting (default 10), which
+  `PhoenixKitComments.create_comment/4` enforces; the schema itself puts no
+  limit on `depth`.
 
   Supports nested comment threads (Reddit-style) with self-referencing parent/child
   relationships. Can be attached to any resource type via `resource_type` + `resource_uuid`.
@@ -51,6 +55,10 @@ defmodule PhoenixKitComments.Comment do
           like_count: integer(),
           dislike_count: integer(),
           metadata: map(),
+          author_display_name: String.t() | nil,
+          attribution_mode: String.t() | nil,
+          attributed_project_uuid: Ecto.UUID.t() | nil,
+          attributed_label: String.t() | nil,
           user: PhoenixKit.Users.Auth.User.t() | Ecto.Association.NotLoaded.t() | nil,
           parent: t() | Ecto.Association.NotLoaded.t() | nil,
           children: [t()] | Ecto.Association.NotLoaded.t(),
@@ -116,23 +124,34 @@ defmodule PhoenixKitComments.Comment do
   """
   @spec put_attribution(Ecto.Changeset.t(), map() | nil) :: Ecto.Changeset.t()
   def put_attribution(changeset, %{mode: "project"} = attribution) do
-    changeset
-    |> put_change(:attribution_mode, "project")
-    |> put_change(:author_display_name, attribution[:label])
-    |> put_change(:attributed_project_uuid, attribution[:project_uuid])
-    |> put_change(:attributed_label, attribution[:label])
+    # Cast, not put as given: `put_change/3` does not cast, so a host handing
+    # over a project id that is not a uuid ("42") got `Ecto.ChangeError` from
+    # the insert instead of an error tuple.
+    case Ecto.UUID.cast(attribution[:project_uuid]) do
+      {:ok, project_uuid} ->
+        changeset
+        |> put_change(:attribution_mode, "project")
+        |> put_change(:author_display_name, attribution[:label])
+        |> put_change(:attributed_project_uuid, project_uuid)
+        |> put_change(:attributed_label, attribution[:label])
+        |> validate_no_null_bytes()
+
+      :error ->
+        add_error(changeset, :attributed_project_uuid, "is invalid", validation: :cast)
+    end
   end
 
   def put_attribution(changeset, %{mode: "personal"} = attribution) do
     changeset
     |> put_change(:attribution_mode, "personal")
     |> put_change(:author_display_name, attribution[:label])
+    |> validate_no_null_bytes()
   end
 
   def put_attribution(changeset, _), do: changeset
 
   @doc """
-  Changeset for creating or updating a comment.
+  Changeset for creating a comment.
 
   ## Required Fields
 
@@ -141,13 +160,24 @@ defmodule PhoenixKitComments.Comment do
   - `user_uuid` - Reference to commenter
   - Either `content`, a Giphy attachment in `metadata["giphy"]`, or media
 
+  Updates go through `update_changeset/3`, which cannot move a comment.
+
   ## Options
 
   - `:has_media` — boolean. When set, overrides the inferred media
     presence (used by `PhoenixKitComments.create_comment/4` because the
     new comment has no `uuid` yet and the `media` association is not
     loaded). Not part of `cast` — callers cannot drive it via attrs.
+  - `:allow_empty` — skip the content-or-media rule.
+
+  ## Errors
+
+  Besides Ecto's own, two errors carry a `:validation` a caller can match
+  on to say something better than the message: `:content_or_media` (blank
+  content with no GIF or media) and `:null_byte` (a U+0000 in a string —
+  PostgreSQL cannot store one, and the insert raised instead of erroring).
   """
+  @spec changeset(%__MODULE__{}, map(), keyword()) :: Ecto.Changeset.t()
   def changeset(comment, attrs, opts \\ []) do
     comment
     |> cast(attrs, [
@@ -161,6 +191,38 @@ defmodule PhoenixKitComments.Comment do
       :metadata
     ])
     |> validate_required([:resource_type, :resource_uuid, :user_uuid])
+    # Code points, as `varchar(50)` counts: graphemes let 50 "é" written as
+    # e + U+0301 (100 code points) through to an insert that raised.
+    |> validate_length(:resource_type, max: 50, count: :codepoints)
+    |> validate_common(opts)
+    # Core's constraint names (`Migrations`), not Ecto's `*_fkey` defaults:
+    # under the default names a parent or author that does not exist raised
+    # `Ecto.ConstraintError` out of `create_comment/4` instead of coming
+    # back as `{:error, changeset}`.
+    |> foreign_key_constraint(:user_uuid, name: :fk_comments_user_uuid)
+    |> foreign_key_constraint(:parent_uuid, name: :fk_comments_parent)
+  end
+
+  @doc """
+  Changeset for updating a comment: its `content`, `metadata` and `status`.
+
+  Who wrote it, what it is on and where it sits in the thread are fixed at
+  creation. The create changeset casts them, and `update_comment/3` used it,
+  so a caller forwarding params could re-sign a comment as someone else,
+  move it to another record, or make it its own parent — after which it
+  vanished from the thread.
+
+  Takes the options and returns the errors of `changeset/3`.
+  """
+  @spec update_changeset(%__MODULE__{}, map(), keyword()) :: Ecto.Changeset.t()
+  def update_changeset(comment, attrs, opts \\ []) do
+    comment
+    |> cast(attrs, [:content, :status, :metadata])
+    |> validate_common(opts)
+  end
+
+  defp validate_common(changeset, opts) do
+    changeset
     |> validate_inclusion(:status, ["published", "hidden", "deleted", "pending"])
     # Matches the ceiling `comments_max_length` can be clamped to
     # (`Web.Settings` allows up to 100_000). It used to be 10_000 while the
@@ -169,12 +231,33 @@ defmodule PhoenixKitComments.Comment do
     # refused by the changeset with "should be at most 10000 character(s)" —
     # a limit the admin had explicitly changed.
     |> validate_length(:content, max: 100_000)
-    |> validate_length(:resource_type, max: 50)
     |> ensure_content_not_nil()
+    |> validate_no_null_bytes()
     |> validate_content_or_media(opts)
-    |> foreign_key_constraint(:user_uuid)
-    |> foreign_key_constraint(:parent_uuid)
   end
+
+  # PostgreSQL stores no U+0000, in `text` (22021) or in `jsonb` (22P05),
+  # and the error is RAISED, not returned: one crafted submit took the host
+  # LiveView down, with the draft in the crash report. Every string change
+  # is checked, nested metadata included.
+  defp validate_no_null_bytes(changeset) do
+    Enum.reduce(changeset.changes, changeset, fn {field, value}, acc ->
+      if null_byte?(value),
+        do:
+          add_error(acc, field, "contains a character that cannot be saved",
+            validation: :null_byte
+          ),
+        else: acc
+    end)
+  end
+
+  defp null_byte?(value) when is_binary(value), do: String.contains?(value, <<0>>)
+
+  defp null_byte?(value) when is_map(value) and not is_struct(value),
+    do: Enum.any?(value, fn {k, v} -> null_byte?(k) or null_byte?(v) end)
+
+  defp null_byte?(value) when is_list(value), do: Enum.any?(value, &null_byte?/1)
+  defp null_byte?(_value), do: false
 
   defp ensure_content_not_nil(changeset) do
     if get_field(changeset, :content) == nil do
@@ -205,11 +288,11 @@ defmodule PhoenixKitComments.Comment do
     if opts[:allow_empty] do
       changeset
     else
-      do_validate_content_or_media!(changeset, opts)
+      require_content_or_media(changeset, opts)
     end
   end
 
-  defp do_validate_content_or_media!(changeset, opts) do
+  defp require_content_or_media(changeset, opts) do
     content = changeset |> get_field(:content) |> to_string() |> String.trim()
     metadata = get_field(changeset, :metadata) || %{}
 
@@ -220,10 +303,19 @@ defmodule PhoenixKitComments.Comment do
     has_media? = resolve_has_media(changeset, opts)
 
     cond do
-      content != "" -> changeset
-      has_gif? -> changeset
-      has_media? -> changeset
-      true -> add_error(changeset, :content, "can't be blank without a GIF or attachment")
+      content != "" ->
+        changeset
+
+      has_gif? ->
+        changeset
+
+      has_media? ->
+        changeset
+
+      true ->
+        add_error(changeset, :content, "can't be blank without a GIF or attachment",
+          validation: :content_or_media
+        )
     end
   end
 

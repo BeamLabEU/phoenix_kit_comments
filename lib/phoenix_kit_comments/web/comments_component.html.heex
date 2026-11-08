@@ -98,7 +98,10 @@
             <.new_comment_composer ctx={assigns} position={:top} />
           <% end %>
 
-          <%!-- Comments List --%>
+          <%!-- Comments List. `ctx` is `@thread_ctx`, never `assigns`: an
+               expression reading `assigns` re-renders on every change, so
+               each draft keystroke re-rendered every comment (see
+               `put_thread_ctx/1`). --%>
           <%= if length(@comments) > 0 do %>
             <div
               id={"pk-comments-list-#{@id}"}
@@ -120,7 +123,7 @@
                   liked_comment_uuids={@liked_comment_uuids}
                   disliked_comment_uuids={@disliked_comment_uuids}
                   reply_to={@reply_to}
-                  ctx={assigns}
+                  ctx={@thread_ctx}
                 />
               <% end %>
             </div>

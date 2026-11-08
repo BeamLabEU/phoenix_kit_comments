@@ -7,8 +7,8 @@ defmodule PhoenixKitComments.Test.Router do
   `PhoenixKit.Utils.Routes.path/1` defaults to no URL prefix when the
   `phoenix_kit_settings` table is unavailable, and admin paths always carry
   the default locale prefix — so the base is `/en/admin/comments`. The
-  `/phoenix_kit/...` scope below mirrors it because `push_patch` prepends
-  whatever prefix IS configured; without both, a filter or search event
+  `/phoenix_kit/...` routes mirror it because `push_patch` prepends
+  whatever prefix IS configured; without them, a filter or search event
   crashes with "cannot invoke handle_params nor navigate/patch to ...".
   """
 
@@ -24,14 +24,20 @@ defmodule PhoenixKitComments.Test.Router do
     plug(:protect_from_forgery)
   end
 
-  scope "/en/admin", PhoenixKitComments.Web do
+  # Full paths in one live_session: a `push_patch` reaches only a route of
+  # the same LiveView in the SAME live_session. The filter and search events
+  # patch to `Routes.path("/admin/comments?…")`, which in an event handler
+  # resolves without the locale (`/phoenix_kit/admin/comments`), so that
+  # path sits beside the one the tests mount.
+  scope "/", PhoenixKitComments.Web do
     pipe_through(:browser)
 
     live_session :comments_test,
       layout: {PhoenixKitComments.Test.Layouts, :app},
       on_mount: {PhoenixKitComments.Test.Hooks, :assign_scope} do
-      live("/comments", Index, :index, as: :comments)
-      live("/settings/comments", Settings, :index, as: :comments_settings)
+      live("/en/admin/comments", Index, :index, as: :comments)
+      live("/en/admin/settings/comments", Settings, :index, as: :comments_settings)
+      live("/phoenix_kit/admin/comments", Index, :index, as: :comments_patched)
     end
   end
 

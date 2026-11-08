@@ -11,10 +11,11 @@
 #
 #   createdb phoenix_kit_comments_test
 #
-# Core's versioned chain still creates the comments tables, so the schema is
-# built by `PhoenixKit.Migration.ensure_current/2`, the same call a host app
-# makes; then this module's own chain (`PhoenixKitComments.Migrations`, V1
-# adopts those tables) runs on top, as `mix phoenix_kit.update` runs it.
+# The schema is built by `PhoenixKit.Migration.ensure_current/2`, the same
+# call a host app makes, then this module's own chain
+# (`PhoenixKitComments.Migrations`) on top, as `mix phoenix_kit.update` runs
+# it: V1 adopts the comments tables where an older core created them and
+# creates them where core 3.x no longer does.
 
 support_dir = Path.expand("support", __DIR__)
 
@@ -69,12 +70,10 @@ repo_available =
     # process has no connection ownership and fails for a reason that has
     # nothing to do with what is being asked.
     #
-    # Attribution needs core V166. `mix.exs` still declares the older floor
-    # (the core release carrying V166 is unpublished), so a plain `mix test`
-    # builds a schema without those columns and every query on `Comment`
-    # fails with "column does not exist" — which looks like a broken suite
-    # rather than a version gap. Run with
-    # PHOENIX_KIT_PATH=../phoenix_kit to exercise the integration half.
+    # The attribution columns (core V166, and this module's V1) are on
+    # every schema the current floor builds; the probe stays so a database
+    # left behind by an older build says so, instead of failing every query
+    # on `Comment` with "column does not exist".
     %{rows: [[present]]} =
       TestRepo.query!("""
       SELECT COUNT(*) FROM information_schema.columns
@@ -86,9 +85,9 @@ repo_available =
     if present == 0 do
       IO.puts("""
 
-        Integration tests excluded — core in this build predates V166, so
-        `phoenix_kit_comments.author_display_name` does not exist.
-        Run: PHOENIX_KIT_PATH=../phoenix_kit mix test
+        Integration tests excluded — `phoenix_kit_comments.author_display_name`
+        does not exist in "#{db_name}" (a database left by an older build).
+        Recreate it: dropdb #{db_name} && createdb #{db_name}
       """)
     end
 
@@ -97,10 +96,12 @@ repo_available =
     e ->
       IO.puts("""
 
-        Integration tests excluded — could not reach "#{db_name}".
-        Run: createdb #{db_name}
+        Integration tests excluded — "#{db_name}" is not usable:
+        #{Exception.message(e)}
 
-        (#{Exception.message(e)})
+        No database yet: createdb #{db_name}
+        One left by an older build (e.g. "below this release's floor"):
+          dropdb #{db_name} && createdb #{db_name}
       """)
 
       false

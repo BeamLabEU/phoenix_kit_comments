@@ -169,5 +169,8 @@ defmodule PhoenixKitComments.MigrationsTest do
     assert_raise ArgumentError, fn -> Migrations.up_statements("public; DROP") end
     assert_raise ArgumentError, fn -> Migrations.down_statements("x'y", 0) end
     assert_raise ArgumentError, fn -> Migrations.migrated_version_runtime(prefix: "a b") end
+    # Postgres folds an unquoted "Tenant" to `tenant`; the guards compare
+    # the name as given, so a mixed-case prefix could never be re-run.
+    assert_raise ArgumentError, fn -> Migrations.up_statements("Tenant") end
   end
 end

@@ -79,7 +79,9 @@ defmodule PhoenixKitComments.Integration.EmptyAnchorCommentsTest do
       assert edited.content == "now filled"
 
       assert {:error, changeset} = PhoenixKitComments.update_comment(edited, %{content: ""})
-      assert {"can't be blank without a GIF or attachment", []} = changeset.errors[:content]
+
+      assert {"can't be blank without a GIF or attachment", [validation: :content_or_media]} =
+               changeset.errors[:content]
     end
   end
 end

@@ -27,6 +27,7 @@ defmodule PhoenixKitComments.DataCase do
       import Ecto.Changeset
       import Ecto.Query
       import PhoenixKitComments.DataCase
+      import PhoenixKitComments.ActivityLogAssertions
 
       alias PhoenixKitComments.Test.Repo
     end

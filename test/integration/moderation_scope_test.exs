@@ -98,12 +98,24 @@ defmodule PhoenixKitComments.Web.ModerationScopeTest do
     raising = c.("raising_thing", Ecto.UUID.generate(), "hidden raising handler", %{})
     profile = c.("user", Ecto.UUID.generate(), "hidden user profile", %{})
 
-    # A reply on a managed record whose parent sits on an unmanaged one: the
-    # schema only checks the parent FK, never that both share a resource.
+    # A reply on a managed record whose parent sits on an unmanaged one.
+    # `create_comment/4` refuses that now (`:invalid_parent`), but rows
+    # stored before it did still exist, so the page must not quote such a
+    # parent: the row is written past the context, as an old one was.
     secret_parent = c.("scoped_thing", unmanaged, "SECRETPARENTTEXT", %{})
 
-    reply =
-      c.("scoped_thing", managed, "visible reply", %{parent_uuid: secret_parent.uuid})
+    {:ok, reply} =
+      %Comment{}
+      |> Comment.changeset(%{
+        resource_type: "scoped_thing",
+        resource_uuid: managed,
+        user_uuid: author.uuid,
+        parent_uuid: secret_parent.uuid,
+        depth: 1,
+        content: "visible reply",
+        status: "pending"
+      })
+      |> Repo.insert()
 
     %{
       author: author,
@@ -293,7 +305,9 @@ defmodule PhoenixKitComments.Web.ModerationScopeTest do
                live(put_test_scope(ctx.conn, ctx.all_scope), @settings_path)
     end
 
-    test "opens for a comments.settings holder, even with the module off", ctx do
+    # The page's own check. In production core's admin gate also refuses the
+    # page while the module is off; this suite mounts it without that gate.
+    test "its own check does not depend on the module being on", ctx do
       PhoenixKit.Settings.update_boolean_setting_with_module(
         "comments_enabled",
         false,

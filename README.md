@@ -1,15 +1,17 @@
 # PhoenixKitComments
 
-[![Elixir](https://img.shields.io/badge/Elixir-~%3E_1.15-4B275F)](https://elixir-lang.org)
+[![Elixir](https://img.shields.io/badge/Elixir-~%3E_1.18-4B275F)](https://elixir-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Resource-agnostic, polymorphic commenting module for [PhoenixKit](https://github.com/BeamLabEU/phoenix_kit). Drop-in comments with unlimited nested threading, like/dislike reactions, moderation, and an admin dashboard.
+Resource-agnostic, polymorphic commenting module for [PhoenixKit](https://github.com/BeamLabEU/phoenix_kit). Drop-in comments with nested replies, like/dislike reactions, attachments, voice notes, Giphy, moderation, and an admin dashboard.
 
 ## Features
 
 - **Polymorphic comments** — attach comments to any resource via `(resource_type, resource_uuid)` with zero schema coupling
-- **Unlimited nested threading** — self-referencing `parent_uuid` with automatic depth tracking
+- **Nested replies** — self-referencing `parent_uuid` with automatic depth tracking, up to `comments_max_depth` (default 10)
 - **Like/dislike reactions** — one per user per comment, with denormalized counters and transaction-safe updates
+- **Attachments and voice notes** — images, video, audio and files, pasted, dropped or picked, through the host's storage
+- **Translated** — English, German, Spanish, Estonian, French, Italian, Russian and Chinese
 - **Moderation** — optional approval workflow; comments start as `"pending"` when moderation is enabled
 - **Admin dashboard** — search, filter by status/resource type, paginate, and perform bulk actions
 - **Auto-discovery** — implements `PhoenixKit.Module` behaviour; PhoenixKit finds it at startup with zero config
@@ -22,30 +24,33 @@ Add `phoenix_kit_comments` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:phoenix_kit_comments, "~> 0.3"}
+    {:phoenix_kit_comments, "~> 0.5"}
   ]
 end
 ```
 
-Then fetch dependencies:
+Then fetch dependencies and create the tables:
 
 ```bash
 mix deps.get
+mix phoenix_kit.update
 ```
 
-> **Note:** For development or if not yet published to Hex, you can use:
-> ```elixir
-> {:phoenix_kit_comments, github: "mdon/phoenix_kit_comments"}
-> ```
+`mix phoenix_kit.update` applies core's migrations, then this module's own chain
+(`PhoenixKitComments.Migrations`), generating a wrapper migration in your repo's
+migrations directory; commit that file. (Core 3.x no longer creates the comments
+tables itself; this module's chain does.)
 
-PhoenixKit auto-discovers the module at startup — no additional configuration needed.
+PhoenixKit auto-discovers the module at startup — no router or config entry needed.
 
 ## Quick Start
 
 1. Add the dependency to `mix.exs`
-2. Run `mix deps.get`
-3. Enable the module in admin settings (`comments_enabled: true`)
+2. Run `mix deps.get` and `mix phoenix_kit.update`
+3. Enable the module on the admin Modules page (the `comments_enabled` setting)
 4. Embed the `CommentsComponent` in your LiveViews
+5. With rich text on (the default), forward the editor's messages — see
+   [Embedding the composer](#embedding-the-composer-required-for-rich-text)
 
 ## Usage
 
@@ -180,8 +185,12 @@ def mount(_params, _session, socket) do
 end
 
 # Fired for create / edit / delete / reaction across every session viewing the resource.
-def handle_info({:comments_updated, %{resource_type: _, resource_uuid: _, action: action}}, socket) do
+def handle_info({:comments_updated, %{resource_type: _, resource_uuid: _, action: _action}}, socket) do
   # action is :created | :updated | :deleted | :reaction
+
+  # The component does not subscribe by itself: tell an open thread to reload.
+  send_update(PhoenixKitComments.Web.CommentsComponent, id: "comments", loaded?: false)
+
   {:noreply, refresh_comment_counts(socket)}
 end
 ```
@@ -212,16 +221,26 @@ It honors the same `:status` / `:include_deleted` options as the scalar form.
 | `comments_enabled` | boolean | `false` | Enable/disable the module |
 | `comments_moderation` | boolean | `false` | Require approval for new comments |
 | `comments_rich_text` | boolean | `true` | Use the Leaf rich-text editor in the composer (see [JavaScript wiring](#javascript-wiring)) |
-| `comments_max_depth` | integer | `10` | Maximum thread nesting level |
-| `comments_max_length` | integer | `10000` | Maximum comment length (characters) |
+| `comments_max_depth` | integer | `10` | Maximum thread nesting level (1–50) |
+| `comments_max_length` | integer | `10000` | Maximum comment length in characters (100–100,000) |
+| `comments_attachments_enabled` | boolean | `false` | Allow attachments and voice notes (pasting and dropping files need it) |
+| `comments_max_attachments` | integer | `4` | Attachments per comment (1–10) |
+| `comments_attachment_max_size_mb` | integer | `20` | Size cap per file, clamped by the global `storage_max_upload_size_mb` |
+| `comments_giphy_enabled` | boolean | `false` | Show the Giphy picker (needs an API key) |
+| `comments_giphy_api_key` | string | `""` | Giphy API key |
+| `comments_giphy_rating` | string | `"g"` | Maximum Giphy rating: `g`, `pg`, `pg-13` or `r` |
+
+All of them are managed from Settings → Comments.
 
 ### Moderation Workflow
 
 When `comments_moderation` is enabled:
-- New comments start with status `"pending"`
-- Admins can approve (set to `"published"`) or reject (set to `"hidden"`)
+- New comments start with status `"pending"`, and the poster is told it awaits approval
+- Moderators approve (`"published"`) or hide (`"hidden"`) them, one at a time or in bulk
 - Approved comments become visible to all users
-- Rejected comments remain hidden but are not deleted
+- Hidden comments remain stored but are not shown
+- Approve never brings back a deleted comment; Restore does (back to `"pending"`
+  while moderation is on)
 
 ### Permissions
 
@@ -236,19 +255,12 @@ The module declares permissions via `permission_metadata/0`:
 Roles that held `"comments"` before the sub-keys existed are granted both once,
 at boot. Check sub-keys with `Scope.can?/2`.
 
-### CSS Requirements
+### CSS
 
-For Tailwind CSS users: ensure `phoenix_kit_comments` is listed in your `tailwind.config.js` sources:
-
-```javascript
-module.exports = {
-  content: [
-    // ...
-    "./deps/phoenix_kit_comments/**/*.{heex,ex}",
-    // ...
-  ]
-}
-```
+No setup: the module declares `css_sources/0`, and core's
+`:phoenix_kit_css_sources` compiler (added to your `mix.exs` compilers by
+`mix phoenix_kit.install`) writes the Tailwind `@source` for its templates into
+`assets/css/_phoenix_kit_sources.css`.
 
 ### Embedding the composer (required for rich text)
 
@@ -342,12 +354,21 @@ lib/
   phoenix_kit_comments/
     schemas/
       comment.ex                       # Polymorphic comment schema with threading
-      comment_like.ex                  # Like tracking (unique per user per comment)
-      comment_dislike.ex               # Dislike tracking (unique per user per comment)
+      comment_like.ex                  # Like tracking (one per user, kept by the context)
+      comment_dislike.ex               # Dislike tracking (one per user, kept by the context)
+      comment_media.ex                 # A comment's attachments, by position
     web/
       comments_component.ex            # Embeddable LiveComponent
       index.ex                         # Admin moderation dashboard
       settings.ex                      # Admin settings page
+      markdown.ex                      # Sanitised markdown renderer
+    activity.ex                        # Activity-log lines for every mutation
+    attachments.ex                     # Where uploaded attachments are placed
+    embed.ex                           # `use` in a host LiveView to forward Leaf events
+    file_references.ex                 # Attachment columns for core's orphan-file check
+    migrations.ex                      # This module's versioned migration chain
+    removal_guard.ex                   # Keeps attached files out of the media trash
+    resource_handler.ex                # Behaviour for resource handlers
 ```
 
 ### Comment statuses
@@ -362,15 +383,20 @@ lib/
 ### Database tables
 
 - `phoenix_kit_comments` — comment records (UUIDv7 primary keys)
-- `phoenix_kit_comments_likes` — like records with unique `(comment_uuid, user_uuid)` constraint
-- `phoenix_kit_comments_dislikes` — dislike records with unique `(comment_uuid, user_uuid)` constraint
+- `phoenix_kit_comments_likes` — like records, one per `(comment_uuid, user_uuid)`
+- `phoenix_kit_comments_dislikes` — dislike records, one per `(comment_uuid, user_uuid)`
+- `phoenix_kit_comment_media` — attachments, linking stored files to comments by position
+
+One reaction per user is kept by `like_comment/2` and `dislike_comment/2`, which
+lock the comment row; the tables have no unique index on `(comment_uuid,
+user_uuid)`, so a row written around those functions can duplicate one.
 
 ## Development
 
 ```bash
 mix deps.get       # Install dependencies
-mix test           # Run tests
-node --test test/js/comments_hooks_test.cjs # Exercise the shipped browser hooks (Node 20+)
+mix test           # Run tests (includes the JS hooks' tests when node 20+ is installed)
+mix precommit      # The gate: compile, unused deps, hex.audit, format check, credo, dialyzer
 mix format         # Format code
 mix credo          # Static analysis
 mix dialyzer       # Type checking
@@ -385,7 +411,8 @@ mix docs           # Generate documentation
 - Ensure the current user is authenticated and passed to the component
 
 ### CSS classes missing
-- Add `phoenix_kit_comments` to your Tailwind content sources
+- Check that `:phoenix_kit_css_sources` is in your `mix.exs` compilers and
+  `assets/css/app.css` imports `./_phoenix_kit_sources.css`
 - Run `mix assets.deploy` to rebuild CSS
 
 ### Comment editor stuck on a loading word ("Polishing…", etc.)

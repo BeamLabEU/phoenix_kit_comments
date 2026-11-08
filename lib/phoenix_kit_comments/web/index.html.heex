@@ -178,44 +178,49 @@
     </.form>
   </div>
 
-  <%!-- Bulk Actions --%>
-  <%!-- Selection now lives client-side (BulkSelectScope hook), so the server
-       can't know the count at initial render — the bar always renders and
-       starts hidden via inline style + data-bulk-show, which the hook flips
-       once something's selected. --%>
-  <div
-    class="flex gap-2 mb-4 items-center"
-    data-bulk-show="has-selection"
-    style="display: none;"
-  >
-    <%!-- The catalog held this as a PLURAL entry left over from an `ngettext`
-         call, so the singular lookup missed it and every locale fell back to
-         English. The count is substituted CLIENT-side by the bulk hook, so no
-         locale's plural rules can apply anyway — the wording has to read
-         correctly for any number. --%>
-    <span
-      class="text-sm text-base-content/70"
-      data-bulk-text-template={gettext("Selected: %{count}", count: "%{count}")}
-    ></span>
-    <button data-bulk-action="bulk_approve" phx-disable-with={gettext("Approving…")} class="btn btn-success btn-xs">
-      {gettext("Approve")}
-    </button>
-    <button data-bulk-action="bulk_hide" phx-disable-with={gettext("Hiding…")} class="btn btn-warning btn-xs">
-      {gettext("Hide")}
-    </button>
-    <button
-      data-bulk-action="bulk_delete_comments"
-      phx-disable-with={gettext("Deleting…")}
-      class="btn btn-error btn-xs"
-      data-confirm={gettext("Delete selected comments?")}
-    >
-      {gettext("Delete")}
-    </button>
-  </div>
-
   <%!-- Comments Table --%>
   <%= if length(@comments) > 0 do %>
     <.bulk_select_scope id="comments-bulk" total_count={length(@comments)}>
+      <%!-- Bulk Actions. INSIDE the scope: core's BulkSelectScope hook looks
+           for `[data-bulk-show]`, `[data-bulk-action]` and
+           `[data-bulk-text-template]` under its own element only. This bar
+           sat just above `<.bulk_select_scope>`, so the hook never found it:
+           it kept its inline `display: none` whatever was ticked, and its
+           buttons (which carry no `phx-click` of their own) were never
+           wired. Bulk moderation could not be reached from the page at all.
+
+           Selection lives client-side, so the server can't know the count
+           at render: the bar always renders, starts hidden, and the hook
+           shows it once something is selected. --%>
+      <div
+        id="comments-bulk-actions"
+        class="flex gap-2 mb-4 items-center"
+        data-bulk-show="has-selection"
+        style="display: none;"
+      >
+        <%!-- The count is substituted CLIENT-side by the bulk hook, so no
+             locale's plural rules can apply — the wording has to read
+             correctly for any number. --%>
+        <span
+          class="text-sm text-base-content/70"
+          data-bulk-text-template={gettext("Selected: %{count}", count: "%{count}")}
+        ></span>
+        <button type="button" data-bulk-action="bulk_approve" class="btn btn-success btn-xs">
+          {gettext("Approve")}
+        </button>
+        <button type="button" data-bulk-action="bulk_hide" class="btn btn-warning btn-xs">
+          {gettext("Hide")}
+        </button>
+        <button
+          type="button"
+          data-bulk-action="bulk_delete_comments"
+          class="btn btn-error btn-xs"
+          data-confirm={gettext("Delete selected comments?")}
+        >
+          {gettext("Delete")}
+        </button>
+      </div>
+
       <.table_default
         id="comments-table"
         variant="zebra"
@@ -231,7 +236,7 @@
                 label: gettext("Author"),
                 value:
                   if(comment.user,
-                    do: author_label(comment, show_emails?(@phoenix_kit_current_scope)),
+                    do: author_label(comment, @show_emails),
                     else: gettext("Deleted user")
                   )
               },
@@ -290,7 +295,7 @@
               </.table_default_cell>
               <.table_default_cell class="text-sm">
                 <%= if comment.user do %>
-                  {author_label(comment, show_emails?(@phoenix_kit_current_scope))}
+                  {author_label(comment, @show_emails)}
                 <% else %>
                   <span class="text-base-content/50">{gettext("Deleted user")}</span>
                 <% end %>
@@ -328,7 +333,7 @@
   <%= if @total_pages > 1 do %>
     <div class="flex justify-center mt-6">
       <div class="join">
-        <%= for page <- max(1, @page - 2)..min(@total_pages, @page + 2) do %>
+        <%= for page <- max(1, @page - 2)..min(@total_pages, @page + 2)//1 do %>
           <.link
             patch={
               Routes.path("/admin/comments?#{build_url_params(assigns, %{"page" => to_string(page)})}")
@@ -368,7 +373,7 @@
         <div class="flex flex-wrap items-center gap-2 mb-3 text-sm text-base-content/70">
           <span>
             {if @viewing_comment.user,
-              do: author_label(@viewing_comment, show_emails?(@phoenix_kit_current_scope)),
+              do: author_label(@viewing_comment, @show_emails),
               else: gettext("Deleted user")}
           </span>
           <span class="text-base-content/30">·</span>

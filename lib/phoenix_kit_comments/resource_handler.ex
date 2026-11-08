@@ -107,8 +107,14 @@ defmodule PhoenixKitComments.ResourceHandler do
   handler does not answer is invisible to a holder of the base `comments`
   key (a `comments.moderate_all` holder sees every comment and this is not
   asked). Called with the viewer's `PhoenixKit.Users.Auth.Scope`, once per
-  resource type each time the moderation page builds its list, and again
-  for every moderation action.
+  resource type, each time:
+
+    * the moderation page builds its list, and on every moderation action;
+    * an embedded thread updates (`CommentsComponent` decides whether the
+      viewer moderates the record it shows), and on every edit or delete
+      there;
+    * the media library checks whether a file a comment shows may be
+      trashed (`PhoenixKitComments.RemovalGuard`), when one is attached.
 
   Start from what the viewer can reach (their projects, their records),
   never from every commented record, and keep the answer small. The list is

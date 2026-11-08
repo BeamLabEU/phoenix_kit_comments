@@ -29,8 +29,21 @@ defmodule PhoenixKitComments.Integration.EditBroadcastTest do
     assert {:ok, hidden} = PhoenixKitComments.hide_comment(comment)
     assert_receive {:comments_updated, %{action: :updated}}
 
-    assert {:ok, _} = PhoenixKitComments.restore_comment(hidden)
+    # Restore brings back a DELETED comment only (a hidden one is refused).
+    assert {:ok, deleted} = PhoenixKitComments.delete_comment(hidden)
+    assert_receive {:comments_updated, %{action: :deleted}}
+
+    assert {:ok, _} = PhoenixKitComments.restore_comment(deleted)
     assert_receive {:comments_updated, %{action: :updated}}
+  end
+
+  test "a transition to the state the comment is already in announces nothing",
+       %{comment: comment} do
+    assert {:ok, hidden} = PhoenixKitComments.hide_comment(comment)
+    assert_receive {:comments_updated, %{action: :updated}}
+
+    assert {:ok, _} = PhoenixKitComments.hide_comment(hidden)
+    refute_receive {:comments_updated, _}, 100
   end
 
   test "a delete broadcasts :deleted exactly once, not :updated as well", %{comment: comment} do

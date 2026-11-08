@@ -74,16 +74,13 @@ defmodule PhoenixKitComments.MixProject do
   defp deps do
     [
       # PhoenixKit provides the Module behaviour and Settings API.
-      # The floor is 2.38.0: attachments are placed by core's
-      # `Storage.ResourceFolders` and the actor and activity log come from
-      # `PhoenixKitWeb.Actor` and `PhoenixKit.Activity.log/3`, all first
-      # shipped there and none feature-detected, so a lower core fails to
-      # compile. (It also carries V166's attribution columns, which the old
-      # `~> 2.0` floor predated.) Patch-precise floor in the compound form,
-      # so the ceiling stays open through every later 2.x minor (see
-      # test/core_pin_conformance_test.exs).
-      # Floor 2.65.0: the first core with the `file_references/0` and `expected_schema/0`
-      # callbacks this module implements (`@impl`). The ceiling is open through core 3.x.
+      # Floor 2.65.0: the first core with the `file_references/0` and
+      # `expected_schema/0` callbacks this module implements (`@impl`). It
+      # also carries what the module uses without feature-detecting it —
+      # `Storage.ResourceFolders`, `PhoenixKitWeb.Actor`,
+      # `PhoenixKit.Activity.log/3` (2.38.0) and V166's attribution columns.
+      # Patch-precise floor in the compound form, so the ceiling stays open
+      # through every core 3.x (see test/core_pin_conformance_test.exs).
       pk_dep(:phoenix_kit, ">= 2.65.0 and < 4.0.0"),
 
       # LiveView is needed for the admin pages.

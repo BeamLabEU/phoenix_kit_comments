@@ -3,10 +3,19 @@ defmodule PhoenixKitComments.Web.Settings do
   LiveView for Comments module settings management.
 
   Manages:
-  - `comments_enabled` toggle
-  - `comments_moderation` toggle
-  - `comments_max_depth` input
-  - `comments_max_length` input
+  - `comments_enabled` — the module switch (written only when changed here)
+  - `comments_rich_text` — Leaf editor in the composer
+  - `comments_moderation` — new comments start `pending`
+  - `comments_max_depth` (1–50), `comments_max_length` (100–100,000)
+  - `comments_giphy_enabled`, `comments_giphy_api_key`, `comments_giphy_rating`
+    (`g`/`pg`/`pg-13`/`r`)
+  - `comments_attachments_enabled`, `comments_max_attachments` (1–10),
+    `comments_attachment_max_size_mb` (1–500, clamped again at read time by
+    the global storage cap)
+  - core's `comment_resource_paths` — the resource link templates
+
+  Every write carries the actor and `source: "settings"`, so it lands in
+  core's settings history under the person who made it.
 
   ## Route
 
@@ -17,7 +26,12 @@ defmodule PhoenixKitComments.Web.Settings do
   # Rebind gettext macros to the comments module's own catalogs (priv/gettext).
   use Gettext, backend: PhoenixKitComments.Gettext
 
+  alias PhoenixKit.Admin.Events
   alias PhoenixKit.Settings
+  alias PhoenixKit.Utils.Routes
+  alias PhoenixKitWeb.Actor
+
+  require Logger
 
   @impl true
   # Gated on mount, not just on save. Every write here checked, while the
@@ -46,7 +60,6 @@ defmodule PhoenixKitComments.Web.Settings do
       |> assign(:page_section, gettext("Settings"))
       |> assign(:page_section_path, Routes.path("/admin/settings"))
       |> assign(:project_title, "")
-      |> assign(:saving, false)
       |> assign(:editing_resource_type, nil)
       |> assign(:editing_path_value, "")
       |> assign(:editing_title_value, "")
@@ -67,53 +80,31 @@ defmodule PhoenixKitComments.Web.Settings do
     {:ok, socket}
   end
 
+  @tabs ~w(general moderation limits giphy attachments links)
+
   @impl true
-  def handle_event("switch_settings_tab", %{"tab" => tab}, socket) do
+  def handle_event("switch_settings_tab", %{"tab" => tab}, socket) when tab in @tabs do
     {:noreply, assign(socket, :active_tab, tab)}
   end
 
-  @impl true
+  def handle_event("switch_settings_tab", _params, socket), do: {:noreply, socket}
+
   def handle_event("save", params, socket) do
-    # Verify authorization before saving
-    case check_authorization(socket) do
-      {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
-
-      :ok ->
-        do_save_settings(params, socket)
-    end
+    authorized(socket, fn -> do_save_settings(params, socket) end)
   end
 
-  @impl true
-  def handle_event("add_resource_path", %{"resource_path" => params}, socket) do
-    case check_authorization(socket) do
-      {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
-
-      :ok ->
-        do_add_resource_path(socket, params)
-    end
+  def handle_event("add_resource_path", %{"resource_path" => params}, socket)
+      when is_map(params) do
+    authorized(socket, fn -> do_add_resource_path(socket, params) end)
   end
 
-  @impl true
-  def handle_event("remove_resource_path", %{"type" => resource_type}, socket) do
-    case check_authorization(socket) do
-      {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
-
-      :ok ->
-        templates = Map.delete(socket.assigns.resource_paths, resource_type)
-        PhoenixKitComments.update_resource_path_templates(templates)
-
-        {:noreply,
-         socket
-         |> put_flash(:info, gettext("Removed path for \"%{type}\"", type: resource_type))
-         |> load_settings()}
-    end
+  def handle_event("remove_resource_path", %{"type" => resource_type}, socket)
+      when is_binary(resource_type) do
+    authorized(socket, fn -> do_remove_resource_path(socket, resource_type) end)
   end
 
-  @impl true
-  def handle_event("edit_resource_path", %{"type" => resource_type}, socket) do
+  def handle_event("edit_resource_path", %{"type" => resource_type}, socket)
+      when is_binary(resource_type) do
     config = Map.get(socket.assigns.resource_paths, resource_type, %{})
 
     {:noreply,
@@ -123,7 +114,6 @@ defmodule PhoenixKitComments.Web.Settings do
      |> assign(:editing_title_value, extract_title(config))}
   end
 
-  @impl true
   def handle_event("cancel_edit_resource_path", _params, socket) do
     {:noreply,
      socket
@@ -132,24 +122,35 @@ defmodule PhoenixKitComments.Web.Settings do
      |> assign(:editing_title_value, "")}
   end
 
-  @impl true
-  def handle_event("live_edit_path", %{"resource_path" => params}, socket) do
+  def handle_event("live_edit_path", %{"resource_path" => params}, socket) when is_map(params) do
     {:noreply,
      socket
-     |> assign(:editing_path_value, params["path_template"] || socket.assigns.editing_path_value)
+     |> assign(
+       :editing_path_value,
+       string_value(params, "path_template", socket.assigns.editing_path_value)
+     )
      |> assign(
        :editing_title_value,
-       params["title_template"] || socket.assigns.editing_title_value
+       string_value(params, "title_template", socket.assigns.editing_title_value)
      )}
   end
 
-  @impl true
-  def handle_event("live_draft_path", %{"resource_path" => params}, socket) do
-    resource_type = params["resource_type"] || ""
-    path_value = params["path_template"] || ""
-    title_value = params["title_template"] || ""
-    draft_paths = Map.put(socket.assigns.draft_paths, resource_type, path_value)
-    draft_titles = Map.put(socket.assigns.draft_titles, resource_type, title_value)
+  def handle_event("live_draft_path", %{"resource_path" => params}, socket) when is_map(params) do
+    resource_type = string_value(params, "resource_type", "")
+
+    draft_paths =
+      Map.put(
+        socket.assigns.draft_paths,
+        resource_type,
+        string_value(params, "path_template", "")
+      )
+
+    draft_titles =
+      Map.put(
+        socket.assigns.draft_titles,
+        resource_type,
+        string_value(params, "title_template", "")
+      )
 
     {:noreply,
      socket
@@ -157,50 +158,22 @@ defmodule PhoenixKitComments.Web.Settings do
      |> assign(:draft_titles, draft_titles)}
   end
 
-  @impl true
-  def handle_event("save_resource_path", %{"resource_path" => params}, socket) do
-    case check_authorization(socket) do
-      {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
-
-      :ok ->
-        do_save_resource_path(socket, params)
-    end
+  # Saving with no edit open — a replayed or hand-made event — wrote the
+  # template under a `nil` key (stored as "nil") and flashed `Updated path
+  # for ""`. There is nothing to save.
+  def handle_event("save_resource_path", %{"resource_path" => params}, socket)
+      when is_map(params) and is_binary(socket.assigns.editing_resource_type) do
+    authorized(socket, fn -> do_save_resource_path(socket, params) end)
   end
 
-  @impl true
   def handle_event("reset_defaults", _params, socket) do
-    case check_authorization(socket) do
-      {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
-
-      :ok ->
-        # Resource path templates are intentionally NOT reset here —
-        # they are user-configured data, not settings with defaults.
-        defaults = %{
-          "comments_enabled" => "false",
-          "comments_moderation" => "false",
-          "comments_rich_text" => "true",
-          "comments_max_depth" => "10",
-          "comments_max_length" => "10000",
-          "comments_giphy_enabled" => "false",
-          "comments_giphy_api_key" => "",
-          "comments_giphy_rating" => "g",
-          "comments_attachments_enabled" => "false",
-          "comments_max_attachments" => "4",
-          "comments_attachment_max_size_mb" => "20"
-        }
-
-        Enum.each(defaults, fn {key, value} ->
-          Settings.update_setting(key, value)
-        end)
-
-        {:noreply,
-         socket
-         |> put_flash(:info, gettext("Settings reset to defaults"))
-         |> load_settings()}
-    end
+    authorized(socket, fn -> do_reset_defaults(socket) end)
   end
+
+  # Any other shape of a known event (a missing key, a map where a string
+  # belongs) is ignored rather than left to match no clause, which took the
+  # page down.
+  def handle_event(_event, _params, socket), do: {:noreply, socket}
 
   ## --- Private ---
 
@@ -225,55 +198,167 @@ defmodule PhoenixKitComments.Web.Settings do
     "comments_attachment_max_size_mb" => {1, 500, "20"}
   }
 
+  @boolean_settings ~w(
+    comments_enabled
+    comments_moderation
+    comments_rich_text
+    comments_giphy_enabled
+    comments_attachments_enabled
+  )
+
+  @giphy_ratings ~w(g pg pg-13 r)
+
+  # What Reset puts back. Not the module switch: Reset turned comments OFF
+  # (its default is "false") under a confirm that spoke of "moderation,
+  # limits, Giphy and attachment options". Not the Giphy key either: it is
+  # a credential, not an option with a default, and Reset erased it. Nor the
+  # resource path templates — those are configured data, not settings.
+  @reset_defaults %{
+    "comments_moderation" => "false",
+    "comments_rich_text" => "true",
+    "comments_max_depth" => "10",
+    "comments_max_length" => "10000",
+    "comments_giphy_enabled" => "false",
+    "comments_giphy_rating" => "g",
+    "comments_attachments_enabled" => "false",
+    "comments_max_attachments" => "4",
+    "comments_attachment_max_size_mb" => "20"
+  }
+
+  # The rest of the form in ONE transaction (`update_settings_batch/2`): the
+  # old loop was eleven, so a failure part-way left some keys saved under
+  # "Failed to save some settings" with no way to tell which.
   defp do_save_settings(params, socket) do
-    socket = assign(socket, :saving, true)
-    settings = params |> Map.get("settings", %{}) |> sanitize_settings()
+    {switch, settings} =
+      params
+      |> Map.get("settings", %{})
+      |> sanitize_settings()
+      |> drop_blank_new_settings()
+      |> Map.pop("comments_enabled")
 
-    try do
-      results =
-        Enum.map(settings, fn {key, value} ->
-          Settings.update_setting(key, value)
-        end)
-
-      socket =
-        if Enum.all?(results, fn
-             {:ok, _} -> true
-             _ -> false
-           end) do
-          socket
-          |> put_flash(:info, gettext("Settings saved successfully"))
-          |> load_settings()
-        else
-          put_flash(socket, :error, gettext("Failed to save some settings"))
-        end
-
-      {:noreply, assign(socket, :saving, false)}
-    rescue
-      e ->
-        require Logger
-
-        # The struct name only. This loop writes comments_giphy_api_key among
-        # other settings, and Ecto/DBConnection exceptions in this class
-        # (ChangeError, EncodeError, CastError) interpolate the offending
-        # VALUE into their message — so logging Exception.message/1 here could
-        # put the API key in plaintext in the log. Same stance the Giphy call
-        # site already takes.
-        Logger.error("Comment settings save failed: #{inspect(e.__struct__)}")
-
+    with {:ok, _} <- Settings.update_settings_batch(settings, history_opts(socket)),
+         :ok <- maybe_switch_module(socket, switch) do
+      {:noreply,
+       socket
+       |> put_flash(:info, gettext("Settings saved successfully"))
+       |> load_settings()}
+    else
+      _error ->
         {:noreply,
-         assign(socket, :saving, false)
-         |> put_flash(:error, gettext("Something went wrong. Please try again."))}
+         socket
+         |> put_flash(:error, gettext("Failed to save some settings"))
+         |> load_settings()}
+    end
+  rescue
+    e ->
+      # The struct name only. This writes comments_giphy_api_key among other
+      # settings, and Ecto/DBConnection exceptions in this class
+      # (ChangeError, EncodeError, CastError) interpolate the offending
+      # VALUE into their message — so logging Exception.message/1 here could
+      # put the API key in plaintext in the log. Same stance the Giphy call
+      # site already takes.
+      Logger.error("Comment settings save failed: #{inspect(e.__struct__)}")
+      {:noreply, put_flash(socket, :error, gettext("Something went wrong. Please try again."))}
+  end
+
+  # Core refuses to INSERT a setting with an empty value ("must provide
+  # either value or value_json"). The Giphy key field is empty on every site
+  # that has never stored one, so the old loop failed that key on every save
+  # and flashed "Failed to save some settings" over a save that had worked;
+  # in one transaction it would fail the whole form. An empty value for a
+  # key with no row yet has nothing to clear.
+  defp drop_blank_new_settings(settings) do
+    Map.reject(settings, fn {key, value} -> value == "" and Settings.get_setting(key) == nil end)
+  end
+
+  # The module switch, written only when it differs from what this page
+  # LOADED. Every save re-posts the toggle, so saving the limits on a page
+  # opened before the Owner switched comments off turned them back on.
+  #
+  # Written like `enable_system/0` / `disable_system/0` (with the module
+  # key), plus the actor those callbacks cannot take, and announced the way
+  # core's Modules page announces a toggle, so other sessions' sidebars and
+  # open pages hear of it.
+  defp maybe_switch_module(socket, value) when value in ["true", "false"] do
+    if value == socket.assigns.comments_enabled do
+      :ok
+    else
+      enabled? = value == "true"
+
+      case Settings.update_boolean_setting_with_module(
+             "comments_enabled",
+             enabled?,
+             "comments",
+             history_opts(socket)
+           ) do
+        {:ok, _} ->
+          announce_module_switch(enabled?)
+          :ok
+
+        error ->
+          error
+      end
     end
   end
 
+  defp maybe_switch_module(_socket, _value), do: :ok
+
+  # Best-effort, like every broadcast here: the write has happened.
+  defp announce_module_switch(enabled?) do
+    if enabled?,
+      do: Events.broadcast_module_enabled("comments"),
+      else: Events.broadcast_module_disabled("comments")
+  rescue
+    _ -> :ok
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp do_reset_defaults(socket) do
+    case Settings.update_settings_batch(@reset_defaults, history_opts(socket)) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, gettext("Settings reset to defaults"))
+         |> load_settings()}
+
+      _error ->
+        {:noreply, put_flash(socket, :error, gettext("Something went wrong. Please try again."))}
+    end
+  rescue
+    e ->
+      Logger.error("Comment settings reset failed: #{inspect(e.__struct__)}")
+      {:noreply, put_flash(socket, :error, gettext("Something went wrong. Please try again."))}
+  end
+
+  # Who changed it, for core's settings history — the same options core's
+  # own settings pages pass. Without them every entry read "system".
+  defp history_opts(socket), do: [actor_uuid: Actor.uuid(socket), source: "settings"]
+
+  # Only the keys this page owns, only string values (a crafted
+  # `settings[comments_max_depth][x]=1` reached `to_string/1` on a map and
+  # raised), numbers clamped, booleans and the Giphy rating from their
+  # allowed values — anything else is dropped rather than stored.
   defp sanitize_settings(settings) when is_map(settings) do
     settings
     |> Map.take(@allowed_settings)
-    |> Enum.map(fn {key, value} -> {key, clamp_numeric(key, value)} end)
+    |> Enum.flat_map(fn {key, value} -> sanitize_setting(key, value) end)
     |> Map.new()
   end
 
   defp sanitize_settings(_), do: %{}
+
+  defp sanitize_setting(_key, value) when not is_binary(value), do: []
+
+  defp sanitize_setting(key, value) when key in @boolean_settings do
+    if value in ["true", "false"], do: [{key, value}], else: []
+  end
+
+  defp sanitize_setting("comments_giphy_rating", value) do
+    if value in @giphy_ratings, do: [{"comments_giphy_rating", value}], else: []
+  end
+
+  defp sanitize_setting(key, value), do: [{key, clamp_numeric(key, value)}]
 
   defp clamp_numeric(key, value) do
     case Map.get(@numeric_settings, key) do
@@ -281,7 +366,7 @@ defmodule PhoenixKitComments.Web.Settings do
         value
 
       {min, max, default} ->
-        case Integer.parse(to_string(value)) do
+        case Integer.parse(value) do
           {n, _} -> n |> Kernel.max(min) |> Kernel.min(max) |> to_string()
           :error -> default
         end
@@ -289,9 +374,9 @@ defmodule PhoenixKitComments.Web.Settings do
   end
 
   defp do_add_resource_path(socket, params) do
-    resource_type = String.trim(params["resource_type"] || "")
-    path_template = String.trim(params["path_template"] || "")
-    title_template = String.trim(params["title_template"] || "")
+    resource_type = trimmed(params, "resource_type")
+    path_template = trimmed(params, "path_template")
+    title_template = trimmed(params, "title_template")
 
     save_resource_config(socket, resource_type, path_template, title_template, fn socket ->
       socket
@@ -303,8 +388,8 @@ defmodule PhoenixKitComments.Web.Settings do
 
   defp do_save_resource_path(socket, params) do
     resource_type = socket.assigns.editing_resource_type
-    path_template = String.trim(params["path_template"] || "")
-    title_template = String.trim(params["title_template"] || "")
+    path_template = trimmed(params, "path_template")
+    title_template = trimmed(params, "title_template")
 
     save_resource_config(socket, resource_type, path_template, title_template, fn socket ->
       socket
@@ -316,20 +401,55 @@ defmodule PhoenixKitComments.Web.Settings do
   end
 
   defp save_resource_config(socket, resource_type, path_template, title_template, on_success) do
-    case validate_resource_path(resource_type, path_template) do
-      :ok ->
-        config = build_config(path_template, title_template)
-        templates = Map.put(socket.assigns.resource_paths, resource_type, config)
-        PhoenixKitComments.update_resource_path_templates(templates)
+    with :ok <- validate_resource_path(resource_type, path_template),
+         {:ok, _} <-
+           change_templates(
+             socket,
+             &Map.put(&1, resource_type, build_config(path_template, title_template))
+           ) do
+      {:noreply,
+       socket
+       |> on_success.()
+       |> load_settings()}
+    else
+      {:error, message} when is_binary(message) ->
+        {:noreply, put_flash(socket, :error, message)}
 
+      _error ->
         {:noreply,
          socket
-         |> on_success.()
+         |> put_flash(:error, gettext("Something went wrong. Please try again."))
+         |> load_settings()}
+    end
+  end
+
+  defp do_remove_resource_path(socket, resource_type) do
+    case change_templates(socket, &Map.delete(&1, resource_type)) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, gettext("Removed path for \"%{type}\"", type: resource_type))
          |> load_settings()}
 
-      {:error, message} ->
-        {:noreply, put_flash(socket, :error, message)}
+      _error ->
+        {:noreply,
+         socket
+         |> put_flash(:error, gettext("Something went wrong. Please try again."))
+         |> load_settings()}
     end
+  end
+
+  # One change to the templates as they are NOW. Writing back the page's
+  # copy (taken at mount or the last action) as the whole map deleted every
+  # template another admin — or another tab — had added since. Written with
+  # the actor, which `PhoenixKitComments.update_resource_path_templates/1`
+  # (core's `ResourceLinks`) cannot pass on; the key is core's.
+  @templates_key "comment_resource_paths"
+
+  defp change_templates(socket, fun) do
+    PhoenixKitComments.get_resource_path_templates()
+    |> fun.()
+    |> then(&Settings.update_json_setting(@templates_key, &1, history_opts(socket)))
   end
 
   defp build_config(path_template, ""), do: %{"path" => path_template}
@@ -340,13 +460,25 @@ defmodule PhoenixKitComments.Web.Settings do
   defp validate_resource_path("", _), do: {:error, gettext("Resource type is required")}
   defp validate_resource_path(_, ""), do: {:error, gettext("Path template is required")}
 
+  # The template becomes an href an admin clicks on the moderation page (and
+  # in core's Activity feed). `"://"` was the only guard, so
+  # `//evil.example/:uuid` — a protocol-relative URL — passed, and on a
+  # root-prefixed site so did `:prefixjavascript:alert(1)//:uuid`, which
+  # `<.link href>` then refused to render, taking the moderation page down
+  # whenever a comment of that type was listed. Checked with `:prefix` as
+  # the empty string, the root-prefix case core substitutes, which is the
+  # strictest: the result must be a path on this site
+  # (`Routes.local_path?/1`: no `//`, no `/\`, no control characters).
+  # `:uuid` and `:metadata.*` values are URL-encoded by core, so they
+  # cannot add a scheme or a host.
   defp validate_resource_path(_resource_type, path_template) do
     cond do
       not (String.starts_with?(path_template, "/") or
                String.starts_with?(path_template, ":prefix")) ->
         {:error, gettext("Path template must start with / or :prefix")}
 
-      String.contains?(path_template, "://") ->
+      String.contains?(path_template, "://") or
+          not Routes.local_path?(String.replace(path_template, ":prefix", "")) ->
         {:error, gettext("Path template must be a relative path")}
 
       not (String.contains?(path_template, ":uuid") or
@@ -381,10 +513,12 @@ defmodule PhoenixKitComments.Web.Settings do
     resource_paths = PhoenixKitComments.get_resource_path_templates()
     counts_by_type = PhoenixKitComments.count_comments_by_type()
 
+    linked_types = MapSet.new(Map.keys(resource_paths) ++ handler_types())
+
     unconfigured_types =
       counts_by_type
       |> Map.keys()
-      |> Enum.reject(&Map.has_key?(resource_paths, &1))
+      |> Enum.reject(&MapSet.member?(linked_types, &1))
       |> Enum.sort()
 
     metadata_keys_by_type = PhoenixKitComments.list_metadata_keys_by_type()
@@ -413,6 +547,31 @@ defmodule PhoenixKitComments.Web.Settings do
     |> assign(:metadata_keys_by_type, metadata_keys_by_type)
   end
 
+  # Types a resource handler links already. Core asks the handler before any
+  # template, so listing them under "Resource types without link patterns"
+  # (core's `post`, `file`, `user`, every module's own) nudged the admin to
+  # add a template that would never be used.
+  defp handler_types do
+    for {type, handler} <- PhoenixKit.ResourceLinks.handlers(),
+        is_atom(handler),
+        Code.ensure_loaded?(handler),
+        function_exported?(handler, :resolve_comment_resources, 1),
+        do: type
+  rescue
+    _ -> []
+  catch
+    :exit, _ -> []
+  end
+
+  defp trimmed(params, key), do: params |> string_value(key, "") |> String.trim()
+
+  defp string_value(params, key, default) do
+    case Map.get(params, key) do
+      value when is_binary(value) -> value
+      _ -> default
+    end
+  end
+
   defp extract_path(config) when is_binary(config), do: config
   defp extract_path(%{"path" => path}), do: path
   defp extract_path(_), do: ""
@@ -429,6 +588,13 @@ defmodule PhoenixKitComments.Web.Settings do
     if PhoenixKitComments.can_change_settings?(socket.assigns[:phoenix_kit_current_scope]),
       do: :ok,
       else: {:error, :unauthorized}
+  end
+
+  defp authorized(socket, fun) do
+    case check_authorization(socket) do
+      :ok -> fun.()
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+    end
   end
 
   @doc """

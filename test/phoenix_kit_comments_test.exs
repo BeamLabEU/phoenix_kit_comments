@@ -41,16 +41,11 @@ defmodule PhoenixKitCommentsTest do
       assert name == "Comments"
     end
 
-    test "enabled?/0 returns a boolean" do
-      assert is_boolean(PhoenixKitComments.enabled?())
-    end
-
-    test "enable_system/0 is exported" do
-      assert function_exported?(PhoenixKitComments, :enable_system, 0)
-    end
-
-    test "disable_system/0 is exported" do
-      assert function_exported?(PhoenixKitComments, :disable_system, 0)
+    # The switch itself is tested against rows in
+    # `test/integration/module_config_test.exs`; here, its rescue: these unit
+    # tests own no sandbox connection, so the read fails and must say "off".
+    test "enabled?/0 answers false when settings cannot be read" do
+      refute PhoenixKitComments.enabled?()
     end
   end
 
@@ -130,10 +125,6 @@ defmodule PhoenixKitCommentsTest do
   end
 
   describe "optional callbacks have defaults" do
-    test "get_config/0 is exported" do
-      assert function_exported?(PhoenixKitComments, :get_config, 0)
-    end
-
     test "css_sources/0 returns list with app name" do
       assert PhoenixKitComments.css_sources() == [:phoenix_kit_comments]
     end
@@ -195,9 +186,10 @@ defmodule PhoenixKitCommentsTest do
     end
 
     test "returns a uuid => count map with a zero entry for every requested uuid" do
-      # No repo is configured in these unit tests, so the grouped query
-      # falls through to the rescue clause — which still must return the
-      # zero-filled, deduped shape callers rely on for uniform rendering.
+      # These unit tests own no sandbox connection, so the grouped query
+      # fails and falls through to the rescue clause — which still must
+      # return the zero-filled, deduped shape callers rely on for uniform
+      # rendering. The counting itself: `module_config_test.exs`.
       uuid_a = "018e3c4a-9f6b-7890-abcd-ef1234567890"
       uuid_b = "018e3c4a-1234-5678-abcd-ef1234567890"
 
@@ -212,9 +204,11 @@ defmodule PhoenixKitCommentsTest do
                "phoenix_kit_comments:order:abc-123"
     end
 
-    test "subscribe/2 and unsubscribe/2 are exported" do
-      assert function_exported?(PhoenixKitComments, :subscribe, 2)
-      assert function_exported?(PhoenixKitComments, :unsubscribe, 2)
+    test "topic/2 spells a uuid the way Postgres returns it" do
+      uuid = "018e3c4a-9f6b-7890-abcd-ef1234567890"
+
+      assert PhoenixKitComments.topic("order", String.upcase(uuid)) ==
+               "phoenix_kit_comments:order:" <> uuid
     end
   end
 

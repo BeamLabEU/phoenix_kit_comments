@@ -25,19 +25,26 @@ defmodule PhoenixKitComments.Web.Markdown do
   """
   # `hardbreaks` matches what the Leaf composer shows while typing; `unsafe`
   # is what makes the sanitiser load-bearing rather than decorative.
-  # MDEx's default allow-list permits `style` on `div` (it strips it from
-  # `p`), which lets a comment position an element over the page — an
-  # overlay on the moderation UI's own buttons, for instance. Comments have
-  # no reason to carry inline CSS, so it comes off. `javascript:` inside
-  # `url()` is not executed by current browsers; the clickjacking surface is
-  # the real reason.
+  #
+  # MDEx's default allow-list keeps `style` and `class` on `div`, `span`,
+  # `code` and `pre`. Either lets a comment draw over the page: inline CSS
+  # (`position:fixed; inset:0`) directly, and `class` through the page's own
+  # stylesheet — the host's Tailwind and daisyUI, including classes this
+  # module's templates compile (`toast toast-top`, `alert`, `btn`,
+  # `fixed inset-0`). That is a fake "session expired" banner with a link
+  # on every reader's page and on the moderation page, which renders the
+  # same component. Comments need neither: Leaf writes no inline styles, and
+  # the `language-*` class on a fenced block styles nothing here. (Only
+  # `div` was stripped, and only of `style`.) `javascript:` inside `url()`
+  # is not executed by current browsers; the overlay is the real reason.
+  @stripped_attributes ["style", "class"]
   @render_opts [
     render: [hardbreaks: true, unsafe: true],
     sanitize:
       Keyword.put(
         MDEx.Document.default_sanitize_options(),
         :rm_tag_attributes,
-        %{"div" => ["style"]}
+        Map.new(~w(div span code pre), &{&1, @stripped_attributes})
       )
   ]
 

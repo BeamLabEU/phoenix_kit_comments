@@ -12,12 +12,12 @@ defmodule PhoenixKitComments.CorePinConformanceTest do
   outright, with no degraded mode. Nothing else in this repo's own test run
   would notice, which is why the check is a test rather than a convention.
 
-  The floor is `>= 2.38.0 and < 3.0.0`: attachments are placed by core's
-  `Storage.ResourceFolders` and the actor and activity log come from
-  `PhoenixKitWeb.Actor` and `Activity.log/3`, all first shipped in core
-  2.38.0; the module does not compile without them. Before that it was
-  `~> 2.0`: core 2.0.0 squashed the migration chain to a V135 floor and the
-  module was verified only against that baseline.
+  The requirement is `>= 2.65.0 and < 4.0.0`. The floor is the first core
+  with the `file_references/0` and `expected_schema/0` callbacks this module
+  implements (`@impl`); it also carries everything the module uses without
+  feature-detecting it — `Storage.ResourceFolders`, `PhoenixKitWeb.Actor`,
+  `Activity.log/3` (all from 2.38.0) and V166's attribution columns. The
+  ceiling is open through every core 3.x.
   """
 
   @must_admit ["2.65.0", "2.65.1", "2.99.4", "3.0.0", "3.9.9"]
@@ -34,7 +34,7 @@ defmodule PhoenixKitComments.CorePinConformanceTest do
              "`:phoenix_kit` requirement #{inspect(requirement)} rejects core #{version}. " <>
                "A pin that excludes a core minor breaks `mix deps.get` for every host " <>
                "running this module alongside that core. Keep the floor patch-precise " <>
-               "and the ceiling open (`>= 2.38.0 and < 3.0.0`), never a three-segment `~>`."
+               "and the ceiling open (`>= 2.65.0 and < 4.0.0`), never a three-segment `~>`."
     end
 
     for version <- @must_reject do

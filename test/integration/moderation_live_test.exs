@@ -258,6 +258,97 @@ defmodule PhoenixKitComments.Web.ModerationLiveTest do
     end
   end
 
+  describe "the bulk bar" do
+    test "sits inside the selection scope, where core's hook looks for it",
+         %{conn: conn, scope: scope, author: author} do
+      comment_with_status(author, "pending")
+      {:ok, view, _html} = live(put_test_scope(conn, scope), @path)
+
+      # The hook searches its own element only. Rendered above the scope, the
+      # bar never showed and its buttons were never wired: bulk moderation
+      # could not be reached from the page.
+      for action <- ~w(bulk_approve bulk_hide bulk_delete_comments) do
+        assert has_element?(view, ~s(#comments-bulk [data-bulk-action="#{action}"]))
+      end
+
+      assert has_element?(view, ~s(#comments-bulk [data-bulk-show="has-selection"]))
+      assert has_element?(view, "#comments-bulk [data-bulk-text-template]")
+    end
+
+    test "a selected comment that is gone counts as a failure",
+         %{conn: conn, scope: scope, author: author} do
+      comment_with_status(author, "pending")
+      {:ok, view, _html} = live(put_test_scope(conn, scope), @path)
+
+      # Deleted in another tab, or outside the viewer's rule: the bulk
+      # functions drop it rather than count it, which flashed
+      # "0 comments approved" as a success.
+      html = render_click(view, "bulk_approve", %{"uuids" => [Ecto.UUID.generate()]})
+
+      assert html =~ "1 comment could not be approved"
+    end
+
+    test "a malformed selection answers that nothing is selected",
+         %{conn: conn, scope: scope} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), @path)
+
+      assert render_hook(view, "bulk_approve", %{"uuids" => "everything"}) =~
+               "No comments selected"
+
+      assert render_hook(view, "bulk_hide", %{}) =~ "No comments selected"
+    end
+  end
+
+  describe "crafted events and URLs" do
+    test "a row action without a uuid answers like a missing comment",
+         %{conn: conn, scope: scope} do
+      {:ok, view, _html} = live(put_test_scope(conn, scope), @path)
+
+      # No `"uuid"` key had no clause to match and took the page down.
+      for event <- ~w(approve hide delete restore) do
+        assert render_hook(view, event, %{}) =~ "Comment not found"
+      end
+
+      render_hook(view, "view_comment", %{})
+      refute has_element?(view, ".modal-open")
+    end
+
+    test "URL params of the wrong shape fall back to the defaults",
+         %{conn: conn, scope: scope, author: author} do
+      comment = comment_with_status(author, "pending")
+      conn = put_test_scope(conn, scope)
+
+      for query <- ~w(?search[x]=1 ?page[]=1 ?resource_type[x]=1 ?status[]=x ?status=bogus) do
+        assert {:ok, _view, html} = live(conn, @path <> query), "crashed on #{query}"
+        assert html =~ comment.content, "#{query} did not fall back to the full list"
+      end
+    end
+  end
+
+  describe "pagination" do
+    test "a page past the end shows the last page instead of nothing",
+         %{conn: conn, scope: scope, author: author} do
+      for _ <- 1..21, do: comment_with_status(author, "pending")
+
+      {:ok, view, html} = live(put_test_scope(conn, scope), @path <> "?page=9")
+
+      # Approving the last row of the last page under a filter, or a
+      # hand-edited `?page=`, left "No comments found" and no way back.
+      refute html =~ "No comments found"
+      assert has_element?(view, ".join-item.btn-active", "2")
+    end
+
+    test "a page number too large for the query is clamped, not a crash",
+         %{conn: conn, scope: scope, author: author} do
+      comment = comment_with_status(author, "pending")
+
+      {:ok, _view, html} =
+        live(put_test_scope(conn, scope), @path <> "?page=99999999999999999999")
+
+      assert html =~ comment.content
+    end
+  end
+
   describe "dates" do
     test "follow the site's date format instead of English month names",
          %{conn: conn, scope: scope, author: author} do
@@ -291,6 +382,51 @@ defmodule PhoenixKitComments.Web.ModerationLiveTest do
 
       assert Enum.all?(labels, &(&1 == "Pending")),
              "raw enum in a status badge: #{inspect(labels)}"
+    end
+  end
+
+  describe "filters and search" do
+    test "searching narrows the list through the URL, and clearing widens it again",
+         %{conn: conn, scope: scope, author: author} do
+      wanted = comment_with_status(author, "published")
+      other = comment_with_status(author, "published")
+
+      {1, _} =
+        Repo.update_all(from(c in Comment, where: c.uuid == ^wanted.uuid),
+          set: [content: "needle in a haystack"]
+        )
+
+      {:ok, view, _html} = live(put_test_scope(conn, scope), @path)
+
+      html =
+        view
+        |> form("#comment-filters-desktop", %{"search" => %{"query" => "needle"}})
+        |> render_change()
+
+      assert html =~ "needle in a haystack"
+      refute html =~ other.content
+      assert assert_patch(view) =~ "search=needle"
+
+      html = render_click(view, "clear_search", %{})
+      assert html =~ other.content
+    end
+
+    test "a status filter lists that status only", %{conn: conn, scope: scope, author: author} do
+      pending = comment_with_status(author, "pending")
+      published = comment_with_status(author, "published")
+
+      {:ok, view, _html} = live(put_test_scope(conn, scope), @path)
+
+      html =
+        view
+        |> form("#comment-filters-desktop", %{"filter" => %{"status" => "pending"}})
+        |> render_change()
+
+      assert html =~ pending.content
+      refute html =~ published.content
+
+      html = render_click(view, "clear_filters", %{})
+      assert html =~ published.content
     end
   end
 end

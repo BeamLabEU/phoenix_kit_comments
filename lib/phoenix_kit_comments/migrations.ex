@@ -377,7 +377,12 @@ defmodule PhoenixKitComments.Migrations do
       end
 
     # Interpolated into DDL and into the guard blocks' string literals.
-    unless prefix =~ ~r/^[a-zA-Z_][a-zA-Z0-9_]*$/ do
+    # Lower case only, as core's `ExpectedSchema` and migration helpers
+    # require: the DDL leaves the name unquoted, so Postgres folds
+    # "Tenant" to `tenant`, while the guard blocks and `marker_query/0`
+    # compare `nspname` case-sensitively — a second run then re-added the
+    # primary key, and the version always read 0.
+    unless prefix =~ ~r/^[a-z_][a-z0-9_]*$/ do
       raise ArgumentError, "invalid schema prefix: #{inspect(prefix)}"
     end
 

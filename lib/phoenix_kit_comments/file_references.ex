@@ -1,7 +1,7 @@
 defmodule PhoenixKitComments.FileReferences do
   @moduledoc """
   The places in this module's tables that point at a stored file, for the
-  orphan-file check of core's storage (`PhoenixKit.Module.file_references/0`).
+  orphan-file check of core's storage (`c:PhoenixKit.Module.file_references/0`).
 
   A file one of these rows names is a comment's attachment and must never be
   read as an orphan: core would list it under "Orphaned files" and "Delete all

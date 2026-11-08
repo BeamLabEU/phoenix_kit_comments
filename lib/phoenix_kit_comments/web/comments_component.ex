@@ -14,30 +14,93 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   ## Required Attrs
 
+  - `id` - Unique component ID. It becomes part of the rich-text editors'
+    ids (`"pk-comments:<id>:…"`), so keep it a string.
   - `resource_type` - String identifying the resource type (e.g., "post")
   - `resource_uuid` - UUID of the resource
-  - `current_user` - Current authenticated user struct
-  - `id` - Unique component ID
+  - `current_user` - The viewer's user struct, or `nil` for an anonymous
+    reader (who can read, but not post or react). A misspelt attr reads as
+    `nil` too, so a signed-in viewer seeing "Sign in to post a comment" is
+    the first thing to check.
 
   ## Optional Attrs
 
+  Every attr is remembered across updates, so a partial `send_update` only
+  needs the keys it changes.
+
   - `enabled` - An additional host off switch. Defaults to the module's
-    `comments_enabled` setting; `true` still respects that setting.
-  - `show_likes` - Show like/dislike buttons (default: true)
-  - `title` - Section title (default: "Comments")
+    `comments_enabled` setting, read on every update; `true` still respects
+    that setting.
+  - `show_likes` - Show like/dislike buttons, and accept reactions
+    (default: `true`). `false` refuses the events too, not only the buttons.
+  - `title` - Section title (default: "Comments").
+  - `show_title` - Render the title line (default: `true`).
+  - `collapsible` - Turn the title line into a disclosure toggle for the
+    whole thread (default: `false`).
+  - `initial_collapsed` - Its starting state when `collapsible` (default:
+    `false`). The reader's toggle is kept for the life of the component.
   - `rich_text` - Use the rich-text (Leaf) editor in the composer
-    (default: the `comments_rich_text` setting, which defaults to `true`).
+    (default: the `comments_rich_text` setting, which defaults to `true`,
+    read on every update). A host's `true`/`false` wins over the setting.
     Pass `false` to force the plain `<textarea>` — useful when the host
     hasn't registered Leaf's JS hook, since the Leaf editor otherwise hangs
     on its loading text with no server-side error. See the README's
     "JavaScript wiring" section.
+  - `editor_mode` - The Leaf editor's mode (`:visual`, `:hybrid`,
+    `:markdown`, `:html`). Defaults to the site's editor setting; Leaf
+    honours it on its first render only.
   - `composer_position` - Where the "Write comment" box renders: `:top`
-    (default), `:bottom`, `:both`, or `nil` for none (read-only).
+    (default), `:bottom`, `:both`, or `nil` for none — a read-only thread:
+    no box, no Reply, and posting is refused. Editing or deleting one's own
+    comment still works.
   - `order` - Which way the top-level comments run: `:auto` (default) puts
     a new comment next to the box — newest first, except with the box at
     the `:bottom`, where the oldest come first and the thread follows the
     newest like a chat. `:newest_first` / `:oldest_first` fix it. Replies
     always keep the order they were written in.
+  - `pk_scope` - The viewer's `PhoenixKit.Users.Auth.Scope`. A host that
+    passes it OWNS it and must send the current one with each update: it is
+    what edit/delete rights are decided against, including at event time.
+    Without it the component builds the viewer's scope from the database
+    (once per update for rendering, and afresh for every write).
+  - `mentions_on` - Offer the @/# mention typeahead on the plain textarea
+    (default: whether core's `PhoenixKit.Mentions` is available and on).
+  - `withhold_mention_titles` - Set on PUBLIC pages: a `#[type:uuid]`
+    mention of a record the reader cannot open renders without its title
+    (default: `false`). Nothing validates mention tokens on write, so a
+    hand-typed token would otherwise print the current title of an internal
+    record to anyone reading the page.
+  - `project_attribution` - Lets a person post AS a project:
+    `%{project_uuid: uuid, label: "Acme", verify: (user_uuid -> boolean),
+    default_on: boolean}`. The "Post as Acme" checkbox renders only when
+    `verify` says yes, and `verify` is asked again at submit; a refused
+    claim posts as the person. The row keeps the real author in `user_uuid`.
+    `nil` (the default) means nobody can speak for anything.
+  - `comment_decorations` - A label rendered above a comment's body, keyed
+    by one of its metadata fields:
+    `%{"annotation_uuid" => %{"<value>" => %{label: "Sky shot", on_save: :renamed}}}`.
+    `on_save: nil` is read-only; an atom makes the label editable and is
+    sent back to the host (see `parent_module`). The first matching
+    decoration wins.
+  - `decoration_keys` - The metadata KEYS this host decorates with, as a
+    static list (`["annotation_uuid"]`). A client may never write these: the
+    link between a comment and one of the host's records is the host's to
+    make, server-side. `comment_decorations` alone is not enough, because it
+    is built from data and is empty until there is something to label —
+    declare the keys.
+  - `parent_module` / `parent_id` - The component that receives a decoration
+    edit, as `send_update(parent_module, id: parent_id, action: on_save,
+    metadata_key: key, metadata_value: value, label: new_label, actor_uuid:
+    uuid)`. The label is trimmed and capped at 200 characters. This
+    component authorises the COMMENT (its author, or a moderator of the
+    record); whether `actor_uuid` may rename the host's record is the host's
+    to decide.
+
+  To reload the thread from a host (after a change the component did not
+  make, such as a `PhoenixKitComments.subscribe/2` broadcast), send it
+  `loaded?: false`:
+
+      send_update(PhoenixKitComments.Web.CommentsComponent, id: "comments", loaded?: false)
 
   ## Slots
 
@@ -72,13 +135,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   import PhoenixKitWeb.Components.Core.Icon
   import PhoenixKitWeb.Components.Core.TimeDisplay, only: [time_ago: 1]
   import PhoenixKitWeb.Components.Core.UserInfo, only: [user_avatar: 1]
-  import PhoenixKitComments.Web.Markdown, only: [comment_markdown: 1, comment_markdown_styles: 1]
+  import PhoenixKitComments.Web.Markdown, only: [comment_markdown_styles: 1]
 
   alias Phoenix.LiveView.JS
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Users.Auth.User
+  alias PhoenixKitComments.Web.Markdown
 
   require Logger
 
@@ -111,7 +175,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     {:ok,
      socket
      |> assign(:comments, [])
-     |> assign(:comment_count, 0)
+     # Each comment's body as this viewer reads it, rendered once per load
+     # (`render_bodies/1`), not once per comment on every re-render.
+     |> assign(:rendered_bodies, %{})
      |> assign(:loaded?, false)
      |> assign(:reply_to, nil)
      # nil | :top | :bottom — which placement (see composer_position)
@@ -163,24 +229,35 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   @impl true
   def update(%{leaf_content_changed: %{kind: kind, content: content}}, socket)
       when kind in [:draft, :reply] do
-    {:ok, assign(socket, :new_comment, content)}
+    {:ok, socket |> assign(:new_comment, content) |> put_thread_ctx()}
   end
 
   def update(%{leaf_content_changed: %{kind: :edit, content: content}}, socket) do
-    {:ok, assign(socket, :editing_content, content)}
+    {:ok, socket |> assign(:editing_content, content) |> put_thread_ctx()}
   end
 
   # Core's recorder (`errors={:notify}`, `target={@myself}`) reports what went
   # wrong before the clip reached the upload; the upload's own errors (too many
   # files, too large) show in the staged list like any other file's.
   def update(%{audio_recorder_error: {_recorder_id, reason}}, socket) do
-    {:ok, put_notice(socket, :composer, :error, core_recorder_call(:error_message, [reason]))}
+    {:ok,
+     socket
+     |> put_notice(:composer, :error, core_recorder_call(:error_message, [reason]))
+     |> put_thread_ctx()}
   end
 
   def update(assigns, socket) do
+    {:ok, socket |> update_attrs(assigns) |> put_thread_ctx()}
+  end
+
+  # What a comment body's rendering depends on besides the comment itself.
+  @body_inputs [:current_user, :pk_scope, :withhold_mention_titles]
+
+  defp update_attrs(socket, assigns) do
     socket =
       socket
       |> assign(assigns)
+      |> reset_on_new_resource()
       # Defaults to the MODULE's own switch, not to `true`. An admin turning
       # comments off in settings expects that to reach embedded threads; with
       # a hardcoded default it only reached the admin pages, and every host
@@ -199,21 +276,18 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> then(&assign(&1, :enabled, effective_enabled(&1.assigns.host_enabled)))
       |> assign_new(:show_likes, fn -> true end)
       |> assign_new(:title, fn -> gettext("Comments") end)
-      # Rich-text (Leaf) editor opt-out. Host attr wins; otherwise the
-      # `comments_rich_text` setting (default true). The effective
-      # `:leaf_editor?` below also requires Leaf to actually be loaded.
-      |> assign_new(:rich_text, fn -> PhoenixKitComments.rich_text_enabled?() end)
-      # PUBLIC surfaces set this. A comment body goes through the same
-      # mention resolver as everything else, and with the site-wide
-      # redaction setting off (its sensible default) that resolver looks up
-      # the CURRENT title of records the reader cannot open. On a page
-      # anyone can read, a hand-typed `#[project_task:...]` therefore
-      # published an internal name — the typeahead never offers one, but
-      # nothing stops someone typing it, and nothing validates tokens on
-      # write.
+      # Rich-text (Leaf) editor opt-out. The host's own `rich_text=` wins and
+      # is remembered like `enabled=`; without one, the `comments_rich_text`
+      # setting is read on every update, so an admin turning Leaf off (the
+      # fix for a host whose Leaf hook hangs) reaches threads already open.
+      # The effective `:leaf_editor?` below also requires Leaf to be loaded.
+      |> then(
+        &assign(&1, :host_rich_text, Map.get(assigns, :rich_text, &1.assigns[:host_rich_text]))
+      )
+      |> then(&assign(&1, :rich_text, effective_rich_text(&1.assigns.host_rich_text)))
+      # See the moduledoc: a public page sets this, because nothing validates
+      # mention tokens on write.
       |> assign_new(:withhold_mention_titles, fn -> false end)
-      # Set by hosts that can vouch for a project voice. A map of
-      # %{project_uuid, label, verify: (user_uuid -> boolean), default_on}.
       # nil — the default — means the control never renders and nobody can
       # claim to speak for anything.
       |> assign_new(:project_attribution, fn -> nil end)
@@ -247,63 +321,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> assign_new(:order, fn -> :auto end)
       |> assign_new(:form_extras, fn -> [] end)
       |> assign_new(:current_user, fn -> nil end)
-      # Optional per-comment decoration registry. Generic surface
-      # for rendering an external label above the comment body,
-      # driven by one of the comment's `metadata[key]` fields. The
-      # comments package stays domain-agnostic; the caller declares
-      # which metadata field to read and what label to display for
-      # each known value.
-      #
-      # Shape:
-      #
-      #     %{
-      #       <metadata_key> => %{
-      #         <metadata_value> => %{
-      #           label: <string>,           # required — what to render
-      #           on_save: <atom> | nil      # optional — fires send_update
-      #                                      # to parent_module/parent_id
-      #                                      # when set; nil = read-only
-      #         },
-      #         ...
-      #       },
-      #       ...
-      #     }
-      #
-      # Example consumers:
-      #   PhoenixKit's MediaCanvasViewer for annotation titles:
-      #     %{"annotation_uuid" => %{
-      #         "abc-uuid" => %{label: "Sky shot", on_save: :annotation_title_updated}
-      #       }}
-      #   Hypothetical post-category decoration:
-      #     %{"category_id" => %{
-      #         "42" => %{label: "Releases", on_save: nil}
-      #       }}
-      #
-      # The first matching decoration wins per comment; multiple
-      # decorations per comment aren't supported in this iteration.
+      # Shapes and contracts of the next four are in the moduledoc. In short:
+      # the registry is built from data (empty until there is anything to
+      # label), the KEYS a client must never write are a static declaration
+      # (`decoration_keys/1`), and a decoration edit is sent to the parent
+      # with the actor, because metadata is not proof of anything — the host
+      # owns the record and decides.
       |> assign_new(:comment_decorations, fn -> %{} end)
-      # The metadata KEYS this host decorates with, as a static list —
-      # `["annotation_uuid"]` for the viewer above. Separate from the
-      # registry because the registry is built from data and is empty
-      # before there is anything to label, while the set of keys a client
-      # must never write is fixed. See `decoration_keys/1`.
       |> assign_new(:decoration_keys, fn -> [] end)
-      # Parent component to receive `send_update` when a decoration
-      # is inline-edited (only relevant for decorations whose
-      # entry sets `on_save`). The payload shape is:
-      #
-      #     %{action: <on_save atom>,
-      #       metadata_key: <string>,
-      #       metadata_value: <string>,
-      #       label: <new string>,
-      #       actor_uuid: <uuid> | nil}
-      #
-      # `actor_uuid` is who clicked. This component authorizes the COMMENT
-      # (you may edit your own), which is not the same question as "may
-      # this person rename that host record" — the link between the two is
-      # a metadata value, and metadata is not proof of anything. The host
-      # owns the record and must decide; it is given the actor to decide
-      # with.
       |> assign_new(:parent_module, fn -> nil end)
       |> assign_new(:parent_id, fn -> nil end)
       # Derive from the RESOLVED socket value (kept across updates by the
@@ -374,8 +399,45 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         socket
       end
 
-    {:ok, socket}
+    # The bodies are rendered for THIS reader (mentions resolve against their
+    # scope), so a new reader, scope or withholding rule re-renders them even
+    # when the comments themselves did not change.
+    if not reload? and Enum.any?(@body_inputs, &changed?(socket, &1)),
+      do: render_bodies(socket),
+      else: socket
   end
+
+  # A host that keeps the component id and points it at another record
+  # (`reload_comments?/1` supports exactly that) must not carry the open
+  # reply box, edit form, draft, GIF or staged files over to it: they were
+  # for the old record. The reply box in particular is looked up in the NEW
+  # tree, where it is not, and with it open neither composer rendered.
+  defp reset_on_new_resource(%{assigns: %{loaded?: true}} = socket) do
+    if changed?(socket, :resource_uuid) or changed?(socket, :resource_type) do
+      socket.assigns.uploads.attachment.entries
+      |> Enum.reduce(socket, &cancel_upload(&2, :attachment, &1.ref))
+      |> assign(
+        reply_to: nil,
+        composer_open_at: nil,
+        new_comment: "",
+        editing_uuid: nil,
+        editing_content: "",
+        editing_decoration_uuid: nil,
+        editing_decoration_value: "",
+        giphy_selected: nil,
+        giphy_open?: false,
+        attach_menu_open?: false,
+        expanded_comments: MapSet.new()
+      )
+    else
+      socket
+    end
+  end
+
+  defp reset_on_new_resource(socket), do: socket
+
+  defp effective_rich_text(host_value) when is_boolean(host_value), do: host_value
+  defp effective_rich_text(_host_value), do: PhoenixKitComments.rich_text_enabled?()
 
   # The list is stored in display order (`display_order/2`), so a host that
   # moves the box or fixes the order later gets it turned round too —
@@ -383,7 +445,45 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # the other one.
   defp reload_comments?(socket) do
     not socket.assigns.loaded? or
-      Enum.any?([:resource_uuid, :order, :composer_position], &changed?(socket, &1))
+      Enum.any?(
+        [:resource_type, :resource_uuid, :order, :composer_position],
+        &changed?(socket, &1)
+      )
+  end
+
+  # What the comment list renders from, as ONE assign the list depends on.
+  #
+  # The list used to take the component's whole `assigns` (`ctx={assigns}`).
+  # An expression that reads `assigns` itself is re-rendered on every change,
+  # so each draft keystroke (`update_comment_draft`, every 150 ms; Leaf every
+  # 400 ms) re-rendered every comment — markdown, mention lookups, signed
+  # attachment URLs — and sent the whole list down the socket again. This
+  # map holds only what a comment reads, so typing in the top or bottom box
+  # leaves it equal and the list untouched. While a reply box is open it is
+  # the full assigns: that box lives inside the list and must follow the
+  # draft, the staged files and the GIF picker.
+  @thread_ctx_keys [
+    :id,
+    :myself,
+    :can_post?,
+    :composer_position,
+    :viewer_moderates?,
+    :leaf_editor?,
+    :editor_mode,
+    :mentions_on,
+    :expanded_comments,
+    :rendered_bodies,
+    :notice,
+    :notice_seq
+  ]
+
+  defp put_thread_ctx(socket) do
+    ctx =
+      if socket.assigns[:reply_to],
+        do: Map.drop(socket.assigns, [:thread_ctx, :__changed__]),
+        else: Map.take(socket.assigns, @thread_ctx_keys)
+
+    assign(socket, :thread_ctx, ctx)
   end
 
   # `@enabled` used to wrap the TEMPLATE only. The component still rendered
@@ -407,10 +507,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # ("too long", "can't be empty") stays while it is being corrected.
   @impl true
   def handle_event("update_comment_draft" = event, params, socket),
-    do: handle(event, params, socket)
+    do: event |> handle(params, socket) |> with_thread_ctx()
 
   def handle_event(event, params, socket),
-    do: handle(event, params, assign(socket, :notice, nil))
+    do: event |> handle(params, assign(socket, :notice, nil)) |> with_thread_ctx()
+
+  defp with_thread_ctx({:noreply, socket}), do: {:noreply, put_thread_ctx(socket)}
 
   defp handle(event, params, socket) when event in @write_events do
     # Asked NOW, not read off an assign. A `phx-submit` reaches this
@@ -430,6 +532,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       {:noreply, put_notice(socket, :thread, :error, gettext("Comments are turned off here."))}
     end
   end
+
+  # A read-only thread (`composer_position: nil`, what hosts pass for a
+  # preview) renders no box and no Reply. The event can still be sent at the
+  # component, so the markup is not the control.
+  defp handle({:write, "add_comment"}, _params, %{assigns: %{composer_position: nil}} = socket),
+    do: {:noreply, socket}
 
   defp handle({:write, "add_comment"}, _params, %{assigns: %{can_post?: false}} = socket) do
     {:noreply, put_notice(socket, :composer, :error, gettext("Sign in to post a comment"))}
@@ -478,8 +586,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     {:noreply, put_notice(socket, :composer, :error, paste_refused_message(nil))}
   end
 
-  defp handle("cancel_upload", %{"ref" => ref}, socket) do
-    {:noreply, cancel_upload(socket, :attachment, ref)}
+  # Only a ref that is still staged. `cancel_upload/3` raises on any other,
+  # and the ✕ is easily clicked twice — or clicked while Post is consuming
+  # the entries — which took the host LiveView down.
+  defp handle("cancel_upload", %{"ref" => ref}, socket) when is_binary(ref) do
+    if Enum.any?(socket.assigns.uploads.attachment.entries, &(&1.ref == ref)),
+      do: {:noreply, cancel_upload(socket, :attachment, ref)},
+      else: {:noreply, socket}
   end
 
   defp handle("open_composer", params, socket) do
@@ -576,13 +689,16 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     # event on the page — typing, likes, replies, navigation — for the full
     # request timeout, with the UI frozen and no indication why.
     #
-    # `start_async` also gives the in-flight guard this never had: a
-    # keystroke supersedes the previous search instead of stacking requests
-    # against the host's quota.
+    # A keystroke supersedes the search in flight. `start_async` under the
+    # same key only DISCARDS the earlier result — its request still runs to
+    # the end against the host's quota — so the earlier task is cancelled
+    # first. `cancel_async/2` unlinks before it kills, so the cancelled task
+    # never reaches `handle_async/3` as an error.
     {:noreply,
      socket
      |> assign(:giphy_query, query)
      |> assign(:giphy_searching?, true)
+     |> cancel_async(:giphy_search)
      |> start_async(:giphy_search, fn -> PhoenixKitComments.search_giphy(query) end)}
   end
 
@@ -630,7 +746,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     # was stored, published and counted, and rendered in neither thread. The
     # author saw "Comment added" and their comment nowhere. A malformed uuid
     # raised CastError on submit and killed the LiveView.
-    if find_comment_in_tree(socket.assigns.comments, comment_uuid) do
+    #
+    # Only a viewer who may post, on a thread that is not read-only, and only
+    # to a live comment: a `[removed]` placeholder has no Reply button, and a
+    # crafted event opened a full composer — file input and recorder
+    # included — for an anonymous visitor.
+    with true <- socket.assigns.can_post? and socket.assigns.composer_position != nil,
+         %{status: "published"} <- find_comment_in_tree(socket.assigns.comments, comment_uuid) do
       {:noreply,
        socket
        |> assign(:reply_to, comment_uuid)
@@ -639,7 +761,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
        |> assign(:editing_uuid, nil)
        |> assign(:editing_content, "")}
     else
-      {:noreply, socket}
+      _ -> {:noreply, socket}
     end
   end
 
@@ -652,6 +774,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       nil ->
         {:noreply, put_notice(socket, :thread, :error, gettext("Comment not found"))}
 
+      # Read fresh, so a comment deleted or hidden since this thread loaded
+      # (another tab, a moderator) is not opened for editing.
+      %{status: status} when status != "published" ->
+        {:noreply, gone_from_thread(socket, comment_uuid)}
+
       comment ->
         if can_edit_comment?(socket, comment) do
           # When the comment has a matching decoration entry,
@@ -661,10 +788,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           decoration_label =
             decoration_label_for(comment, socket.assigns.comment_decorations)
 
+          # A title-only edit left open on another comment shares
+          # `:editing_decoration_value` with this form, so it is closed: it
+          # would otherwise show — and save — this comment's label.
           {:noreply,
            socket
            |> assign(:editing_uuid, comment_uuid)
            |> assign(:editing_content, comment.content)
+           |> assign(:editing_decoration_uuid, nil)
            |> assign(:editing_decoration_value, decoration_label)
            |> assign(:reply_to, nil)}
         else
@@ -796,6 +927,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     end
   end
 
+  # LAST, after every real clause (including the `{:write, _}` ones). An
+  # event with a missing key (`reply_to` with no `id`), a wrong type the
+  # clauses above do not take, or a name this component does not know used
+  # to raise FunctionClauseError — and a LiveComponent that raises takes the
+  # whole host LiveView with it, for a payload anyone can send at the cid.
+  defp handle(_event, _params, socket), do: {:noreply, socket}
+
   # Forward a decoration label captured by the comment-edit form
   # to the parent component (only when the comment has a matching
   # decoration entry with an `:on_save` action). Called from
@@ -889,14 +1027,20 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # `send_update` the host cannot tell from a legitimate one. The link
   # between a comment and a host record is the host's to make server-side,
   # never a client's to claim.
+  #
+  # And only STRINGS come through. A `form_extras` input is always
+  # `metadata[<key>]`, one value; `metadata[annotation_uuid][x]=y` arrived as
+  # a map, was stored, and then reached an HTML attribute at render, which
+  # cannot print a map — every later render of the thread raised, for every
+  # reader, until the comment was hidden.
   defp client_metadata(params, socket) do
     case Map.get(params, "metadata") do
       # `metadata=foo` rather than `metadata[k]=v` arrives as a binary and
       # used to raise BadMapError before any validation ran.
       %{} = metadata ->
         metadata
-        |> Map.delete("giphy")
-        |> Map.drop(decoration_keys(socket))
+        |> Map.drop(["giphy" | decoration_keys(socket)])
+        |> Map.filter(fn {key, value} -> is_binary(key) and is_binary(value) end)
 
       _ ->
         %{}
@@ -1026,6 +1170,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp added_notice_place(%{status: "published", uuid: uuid}), do: {:comment, uuid}
   defp added_notice_place(_comment), do: :thread
 
+  # With moderation on, the new comment is `pending` and not in the thread.
+  # "Comment added" over a thread without it read as a lost comment, and
+  # people posted it again.
+  defp added_message(%{status: "pending"}), do: gettext("Your comment is awaiting approval.")
+  defp added_message(_comment), do: gettext("Comment added")
+
   defp do_create_comment(socket, base_attrs) do
     case consume_attachments(socket) do
       {:error, message} ->
@@ -1043,13 +1193,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           {:ok, comment} ->
             sync_mentions(comment, socket.assigns.current_user.uuid)
 
-            reset_leaf_draft_editor(
-              socket.assigns.leaf_editor?,
-              socket.assigns.id,
-              socket.assigns.reply_to,
-              socket.assigns.composer_open_at
-            )
-
+            # No reset of the Leaf editor here: closing the composer below
+            # unmounts it, and the next one opens on the cleared draft.
             send(
               self(),
               {:comments_updated,
@@ -1071,10 +1216,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
              |> assign(:giphy_query, "")
              |> assign(:attach_menu_open?, false)
              |> load_comments()
-             |> put_notice(added_notice_place(comment), :info, gettext("Comment added"))}
+             |> put_notice(added_notice_place(comment), :info, added_message(comment))}
 
           {:error, %Ecto.Changeset{} = changeset} ->
-            message = first_error_message(changeset) || gettext("Failed to add comment")
+            message = changeset_error_message(changeset, gettext("Failed to add comment"))
             {:noreply, put_notice(socket, :composer, :error, message)}
 
           {:error, reason} when is_atom(reason) ->
@@ -1084,6 +1229,65 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   defp create_comment_from(socket, params, comment_text, metadata_params) do
+    cond do
+      # A file the upload refused (wrong type, too large, over the count)
+      # stays in `entries` — never `done?` — until it is removed. Waiting for
+      # it to finish meant "Wait for uploads to finish." for ever, with the
+      # Post button doing nothing.
+      refused_uploads?(socket.assigns.uploads.attachment) ->
+        {:noreply,
+         put_notice(
+           socket,
+           :composer,
+           :error,
+           gettext("Remove the files that can't be attached, then post again.")
+         )}
+
+      not reply_target_live?(socket) ->
+        {:noreply,
+         socket
+         |> assign(:reply_to, nil)
+         |> load_comments()
+         |> load_reaction_state()
+         |> put_notice(
+           :thread,
+           :error,
+           gettext("The comment you were replying to is no longer available.")
+         )}
+
+      true ->
+        precheck_and_create(socket, params, comment_text, metadata_params)
+    end
+  end
+
+  defp refused_uploads?(upload) do
+    upload_errors(upload) != [] or Enum.any?(upload.entries, &(not &1.valid?))
+  end
+
+  # The reply box was opened on a comment that was live THEN. Asked again at
+  # submit, from the database: a parent hidden or deleted meanwhile took the
+  # reply anyway — stored, published, invisible under a parent nobody sees,
+  # and confirmed with "Comment added".
+  defp reply_target_live?(%{assigns: %{reply_to: nil}}), do: true
+
+  defp reply_target_live?(%{assigns: %{reply_to: parent_uuid} = assigns}) do
+    case PhoenixKitComments.get_comment(parent_uuid) do
+      %{status: "published"} = parent -> on_this_resource?(parent, assigns)
+      _ -> false
+    end
+  end
+
+  # Whether a comment belongs to the record this thread shows — the IDOR
+  # check of every write that takes a comment uuid. The uuid is compared
+  # without regard to case: the database answers lower case, and a host may
+  # well pass the record's uuid as it got it.
+  defp on_this_resource?(comment, assigns) do
+    comment.resource_type == assigns.resource_type and
+      String.downcase(to_string(comment.resource_uuid)) ==
+        String.downcase(to_string(assigns.resource_uuid))
+  end
+
+  defp precheck_and_create(socket, params, comment_text, metadata_params) do
     metadata =
       case socket.assigns.giphy_selected do
         nil -> metadata_params
@@ -1197,7 +1401,16 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp create_error_message(:invalid_user_uuid), do: gettext("Invalid user")
   defp create_error_message(:invalid_file_uuid), do: gettext("Invalid file attachment")
+
+  # A parent that is malformed, gone, or a comment on another resource.
+  defp create_error_message(:invalid_parent), do: gettext("Invalid comment for this resource")
+
+  # Non-string content, or a NUL byte (U+0000), which Postgres cannot store.
+  defp create_error_message(:invalid_content), do: null_byte_message()
   defp create_error_message(_), do: gettext("Failed to add comment")
+
+  defp null_byte_message,
+    do: gettext("The text contains a character that can't be saved. Remove it and try again.")
 
   # The same words for a new comment and an edit, with the limit in them.
   defp too_long_message(max_length),
@@ -1212,8 +1425,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp do_delete_comment(socket, comment) do
     cond do
       # First verify the comment belongs to the current resource (IDOR protection)
-      comment.resource_type != socket.assigns.resource_type or
-          comment.resource_uuid != socket.assigns.resource_uuid ->
+      not on_this_resource?(comment, socket.assigns) ->
         {:noreply,
          put_notice(socket, :thread, :error, gettext("Invalid comment for this resource"))}
 
@@ -1226,12 +1438,29 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
            gettext("You don't have permission to delete this comment")
          )}
 
+      # Read fresh at the click. A second tab, or a moderator, may have
+      # deleted it since this thread loaded; deleting again wrote a second
+      # audit row and fired the host's `on_comment_deleted` twice.
+      comment.status == "deleted" ->
+        {:noreply, already_deleted(socket, comment.uuid)}
+
       true ->
         execute_delete(socket, comment)
     end
   end
 
-  defp do_save_edit(socket, comment, content) do
+  defp already_deleted(socket, comment_uuid) do
+    socket
+    |> load_comments()
+    |> load_reaction_state()
+    |> put_notice(
+      {:comment, comment_uuid},
+      :info,
+      gettext("This comment had already been deleted.")
+    )
+  end
+
+  defp do_save_edit(socket, comment, content, params) do
     max_length = PhoenixKitComments.get_max_length()
     content = String.trim(content)
 
@@ -1261,11 +1490,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
          )}
 
       true ->
-        do_update_comment(socket, comment, content)
+        do_update_comment(socket, comment, content, params)
     end
   end
 
-  defp do_update_comment(socket, comment, content) do
+  defp do_update_comment(socket, comment, content, params) do
     # Who edited it. `update_comment/3` forwards the actor keys to the
     # activity log, and without one the trail reads "a comment was edited"
     # with nobody attached — which is every edit made from an embedded
@@ -1275,6 +1504,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
     case PhoenixKitComments.update_comment(comment, %{content: content}, opts) do
       {:ok, updated} ->
+        # The decoration label the edit form carried (a comment whose
+        # decoration has an `on_save`) goes to the host only once the body
+        # edit has gone through: forwarded first, a refused edit ("can't be
+        # empty", "too long") still renamed the host's record — half an edit.
+        maybe_forward_decoration_update(socket, comment, params)
+
         # An edit that ADDS a mention pings; one that only reshuffles text
         # already mentioning someone pings nobody, because sync/4 returns
         # what is new and delivery is claimed once.
@@ -1300,13 +1535,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
          |> load_comments()
          |> put_notice({:comment, comment.uuid}, :info, gettext("Comment updated"))}
 
-      {:error, _} ->
-        {:noreply, put_notice(socket, :edit, :error, gettext("Failed to update comment"))}
+      {:error, %Ecto.Changeset{} = changeset} ->
+        message = changeset_error_message(changeset, gettext("Failed to update comment"))
+        {:noreply, put_notice(socket, :edit, :error, message)}
     end
   end
 
   defp execute_delete(socket, comment) do
-    # Same reason as `do_update_comment/3`: the deletion is logged either
+    # Same reason as `do_update_comment/4`: the deletion is logged either
     # way, but an audit row without an actor cannot answer the one question
     # asked of it.
     case PhoenixKitComments.delete_comment(comment, actor_uuid: actor_uuid(socket)) do
@@ -1325,6 +1561,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
          socket
          |> load_comments()
          |> put_notice({:comment, comment.uuid}, :info, gettext("Comment deleted"))}
+
+      # Deleted (or removed) between the read above and the locked write.
+      {:error, :already_deleted} ->
+        {:noreply, already_deleted(socket, comment.uuid)}
+
+      {:error, :not_found} ->
+        {:noreply,
+         socket
+         |> load_comments()
+         |> load_reaction_state()
+         |> put_notice(:thread, :error, gettext("Comment not found"))}
 
       {:error, _} ->
         {:noreply,
@@ -1352,28 +1599,29 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     |> partition_upload_results()
   end
 
+  # The results reach an open reply box through the thread ctx too.
   @impl true
-  def handle_async(:giphy_search, {:ok, {:ok, results}}, socket) do
-    {:noreply,
-     socket
-     |> assign(:giphy_searching?, false)
-     |> assign(:giphy_results, results)}
+  def handle_async(:giphy_search, result, socket),
+    do: {:noreply, socket |> giphy_result(result) |> put_thread_ctx()}
+
+  defp giphy_result(socket, {:ok, {:ok, results}}) do
+    socket
+    |> assign(:giphy_searching?, false)
+    |> assign(:giphy_results, results)
   end
 
-  def handle_async(:giphy_search, {:ok, {:error, reason}}, socket) do
-    {:noreply,
-     socket
-     |> assign(:giphy_searching?, false)
-     |> assign(:giphy_results, [])
-     |> put_notice(:composer, :error, giphy_error_message(reason))}
+  defp giphy_result(socket, {:ok, {:error, reason}}) do
+    socket
+    |> assign(:giphy_searching?, false)
+    |> assign(:giphy_results, [])
+    |> put_notice(:composer, :error, giphy_error_message(reason))
   end
 
-  def handle_async(:giphy_search, {:exit, _reason}, socket) do
-    {:noreply,
-     socket
-     |> assign(:giphy_searching?, false)
-     |> assign(:giphy_results, [])
-     |> put_notice(:composer, :error, gettext("Giphy search failed. Please try again."))}
+  defp giphy_result(socket, {:exit, _reason}) do
+    socket
+    |> assign(:giphy_searching?, false)
+    |> assign(:giphy_results, [])
+    |> put_notice(:composer, :error, gettext("Giphy search failed. Please try again."))
   end
 
   defp giphy_error_message(:giphy_disabled), do: gettext("GIFs are turned off here.")
@@ -1401,25 +1649,37 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp save_edit_for(socket, comment, content, params) do
     cond do
-      comment.resource_type != socket.assigns.resource_type or
-          comment.resource_uuid != socket.assigns.resource_uuid ->
+      not on_this_resource?(comment, socket.assigns) ->
         {:noreply,
          put_notice(socket, :thread, :error, gettext("Invalid comment for this resource"))}
 
-      # Permission FIRST. This used to forward the decoration and then let
-      # `do_save_edit/3` do the check, so a caller whose edit rights had gone
-      # still landed the label on the host record while their body edit was
-      # refused — half an edit, from a refused request.
+      # `comment` is read fresh at submit. An edit form left open while the
+      # comment was deleted or hidden elsewhere saved into it anyway: new text
+      # on a deleted row, "Comment updated", and @-pings for a comment
+      # nobody can read.
+      comment.status != "published" ->
+        {:noreply, gone_from_thread(socket, comment.uuid)}
+
       not can_edit_comment?(socket, comment) ->
         {:noreply, put_notice(socket, :edit, :error, gettext("You cannot edit this comment"))}
 
       true ->
-        # If the edit form carried a "label" field (i.e. the comment has a
-        # matching decoration with an `on_save` action), forward the new
-        # label to the parent. Both updates fire in the same tick.
-        maybe_forward_decoration_update(socket, comment, params)
-        do_save_edit(socket, comment, content)
+        do_save_edit(socket, comment, content, params)
     end
+  end
+
+  # A comment this thread still showed has been deleted or hidden elsewhere.
+  # The thread is reloaded so the reader sees where things stand.
+  defp gone_from_thread(socket, comment_uuid) do
+    socket
+    |> assign(editing_uuid: nil, editing_content: "", editing_decoration_value: "")
+    |> load_comments()
+    |> load_reaction_state()
+    |> put_notice(
+      {:comment, comment_uuid},
+      :error,
+      gettext("This comment is no longer available.")
+    )
   end
 
   # Mentions ship in a core release newer than this module's declared floor,
@@ -1436,16 +1696,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp uploads_done?(entries), do: Enum.all?(entries, & &1.done?)
 
   defp store_entry(meta, entry, user_uuid, folder_uuid) do
-    # `client_*` is exactly that: what the browser SAID. Core's storage does
-    # `Keyword.fetch!` on both and derives the stored mime type and the
-    # render branch from `content_type` alone — nothing in the chain looks
-    # at the bytes. So a file declaring `image/svg+xml` renders through the
-    # `<img>` branch, and a declared size becomes the recorded size.
-    #
-    # The size is now measured, and the extension is re-derived from the
-    # declared type rather than trusted from the name. Sniffing the content
-    # itself belongs in core's storage, next to the other `fetch!`s — noted
-    # in the sweep rather than reached around from here.
+    # `client_*` is exactly that: what the browser SAID. The size is
+    # measured here rather than taken from it (a declared size became the
+    # recorded one). The type is passed as declared: core's
+    # `Storage.store_file/2` checks it against the bytes
+    # (`Storage.content_mime_type/3`), and its file controller serves with
+    # `nosniff`, inline only what a browser cannot run (raster images, PDF,
+    # plain text, video, audio) — an SVG or HTML file downloads. The name is
+    # only cleaned (`safe_filename/1`), never trusted for the type.
     stat_size =
       case File.stat(meta.path) do
         {:ok, %{size: size}} -> size
@@ -1484,6 +1742,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     end
   end
 
+  # One query: the tree. A published-comment COUNT ran next to it on every
+  # load — every post, edit, delete and reaction toggle — and nothing
+  # rendered it.
   defp load_comments(socket) do
     comments =
       PhoenixKitComments.get_comment_tree(
@@ -1491,16 +1752,38 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         socket.assigns.resource_uuid
       )
 
-    comment_count =
-      PhoenixKitComments.count_comments(
-        socket.assigns.resource_type,
-        socket.assigns.resource_uuid,
-        status: "published"
-      )
-
     socket
     |> assign(:comments, display_order(comments, socket.assigns))
-    |> assign(:comment_count, comment_count)
+    |> render_bodies()
+  end
+
+  # Every body as THIS reader sees it — mentions resolved against their
+  # scope, then markdown — once per load, keyed by comment uuid. Rendering in
+  # the template ran MDEx and the mention lookups for every comment on every
+  # re-render of the list. `Markdown.render_markdown/1` is the sanitiser, so
+  # what is stored here is already safe to print.
+  defp render_bodies(socket) do
+    bodies =
+      socket.assigns.comments
+      |> comments_with_text()
+      |> Map.new(fn comment ->
+        {comment.uuid,
+         Markdown.render_markdown(resolve_mentions(comment.content, socket.assigns))}
+      end)
+
+    assign(socket, :rendered_bodies, bodies)
+  end
+
+  # A `[removed]` placeholder keeps its text in the row; it is never shown.
+  defp comments_with_text(comments) do
+    Enum.flat_map(comments, fn comment ->
+      own =
+        if comment.status != "deleted" and is_binary(comment.content) and comment.content != "",
+          do: [comment],
+          else: []
+
+      own ++ comments_with_text(comment.children || [])
+    end)
   end
 
   # The roots as the box's place says (see `:order`); the tree comes
@@ -1513,6 +1796,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   @doc false
+  @spec effective_order(map()) :: :newest_first | :oldest_first
   def effective_order(%{order: order}) when order in [:newest_first, :oldest_first], do: order
   def effective_order(%{composer_position: :bottom}), do: :oldest_first
   def effective_order(_assigns), do: :newest_first
@@ -1520,6 +1804,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # A chat (the box at the bottom, the oldest first) opens at its newest
   # comment and follows new ones while the reader is at the bottom.
   @doc false
+  @spec chat?(map()) :: boolean()
   def chat?(assigns),
     do: assigns[:composer_position] == :bottom and effective_order(assigns) == :oldest_first
 
@@ -1562,23 +1847,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     MapSet.member?(comment_uuids, comment_uuid)
   end
 
-  # Heuristic for "this comment body is long enough to clamp + offer Read more":
-  # several lines, or a long single block that would wrap past the clamp.
   # Rewrites @ and # tokens as markdown for the person reading. A no-op
   # when core is too old to have mentions, or the text has none.
   defp resolve_mentions(content, assigns) do
-    # Called from `render_comment/1`, a FUNCTION component — it sees only its
-    # declared attrs, never the LiveComponent's assigns. Passing that
-    # component's own `assigns` here read `pk_scope` and
-    # `withhold_mention_titles` as nil on every render, and because these are
-    # bracket lookups it failed silently instead of raising: the withhold
-    # feature was a no-op, and a nil scope made `Mentions.visible/3` fail
-    # closed, so every mention rendered locked WITH its title still printed —
-    # the exact leak withholding exists to prevent.
-    #
-    # `@ctx` is the parent's full assigns, forwarded at both call sites, so
-    # both values are really there. Same class as the KeyError fixed in
-    # ff6c378; that pass missed this one because nothing crashed.
+    # Takes the LiveComponent's own assigns (`render_bodies/1`). It used to
+    # be called from `render_comment/1`, a FUNCTION component that sees only
+    # its declared attrs: handed that component's assigns, it read `pk_scope`
+    # and `withhold_mention_titles` as nil, and because these are bracket
+    # lookups it failed silently — the withhold feature was a no-op, and a
+    # nil scope made `Mentions.visible/3` fail closed, so every mention
+    # rendered locked WITH its title still printed, the exact leak
+    # withholding exists to prevent.
     if Code.ensure_loaded?(PhoenixKit.Mentions) do
       # credo:disable-for-next-line Credo.Check.Refactor.Apply
       apply(PhoenixKit.Mentions, :to_markdown, [
@@ -1642,12 +1921,33 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     :exit, _ -> nil
   end
 
+  # Heuristic for "this comment body is long enough to clamp + offer Read more":
+  # several lines, or a long single block that would wrap past the clamp.
   defp long_comment?(content) when is_binary(content) do
     trimmed = String.trim(content)
     String.length(trimmed) > 280 or length(String.split(trimmed, "\n")) > 4
   end
 
   defp long_comment?(_content), do: false
+
+  # The same wrapper `Markdown.comment_markdown/1` draws, around a body
+  # already rendered and sanitised by `render_bodies/1`.
+  attr(:html, :string, required: true)
+  attr(:class, :string, default: "")
+
+  defp comment_body(assigns) do
+    ~H"""
+    <div class={["pk-comment-md max-w-none text-sm", @class]}>{Phoenix.HTML.raw(@html)}</div>
+    """
+  end
+
+  # A comment the stored bodies do not have yet (none should be: every load
+  # renders them) is rendered here, through the same sanitiser.
+  defp comment_body_html(ctx, comment) do
+    Map.get_lazy(ctx[:rendered_bodies] || %{}, comment.uuid, fn ->
+      Markdown.render_markdown(comment.content)
+    end)
+  end
 
   attr(:comment, :map, required: true)
   attr(:current_user, :map, required: true)
@@ -1672,8 +1972,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
     # Convenience: the pre-existing data-annotation-uuid attr on the
     # rendered wrapper. Kept for callers that target shapes via that
-    # selector (predates the decoration refactor).
-    annotation_uuid = get_in(assigns.comment.metadata || %{}, ["annotation_uuid"])
+    # selector (predates the decoration refactor). A string or nothing: an
+    # attribute cannot print a map, and rows stored before
+    # `client_metadata/2` kept to strings may hold one.
+    annotation_uuid =
+      case assigns.comment.metadata do
+        %{"annotation_uuid" => value} when is_binary(value) -> value
+        _ -> nil
+      end
 
     assigns =
       assigns
@@ -1736,7 +2042,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           </span>
           <div class="ml-auto flex items-center gap-0.5 shrink-0">
             <button
-              :if={@ctx.can_post?}
+              :if={@ctx.can_post? and @ctx.composer_position != nil}
               type="button"
               phx-click="reply_to"
               phx-value-id={@comment.uuid}
@@ -1922,10 +2228,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             <%!-- When this comment has a decoration with an `on_save`    --%>
             <%!-- action, the edit form opens label + body together.      --%>
             <%!-- Save writes both: comment content through the normal    --%>
-            <%!-- `do_save_edit` path, decoration label via send_update   --%>
-            <%!-- to the parent. The standalone click-the-label flow      --%>
-            <%!-- above stays as a shortcut for "just rename, don't       --%>
-            <%!-- re-edit the body."                                       --%>
+            <%!-- `do_save_edit/4` path, the label via send_update to the --%>
+            <%!-- parent once that edit has succeeded. The standalone     --%>
+            <%!-- click-the-label flow above stays as a shortcut for      --%>
+            <%!-- "just rename, don't re-edit the body."                   --%>
             <%= if @decoration && @decoration.on_save do %>
               <input
                 type="text"
@@ -2003,12 +2309,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             <% expanded = MapSet.member?(@ctx.expanded_comments, @comment.uuid) %>
             <% is_long = long_comment?(@comment.content) %>
             <div class="text-sm text-base-content break-words pk-comment-md">
-              <%!-- Mentions resolve for THIS reader before markdown runs:
-                   a link if they may open it, the author's words if it's
-                   gone, "no access" if it isn't theirs. --%>
-              <.comment_markdown
-                content={resolve_mentions(@comment.content, @ctx)}
-                compact
+              <%!-- Rendered once per load for THIS reader (`render_bodies/1`):
+                   mentions resolve to a link if they may open it, the
+                   author's words if it's gone, "no access" if it isn't
+                   theirs. --%>
+              <.comment_body
+                html={comment_body_html(@ctx, @comment)}
                 class={if(is_long and not expanded, do: "line-clamp-4", else: "")}
               />
             </div>
@@ -2324,12 +2630,33 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp comment_gif(_), do: nil
 
-  defp first_error_message(%Ecto.Changeset{errors: errors}) do
-    case errors do
-      [{field, {msg, _opts}} | _] -> "#{Phoenix.Naming.humanize(field)} #{msg}"
-      _ -> nil
+  # What a refused changeset tells the person. This used to print the first
+  # error as `"#{humanize(field)} #{msg}"`: an English field name, an English
+  # message, and its `%{count}` never filled in ("Content should be at most
+  # %{count} character(s)"). Only the comment's text is the person's to fix,
+  # so only its errors are worded, each as a whole sentence; anything else (a
+  # missing user, a resource type too long, a bare "is invalid" that reads as
+  # nothing on its own) gets the general failure.
+  defp changeset_error_message(%Ecto.Changeset{errors: errors}, fallback) do
+    case Keyword.get(errors, :content) || Keyword.get(errors, :metadata) do
+      {_msg, opts} when is_list(opts) ->
+        content_error_message(Keyword.get(opts, :validation), opts, fallback)
+
+      _ ->
+        fallback
     end
   end
+
+  defp content_error_message(validation, _opts, _fallback)
+       when validation in [:content_or_media, :required],
+       do: gettext("Comment can't be empty")
+
+  defp content_error_message(:null_byte, _opts, _fallback), do: null_byte_message()
+
+  defp content_error_message(:length, opts, _fallback),
+    do: too_long_message(Keyword.get(opts, :count, PhoenixKitComments.get_max_length()))
+
+  defp content_error_message(_validation, _opts, fallback), do: fallback
 
   defp attachment_icon("image/" <> _), do: "hero-photo"
   defp attachment_icon("video/" <> _), do: "hero-film"
@@ -2353,11 +2680,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # draft / edit assigns in sync. Without forwarding, Leaf still
   # works visually but the form has no content to submit.
   #
-  # ## Host wiring (one-liner per LiveView)
+  # ## Host wiring
   #
-  #     def handle_info({:leaf_changed, _} = msg, socket) do
-  #       PhoenixKitComments.Web.CommentsComponent.forward_leaf_event(msg, socket)
-  #     end
+  # `use PhoenixKitComments.Embed`, or the `forward_leaf_event/2` example
+  # below (`:pass` is not a valid `handle_info` return).
   #
   # ## Editor ID namespace
   #
@@ -2377,13 +2703,24 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   ## Example
 
       def handle_info({:leaf_changed, _} = msg, socket) do
-        PhoenixKitComments.Web.CommentsComponent.forward_leaf_event(msg, socket)
+        case PhoenixKitComments.Web.CommentsComponent.forward_leaf_event(msg, socket) do
+          {:noreply, socket} -> {:noreply, socket}
+          # Not a comments editor: the host's own (here, ignore it).
+          :pass -> {:noreply, socket}
+        end
       end
 
   Returns `{:noreply, socket}` on a match (already wrapped, ready
   to return from handle_info), or `:pass` when the editor isn't
-  ours.
+  ours. Never return the `:pass` itself from `handle_info/2`:
+  LiveView raises on it, so the first message from another editor
+  on the page would take the host down. `use PhoenixKitComments.Embed`
+  does this wiring for you.
+
+  This is a host contract: the name, arity and return shape stay.
   """
+  @spec forward_leaf_event(term(), Phoenix.LiveView.Socket.t()) ::
+          {:noreply, Phoenix.LiveView.Socket.t()} | :pass
   def forward_leaf_event(
         {:leaf_changed, %{editor_id: editor_id, markdown: markdown}},
         socket
@@ -2405,23 +2742,34 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   def forward_leaf_event(_msg, _socket), do: :pass
 
-  # Parse "pk-comments:<component_id>:<kind>(:rest...)" into
-  # `{:ok, component_id, kind}`. The kind is `:draft` for the
-  # new-comment / reply form (one per component) or `:edit` for
-  # the inline edit form (also one at a time per component).
+  # Parse "pk-comments:<component_id>:<kind>:<arg>" into
+  # `{:ok, component_id, kind}`. The kind is `:draft` for the new-comment
+  # form, `:reply` for a reply box, `:edit` for the inline edit form.
+  #
+  # From the RIGHT: the last two segments are ours (the kind, then a
+  # position or a comment uuid, neither with a ":" in it), and everything
+  # before them is the component id — which is the host's, and may hold a
+  # ":" ("comments:post:42"). Split from the left, such an id made every
+  # editor event `:pass`, and Post silently posted nothing.
   defp parse_editor_id("pk-comments:" <> rest) do
-    case String.split(rest, ":", parts: 3) do
-      # Draft editor ids carry their composer position
-      # ("...:draft:top" / "...:draft:bottom"); the position doesn't
-      # change the forwarding kind, so both map to :draft.
-      [component_id, "draft", _position] -> {:ok, component_id, :draft}
-      [component_id, "reply", _comment_uuid] -> {:ok, component_id, :reply}
-      [component_id, "edit", _comment_uuid] -> {:ok, component_id, :edit}
-      _ -> :pass
+    case rest |> String.split(":") |> Enum.reverse() do
+      [arg, kind | id_parts] when id_parts != [] and arg != "" ->
+        editor_kind(kind, id_parts |> Enum.reverse() |> Enum.join(":"))
+
+      _ ->
+        :pass
     end
   end
 
   defp parse_editor_id(_), do: :pass
+
+  # Draft editor ids carry their composer position ("...:draft:top" /
+  # "...:draft:bottom"); the position doesn't change the forwarding kind.
+  defp editor_kind(_kind, ""), do: :pass
+  defp editor_kind("draft", component_id), do: {:ok, component_id, :draft}
+  defp editor_kind("reply", component_id), do: {:ok, component_id, :reply}
+  defp editor_kind("edit", component_id), do: {:ok, component_id, :edit}
+  defp editor_kind(_kind, _component_id), do: :pass
 
   # The notice, where it belongs (`put_notice/4`). Each place renders it
   # only when the notice is addressed there.
@@ -3109,6 +3457,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   @doc false
   # Public only so the mode contract can be pinned by a unit test.
+  @spec __normalize_editor_mode__(term()) :: atom()
   def __normalize_editor_mode__(mode) when mode in @leaf_editor_modes, do: mode
 
   def __normalize_editor_mode__(mode) when is_binary(mode) do
@@ -3129,26 +3478,4 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp edit_editor_id(component_id, comment_uuid),
     do: "pk-comments:#{component_id}:edit:#{comment_uuid}"
-
-  # Clear the Leaf editor that was just submitted. For a reply it's the
-  # per-comment reply editor; for a new comment it's the draft editor at
-  # whichever position was open (falls back to :top if unknown). No-op when
-  # the plain-textarea fallback is in use (no Leaf editor to reset).
-  defp reset_leaf_draft_editor(false, _component_id, _reply_to, _composer_open_at), do: :ok
-
-  defp reset_leaf_draft_editor(true, component_id, reply_to, composer_open_at) do
-    if leaf_available?() do
-      editor_id =
-        case reply_to do
-          nil -> draft_editor_id(component_id, composer_open_at || :top)
-          comment_uuid -> reply_editor_id(component_id, comment_uuid)
-        end
-
-      Phoenix.LiveView.send_update(Leaf,
-        id: editor_id,
-        action: :set_content,
-        content: ""
-      )
-    end
-  end
 end

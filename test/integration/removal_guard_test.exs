@@ -8,8 +8,14 @@ defmodule PhoenixKitComments.Integration.RemovalGuardTest do
 
   defmodule ScopedHandler do
     @moduledoc false
-    def moderatable_resources(_type, %{user: %{uuid: uuid}}), do: [uuid]
-    def moderatable_resources(_type, _scope), do: []
+    def moderatable_resources(_type, scope) do
+      if pid = :persistent_term.get({__MODULE__, :pid}, nil), do: send(pid, :handler_asked)
+
+      case scope do
+        %{user: %{uuid: uuid}} -> [uuid]
+        _ -> []
+      end
+    end
   end
 
   setup do
@@ -72,6 +78,24 @@ defmodule PhoenixKitComments.Integration.RemovalGuardTest do
     %{scope: scope, action: :trash_file, folder_uuid: nil}
   end
 
+  test "a file no comment uses never reaches the resource handlers" do
+    :persistent_term.put({ScopedHandler, :pid}, self())
+    on_exit(fn -> :persistent_term.erase({ScopedHandler, :pid}) end)
+
+    user = user_fixture()
+    loose = file_fixture!(user)
+
+    # The rule asks every handler, and it used to be computed first: every
+    # media-library trash paid those host calls, attachment or not.
+    assert RemovalGuard.places([loose.uuid], ctx(["comments"], user)) == []
+    refute_received :handler_asked
+
+    attach!(user, loose, "managed", user.uuid)
+    assert [%{label: label}] = RemovalGuard.places([loose.uuid], ctx(["comments"], user))
+    assert label
+    assert_received :handler_asked
+  end
+
   test "no files, no places" do
     assert RemovalGuard.places([], ctx(["comments"])) == []
   end
@@ -97,7 +121,8 @@ defmodule PhoenixKitComments.Integration.RemovalGuardTest do
 
     assert uuid == used.uuid
     assert label =~ "comment"
-    assert detail =~ "product"
+    # The type as the moderation page writes it, not the raw slug.
+    assert detail == "On: Product"
   end
 
   test "only the files asked about are answered" do
@@ -159,8 +184,8 @@ defmodule PhoenixKitComments.Integration.RemovalGuardTest do
              RemovalGuard.places([file.uuid], ctx(["comments"], user))
 
     assert label =~ "comment"
-    assert detail =~ "managed"
-    refute detail =~ "secret"
+    assert detail == "On: Managed"
+    refute detail =~ ~r/secret/i
   end
 
   test "the handler's current grant is checked on every call" do

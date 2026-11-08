@@ -262,3 +262,39 @@ test("a thread destroyed before its first frame scrolls nothing", () => {
   assert.equal(w.box.scrollTop, 0);
   assert.equal(w.s.observers[0].off, true);
 });
+
+test("a dropped desktop file keeps its own name", () => {
+  const hook = mount(hooks().PhoenixKitCommentsPasteFiles);
+  // "image.png" is also what a pasted screenshot is called; only a paste is
+  // renamed.
+  const file = new File(["pixels"], "image.png", { type: "image/png" });
+  dispatch(hook.el, "drop", { dataTransfer: drag([file]) });
+  assert.equal(hook.uploads[0].files[0].name, "image.png");
+});
+
+function timeAgo(secondsAgo) {
+  const intervals = [];
+  const sandbox = {
+    setInterval: (fn) => { intervals.push(fn); return intervals.length; },
+    clearInterval: () => {}
+  };
+  const definition = hooks(sandbox).PhoenixKitCommentsTimeAgo;
+  const time = {
+    textContent: "server text",
+    getAttribute: () => new Date(Date.now() - secondsAgo * 1000).toISOString()
+  };
+  const hook = Object.assign({ el: { dataset: { locale: "en" }, querySelector: () => time } }, definition);
+  hook.mounted();
+  hook.destroyed();
+  return time.textContent;
+}
+
+test("time-ago picks its unit from the rounded value", () => {
+  assert.equal(timeAgo(10), "now");
+  assert.equal(timeAgo(5 * 60), "5 min. ago");
+  // 3590 s used to read "60 min. ago", 86,350 s "24 hr. ago".
+  assert.equal(timeAgo(3590), "1 hr. ago");
+  assert.equal(timeAgo(86350), "yesterday");
+  // 6.8 days used to read "7 days ago"; a week and more is a date.
+  assert.doesNotMatch(timeAgo(6.8 * 86400), /ago/);
+});

@@ -52,4 +52,44 @@ defmodule PhoenixKitComments.EmbedTest do
                Embed.__forward_leaf__({:something_else, %{}}, socket())
     end
   end
+
+  # The component id is the host's and may hold a ":" ("comments:post:42").
+  # Parsed from the left, such an id made every editor event `:pass`, so the
+  # rich-text composer's content never reached the component and Post posted
+  # nothing. `forward_leaf_event/2` enqueues a `send_update` to the test
+  # process, which shows the id the update is addressed to.
+  describe "CommentsComponent.forward_leaf_event/2 editor ids" do
+    alias PhoenixKitComments.Web.CommentsComponent
+
+    for {editor_id, component_id, kind} <- [
+          {"pk-comments:thread-1:draft:top", "thread-1", :draft},
+          {"pk-comments:comments:post:42:draft:bottom", "comments:post:42", :draft},
+          {"pk-comments:a:b:reply:0190", "a:b", :reply},
+          {"pk-comments:a:b:edit:0190", "a:b", :edit}
+        ] do
+      test "routes #{editor_id} to #{inspect(component_id)} as #{kind}" do
+        msg = {:leaf_changed, %{editor_id: unquote(editor_id), markdown: "hi"}}
+        assert {:noreply, _socket} = CommentsComponent.forward_leaf_event(msg, socket())
+
+        assert_received {:phoenix, :send_update,
+                         {{CommentsComponent, unquote(component_id)},
+                          %{leaf_content_changed: %{kind: unquote(kind), content: "hi"}}}}
+      end
+    end
+
+    for editor_id <- [
+          "my-app:body-editor",
+          "pk-comments:",
+          "pk-comments:draft:top",
+          "pk-comments::draft:top",
+          "pk-comments:thread-1:other:x",
+          "pk-comments:thread-1:draft:"
+        ] do
+      test "passes #{inspect(editor_id)} through" do
+        msg = {:leaf_changed, %{editor_id: unquote(editor_id), markdown: "hi"}}
+        assert CommentsComponent.forward_leaf_event(msg, socket()) == :pass
+        refute_received {:phoenix, :send_update, _}
+      end
+    end
+  end
 end

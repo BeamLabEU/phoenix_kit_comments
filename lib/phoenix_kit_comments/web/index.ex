@@ -76,6 +76,7 @@ defmodule PhoenixKitComments.Web.Index do
         |> assign(:resource_types, [])
         |> assign(:scoped, true)
         |> assign(:can_change_settings, false)
+        |> assign(:show_emails, false)
         |> assign(:date_settings, date_settings())
         |> assign_filter_defaults()
         |> maybe_load_dashboard_data()
@@ -105,19 +106,16 @@ defmodule PhoenixKitComments.Web.Index do
 
   @impl true
   def handle_event("filter", params, socket) do
-    combined_params = %{"page" => "1"}
-
+    # Only the keys the URL carries, and only strings. A crafted
+    # `filter[status][x]=1` (or a `search[query]` map) went straight into
+    # `URI.encode_query/1` and the list query, and either raised.
     combined_params =
-      case Map.get(params, "search") do
-        %{"query" => query} -> Map.put(combined_params, "search", String.trim(query || ""))
-        _ -> combined_params
-      end
-
-    combined_params =
-      case Map.get(params, "filter") do
-        filter_params when is_map(filter_params) -> Map.merge(combined_params, filter_params)
-        _ -> combined_params
-      end
+      %{"page" => "1"}
+      |> maybe_put("search", search_query(params["search"]))
+      |> Map.merge(
+        params["filter"]
+        |> string_params(["resource_type", "status"])
+      )
 
     new_params = build_url_params(socket.assigns, combined_params)
     {:noreply, push_patch(socket, to: Routes.path("/admin/comments?#{new_params}"))}
@@ -138,7 +136,7 @@ defmodule PhoenixKitComments.Web.Index do
   # Open / close the full-comment modal (the list view only shows a truncated
   # preview; this shows the whole comment in formatted prose).
   @impl true
-  def handle_event("view_comment", %{"uuid" => uuid}, socket) do
+  def handle_event("view_comment", params, socket) do
     # The only read event that skipped the check every write performs. Mount
     # now gates the page, but this stays: it reads an ARBITRARY comment by
     # uuid, so it is the one handler where "already on the page" is not the
@@ -146,23 +144,23 @@ defmodule PhoenixKitComments.Web.Index do
     #
     # Read through the viewer's moderation rule: a uuid outside it opens
     # nothing, exactly like a uuid that does not exist.
-    case check_authorization(socket) do
-      :ok ->
-        rule = moderation_rule(socket)
+    #
+    # `params["uuid"]`, not a `%{"uuid" => uuid}` head: a payload without the
+    # key had no clause to match and took the page down. A missing or
+    # malformed uuid opens nothing, like one that does not exist.
+    authorized(socket, fn ->
+      rule = moderation_rule(socket)
 
-        comment =
-          PhoenixKitComments.get_comment_for_moderation(uuid, rule,
-            preload: [:user, media: :file]
-          )
+      comment =
+        PhoenixKitComments.get_comment_for_moderation(params["uuid"], rule,
+          preload: [:user, media: :file]
+        )
 
-        {:noreply,
-         socket
-         |> assign(:viewing_comment, comment)
-         |> assign(:resource_context, modal_context(socket.assigns.resource_context, comment))}
-
-      {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
-    end
+      {:noreply,
+       socket
+       |> assign(:viewing_comment, comment)
+       |> assign(:resource_context, modal_context(socket.assigns.resource_context, comment))}
+    end)
   end
 
   @impl true
@@ -171,24 +169,24 @@ defmodule PhoenixKitComments.Web.Index do
   end
 
   @impl true
-  def handle_event("approve", %{"uuid" => uuid}, socket) do
-    moderate(socket, uuid, &PhoenixKitComments.approve_comment/2,
+  def handle_event("approve", params, socket) do
+    moderate(socket, params["uuid"], &PhoenixKitComments.approve_comment/2,
       ok: gettext("Comment approved"),
       error: gettext("Could not approve this comment")
     )
   end
 
   @impl true
-  def handle_event("hide", %{"uuid" => uuid}, socket) do
-    moderate(socket, uuid, &PhoenixKitComments.hide_comment/2,
+  def handle_event("hide", params, socket) do
+    moderate(socket, params["uuid"], &PhoenixKitComments.hide_comment/2,
       ok: gettext("Comment hidden"),
       error: gettext("Could not hide this comment")
     )
   end
 
   @impl true
-  def handle_event("delete", %{"uuid" => uuid}, socket) do
-    moderate(socket, uuid, &PhoenixKitComments.delete_comment/2,
+  def handle_event("delete", params, socket) do
+    moderate(socket, params["uuid"], &PhoenixKitComments.delete_comment/2,
       ok: gettext("Comment deleted"),
       error: gettext("Could not delete this comment")
     )
@@ -203,45 +201,33 @@ defmodule PhoenixKitComments.Web.Index do
   # `restore_comment/2` exists to prevent (and, symmetrically, Approve called
   # `restore_comment/2` and did nothing at all under moderation).
   @impl true
-  def handle_event("restore", %{"uuid" => uuid}, socket) do
-    moderate(socket, uuid, &PhoenixKitComments.restore_comment/2,
+  def handle_event("restore", params, socket) do
+    moderate(socket, params["uuid"], &PhoenixKitComments.restore_comment/2,
       ok: gettext("Comment restored"),
       error: gettext("Could not restore this comment")
     )
   end
 
-  @impl true
-  def handle_event("bulk_approve", %{"uuids" => uuids}, socket) do
-    case check_authorization(socket) do
-      {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
-
-      :ok ->
-        do_bulk_action("approve", uuids, socket)
-    end
-  end
+  # The three bulk buttons differ only in the action. A payload whose
+  # `uuids` is missing or not a list answers "No comments selected" instead
+  # of matching no clause; non-string entries are dropped like unknown uuids.
+  @bulk_events %{
+    "bulk_approve" => "approve",
+    "bulk_hide" => "hide",
+    "bulk_delete_comments" => "delete"
+  }
 
   @impl true
-  def handle_event("bulk_hide", %{"uuids" => uuids}, socket) do
-    case check_authorization(socket) do
-      {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
-
-      :ok ->
-        do_bulk_action("hide", uuids, socket)
-    end
+  def handle_event(event, params, socket) when is_map_key(@bulk_events, event) do
+    authorized(socket, fn ->
+      do_bulk_action(Map.fetch!(@bulk_events, event), bulk_uuids(params), socket)
+    end)
   end
 
-  @impl true
-  def handle_event("bulk_delete_comments", %{"uuids" => uuids}, socket) do
-    case check_authorization(socket) do
-      {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+  defp bulk_uuids(%{"uuids" => uuids}) when is_list(uuids),
+    do: uuids |> Enum.filter(&is_binary/1) |> Enum.uniq()
 
-      :ok ->
-        do_bulk_action("delete", uuids, socket)
-    end
-  end
+  defp bulk_uuids(_params), do: []
 
   defp do_bulk_action(action, uuids, socket) do
     if uuids == [] do
@@ -264,13 +250,21 @@ defmodule PhoenixKitComments.Web.Index do
       # All three return `{ok_count, error_count}`, which every branch used
       # to throw away and flash success unconditionally — so a bulk action
       # where every row failed still reported "Comments approved".
-      {ok_count, err_count} =
+      #
+      # The failures are counted from what was ASKED, not from the error
+      # count: the bulk functions drop a uuid they cannot load (missing, or
+      # outside the rule) instead of counting it, so a selection of rows
+      # deleted in another tab flashed "0 comments approved" as a success.
+      # `requested - ok` answers the same for a missing row and an
+      # out-of-scope one, so it tells nobody which is which.
+      {ok_count, _err_count} =
         case action do
           "approve" -> PhoenixKitComments.bulk_approve(uuids, opts)
           "hide" -> PhoenixKitComments.bulk_hide(uuids, opts)
           "delete" -> bulk_delete(uuids, opts)
         end
 
+      err_count = max(length(uuids) - ok_count, 0)
       socket = refresh(socket, rule)
 
       {:noreply,
@@ -341,13 +335,36 @@ defmodule PhoenixKitComments.Web.Index do
     |> assign(:filter_status, nil)
   end
 
+  # URL params are whatever the address bar says, and a link can be sent to
+  # a moderator: `?search[x]=1`, `?page[]=1`, `?status[]=x` each crashed the
+  # page (String.trim on a map, no `parse_int` clause, an Ecto cast). Only
+  # strings are taken, and a status outside the four there are is ignored.
   defp apply_params(socket, params) do
     socket
     |> assign(:page, parse_int(params["page"], 1))
-    |> assign(:search, params["search"] || "")
-    |> assign(:filter_resource_type, blank_to_nil(params["resource_type"]))
-    |> assign(:filter_status, blank_to_nil(params["status"]))
+    |> assign(:search, string_param(params["search"]) || "")
+    |> assign(:filter_resource_type, blank_to_nil(string_param(params["resource_type"])))
+    |> assign(:filter_status, status_param(params["status"]))
   end
+
+  @statuses ~w(published pending hidden deleted)
+
+  defp status_param(status) when status in @statuses, do: status
+  defp status_param(_status), do: nil
+
+  defp string_param(value) when is_binary(value), do: value
+  defp string_param(_value), do: nil
+
+  defp search_query(%{"query" => query}) when is_binary(query), do: String.trim(query)
+  defp search_query(_search), do: nil
+
+  defp string_params(params, keys) when is_map(params) do
+    params
+    |> Map.take(keys)
+    |> Map.filter(fn {_key, value} -> is_binary(value) end)
+  end
+
+  defp string_params(_params, _keys), do: %{}
 
   # The modal's comment may not be on the current page (a deep link, a
   # search since cleared), so resolve its resource too. It passed the rule
@@ -372,6 +389,7 @@ defmodule PhoenixKitComments.Web.Index do
 
     socket
     |> assign(:scoped, rule != :all)
+    |> assign(:show_emails, show_emails?(scope))
     |> assign(:can_change_settings, PhoenixKitComments.can_change_settings?(scope))
     |> assign(:page_subtitle, subtitle(rule))
     |> assign(:stats, PhoenixKitComments.comment_stats(rule))
@@ -383,15 +401,18 @@ defmodule PhoenixKitComments.Web.Index do
   defp subtitle(_rule), do: gettext("Moderate comments on records you manage")
 
   defp load_comments(socket, rule) do
-    result =
-      PhoenixKitComments.list_all_comments(
-        page: socket.assigns.page,
-        per_page: socket.assigns.per_page,
-        search: socket.assigns.search,
-        resource_type: socket.assigns.filter_resource_type,
-        status: socket.assigns.filter_status,
-        moderation: rule
-      )
+    result = list_page(socket, rule, socket.assigns.page)
+
+    # A page past the end is clamped to the last one. Approving the only row
+    # of the last page under a status filter left "No comments found" — and
+    # no pagination to get back with — while the earlier pages still held
+    # rows; a hand-edited `?page=9` of 2 also drew its links backwards.
+    last_page = max(result.total_pages, 1)
+
+    {socket, result} =
+      if socket.assigns.page > last_page,
+        do: {assign(socket, :page, last_page), list_page(socket, rule, last_page)},
+        else: {socket, result}
 
     # Every listed comment passed the rule, so its record may be named. Its
     # parent need not have: a reply's parent may sit on another resource.
@@ -406,6 +427,17 @@ defmodule PhoenixKitComments.Web.Index do
     # Reloading the list (an action, filter, or navigation) closes the open
     # full-comment modal so it never shows stale content.
     |> assign(:viewing_comment, nil)
+  end
+
+  defp list_page(socket, rule, page) do
+    PhoenixKitComments.list_all_comments(
+      page: page,
+      per_page: socket.assigns.per_page,
+      search: socket.assigns.search,
+      resource_type: socket.assigns.filter_resource_type,
+      status: socket.assigns.filter_status,
+      moderation: rule
+    )
   end
 
   defp drop_unmoderatable_parent(%Comment{parent: %Comment{} = parent} = comment, rule) do
@@ -445,14 +477,18 @@ defmodule PhoenixKitComments.Web.Index do
   defp maybe_put(map, _key, ""), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  defp parse_int(nil, default), do: default
+  # Capped: `?page=99999999999999999999` overflowed the query's OFFSET
+  # (`DBConnection.EncodeError`). Anything not a string is the default.
+  @max_page 1_000_000
 
   defp parse_int(str, default) when is_binary(str) do
     case Integer.parse(str) do
-      {n, _} -> max(n, 1)
+      {n, _} -> n |> max(1) |> min(@max_page)
       :error -> default
     end
   end
+
+  defp parse_int(_value, default), do: default
 
   defp blank_to_nil(nil), do: nil
   defp blank_to_nil(""), do: nil
@@ -530,12 +566,22 @@ defmodule PhoenixKitComments.Web.Index do
       else: {:error, :unauthorized}
   end
 
-  # Whether this render may print authors' emails: decided from the LIVE
-  # scope on every render, not from an assign set at the last list load.
+  defp authorized(socket, fun) do
+    case check_authorization(socket) do
+      :ok -> fun.()
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+    end
+  end
+
+  # Whether the page may print authors' emails, assigned by `refresh/2`.
   # Core swaps `:phoenix_kit_current_scope` in place when a role's grants
-  # change (a halting handle_info hook, no handle_params), so a mount-time
+  # change (a halting handle_info hook, no handle_params), so a MOUNT-time
   # flag kept showing emails — in the modal opened afterwards too — to a
-  # moderator whose `comments.moderate_all` had just been revoked.
+  # moderator whose `comments.moderate_all` had just been revoked. That hook
+  # calls `phoenix_kit_scope_changed/1` before halting, which runs
+  # `refresh/2`, so the assign follows the live scope. It used to be asked
+  # per row and per card field on every render instead: two `Scope.can?`
+  # checks each, each rebuilding the module registry's feature checks.
   defp show_emails?(scope),
     do: PhoenixKitComments.can_moderate?(scope) and PhoenixKitComments.can_moderate_all?(scope)
 
@@ -551,12 +597,11 @@ defmodule PhoenixKitComments.Web.Index do
     Map.get(resource_context, {comment.resource_type, comment.resource_uuid})
   end
 
-  # Final navigable URL for a resolved resource: prefixes phoenix_kit paths and
-  # appends the annotation deep-link param for file comments.
-  defp resource_url(comment, %{path: path} = info) do
-    base = if info[:prefixed], do: Routes.path(path), else: path
-    link_with_annotation(base, comment)
-  end
+  # Final navigable URL for a resolved resource: core's own rule for prefixing
+  # phoenix_kit paths (`ResourceLinks.url/1`), plus the annotation deep-link
+  # param for file comments.
+  defp resource_url(comment, info),
+    do: info |> PhoenixKit.ResourceLinks.url() |> link_with_annotation(comment)
 
   # The resource shown as a compact clickable chip — a thumbnail for image
   # files (else the type badge) + the truncated title. Shared by the desktop
@@ -639,10 +684,9 @@ defmodule PhoenixKitComments.Web.Index do
     """
   end
 
-  # "test_page" -> "Test page". Used for the no-handler fallback chip so an
-  # unconfigured resource type reads as a label, not a raw key.
-  # Enough for one clamped line, cut on a boundary so markdown syntax is not
-  # sliced mid-token.
+  # Enough source for one clamped line of preview. A plain character cut: it
+  # can slice a markdown token in two, which only costs that token its
+  # formatting in a one-line preview (the modal renders the whole body).
   @preview_chars 200
 
   defp preview_source(content) when is_binary(content) do
@@ -655,6 +699,8 @@ defmodule PhoenixKitComments.Web.Index do
 
   defp preview_source(content), do: content
 
+  # "test_page" -> "Test Page". Used for the no-handler fallback chip so an
+  # unconfigured resource type reads as a label, not a raw key.
   defp humanize_resource_type(type) when is_binary(type) and type != "" do
     # Per WORD. `String.capitalize/1` lowercases the whole string, so
     # "api_key" became "Api key" and "GitHubRepo" became "Githubrepo".

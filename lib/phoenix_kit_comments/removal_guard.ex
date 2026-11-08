@@ -46,8 +46,18 @@ defmodule PhoenixKitComments.RemovalGuard do
   def places([], _ctx), do: []
 
   def places(file_uuids, ctx) when is_list(file_uuids) do
-    rule = moderation_rule(ctx)
+    # Uses first, the moderation rule only when there are any. The rule asks
+    # every resource handler (`moderatable_resources/2`) for a base-key
+    # holder, and computing it first made EVERY media-library trash pay for
+    # those host calls — under core's fail-closed timeout, so one slow
+    # handler blocked removing any file at all, attachment or not.
+    case uses(file_uuids) do
+      [] -> []
+      uses -> visible_places(uses, moderation_rule(ctx))
+    end
+  end
 
+  defp uses(file_uuids) do
     # One place per file, preferring its oldest visible use. Hidden uses
     # still block removal, but never reveal their resource type.
     from(m in CommentMedia,
@@ -58,6 +68,10 @@ defmodule PhoenixKitComments.RemovalGuard do
       select: {m.file_uuid, c.resource_type, c.resource_uuid}
     )
     |> PhoenixKit.RepoHelper.repo().all()
+  end
+
+  defp visible_places(uses, rule) do
+    uses
     |> Enum.group_by(&elem(&1, 0))
     |> Enum.map(&visible_place(&1, rule))
   end
@@ -78,9 +92,17 @@ defmodule PhoenixKitComments.RemovalGuard do
     %{
       file_uuid: file_uuid,
       label: gettext("Attached to a comment"),
-      detail: gettext("On: %{type}", type: resource_type),
+      detail: gettext("On: %{type}", type: humanize(resource_type)),
       href: nil
     }
+  end
+
+  # "project_task" reads "Project Task" here, as on the moderation page.
+  defp humanize(type) when is_binary(type) do
+    type
+    |> String.replace(["_", "-"], " ")
+    |> String.split(" ", trim: true)
+    |> Enum.map_join(" ", &String.capitalize/1)
   end
 
   defp moderation_rule(%{scope: scope}), do: PhoenixKitComments.moderation_scope(scope)

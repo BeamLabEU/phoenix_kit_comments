@@ -2,10 +2,11 @@ defmodule PhoenixKitComments.Activity do
   @moduledoc """
   Activity-log wrapper for the Comments module.
 
-  The module had none. Eleven mutating functions — including the moderation
-  ones, `approve_comment/1`, `hide_comment/1` and `bulk_update_status/2` —
-  wrote nothing to the audit trail, so "who hid this comment, and when"
-  had no answer anywhere in the system.
+  Every mutation writes one line: `comments.comment_created`, `_updated`,
+  `_deleted`, `_approved`, `_restored` and `_hidden`, with the actor passed
+  as `actor_uuid:`. A wrapper mutation passes `log: false` to the function
+  it wraps, so one act is one line, and a transition to the state a comment
+  is already in writes none.
 
   ## What is safe to record
 
