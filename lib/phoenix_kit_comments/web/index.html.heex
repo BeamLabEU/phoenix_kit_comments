@@ -237,7 +237,7 @@
               },
               %{
                 label: gettext("Date"),
-                value: Calendar.strftime(comment.inserted_at, "%b %d, %Y")
+                value: format_date(comment.inserted_at, @date_settings)
               },
               %{label: gettext("Status"), value: status_badge_value(comment.status)}
             ]
@@ -299,7 +299,7 @@
                 <.resource_chip comment={comment} resource_context={@resource_context} />
               </.table_default_cell>
               <.table_default_cell class="text-sm text-base-content/70">
-                {Calendar.strftime(comment.inserted_at, "%b %d, %Y")}
+                {format_date(comment.inserted_at, @date_settings)}
               </.table_default_cell>
               <.table_default_cell>
                 <span class={status_badge_class(comment.status)}>
@@ -372,7 +372,7 @@
               else: gettext("Deleted user")}
           </span>
           <span class="text-base-content/30">·</span>
-          <span>{Calendar.strftime(@viewing_comment.inserted_at, "%b %d, %Y")}</span>
+          <span>{format_date(@viewing_comment.inserted_at, @date_settings)}</span>
           <span class={status_badge_class(@viewing_comment.status)}>{status_label(@viewing_comment.status)}</span>
         </div>
 

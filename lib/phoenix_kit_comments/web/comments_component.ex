@@ -1179,17 +1179,35 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp create_error_message(:empty_comment), do: gettext("Comment can't be empty")
   defp create_error_message(:attachments_disabled), do: gettext("Attachments are disabled")
 
-  defp create_error_message(:too_many_attachments),
-    do:
-      gettext("Up to %{count} attachments per comment",
-        count: PhoenixKitComments.get_max_attachments()
-      )
+  defp create_error_message(:too_many_attachments) do
+    max = PhoenixKitComments.get_max_attachments()
+
+    ngettext(
+      "Up to %{count} attachment per comment",
+      "Up to %{count} attachments per comment",
+      max,
+      count: max
+    )
+  end
 
   defp create_error_message(:max_depth_exceeded), do: gettext("Reply nesting is too deep")
-  defp create_error_message(:content_too_long), do: gettext("Comment exceeds maximum length")
+
+  defp create_error_message(:content_too_long),
+    do: too_long_message(PhoenixKitComments.get_max_length())
+
   defp create_error_message(:invalid_user_uuid), do: gettext("Invalid user")
   defp create_error_message(:invalid_file_uuid), do: gettext("Invalid file attachment")
   defp create_error_message(_), do: gettext("Failed to add comment")
+
+  # The same words for a new comment and an edit, with the limit in them.
+  defp too_long_message(max_length),
+    do:
+      ngettext(
+        "Comment exceeds maximum length of %{count} character",
+        "Comment exceeds maximum length of %{count} characters",
+        max_length,
+        count: max_length
+      )
 
   defp do_delete_comment(socket, comment) do
     cond do
@@ -1228,18 +1246,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # A GIF- or attachment-only comment is valid (the changeset agrees), so
       # clearing its text must be allowed.
       content == "" and is_nil(comment_gif(comment)) and comment_media(comment) == [] ->
-        {:noreply, put_notice(socket, :edit, :error, gettext("Comment cannot be empty"))}
+        {:noreply, put_notice(socket, :edit, :error, gettext("Comment can't be empty"))}
 
       String.length(content) > max_length ->
-        {:noreply,
-         put_notice(
-           socket,
-           :edit,
-           :error,
-           gettext("Comment exceeds maximum length of %{max_length} characters",
-             max_length: max_length
-           )
-         )}
+        {:noreply, put_notice(socket, :edit, :error, too_long_message(max_length))}
 
       not can_edit_comment?(socket, comment) ->
         {:noreply,
@@ -1803,7 +1813,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 <li :if={may_delete}>
                   <button
                     phx-click="delete_comment"
-                    phx-disable-with={gettext("Deleting...")}
+                    phx-disable-with={gettext("Deleting…")}
                     phx-value-id={@comment.uuid}
                     phx-target={@myself}
                     class="text-error"
@@ -2219,7 +2229,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       <.icon name="hero-document-arrow-down" class="w-4 h-4 shrink-0" />
       <div class="min-w-0">
         <div class="text-xs font-medium truncate">{@media.file.original_file_name}</div>
-        <div class="text-[0.65rem] text-base-content/60">{@size_kb} KB</div>
+        <div class="text-[0.65rem] text-base-content/60">
+          {gettext("%{size} KB", size: @size_kb)}
+        </div>
       </div>
     </a>
     """
@@ -2777,7 +2789,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                           phx-target={@ctx.myself}
                           class="flex items-center gap-2 cursor-pointer"
                           title={
-                            gettext("Up to %{count} files, max %{size}MB each",
+                            ngettext(
+                              "Up to %{count} file, max %{size} MB",
+                              "Up to %{count} files, max %{size} MB each",
+                              @ctx.max_attachments,
                               count: @ctx.max_attachments,
                               size: @ctx.max_attachment_size_mb
                             )

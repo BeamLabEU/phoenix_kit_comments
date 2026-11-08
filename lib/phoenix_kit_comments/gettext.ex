@@ -13,12 +13,13 @@ defmodule PhoenixKitComments.Gettext do
   ## Naming new locale catalogs
 
   This backend has no per-backend locale wiring; it reads the process-global
-  locale that core sets via `Gettext.put_locale/1`. Core stores the *resolved
-  dialect* there (`PhoenixKit…DialectMapper`), not the base code — e.g. `en`
-  becomes `en-US`, `de` becomes `de-DE`. So a new catalog must be named by the
-  dialect code, otherwise Gettext won't find it and the UI falls back to the
-  English source. `ru` and `et` work as plain base codes only because the mapper
-  maps them to themselves; `de` would need `priv/gettext/de-DE/…`, not `de`.
+  locale that core sets via `Gettext.put_locale/1`. Core (since 2.44) sets it
+  to `PhoenixKit.Utils.RecipientLocale.gettext_locale/1` of the visitor's
+  dialect: the base code for every language core's own catalog has
+  (`de-DE` → `de`, `es-ES` → `es`) and the base code for the rest too
+  (`zh-CN` → `zh`). So a catalog is named by the base code
+  (`priv/gettext/de/…`); one named `de-DE` would never be read. Create one
+  with `mix gettext.merge priv/gettext --locale <code>`.
   """
   use Gettext.Backend, otp_app: :phoenix_kit_comments
 end

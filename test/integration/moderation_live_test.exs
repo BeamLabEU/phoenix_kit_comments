@@ -207,9 +207,12 @@ defmodule PhoenixKitComments.Web.ModerationLiveTest do
       comment = comment_with_status(author, "pending")
       {:ok, view, _html} = live(put_test_scope(conn, scope), @path)
 
-      render_click(view, "bulk_approve", %{"uuids" => [comment.uuid]})
+      html = render_click(view, "bulk_approve", %{"uuids" => [comment.uuid]})
 
       assert status_of(comment) == "published"
+      # One whole sentence per action and count (it used to splice a
+      # translated "approved" into "%{count} comment %{action}").
+      assert html =~ "1 comment approved"
 
       # The single-row path was fixed to log the moderation action; the bulk
       # path wrote the status directly and left `comment_updated` behind.
@@ -224,7 +227,11 @@ defmodule PhoenixKitComments.Web.ModerationLiveTest do
       comment = comment_with_status(author, "deleted")
       {:ok, view, _html} = live(put_test_scope(conn, scope), @path)
 
-      render_click(view, "bulk_approve", %{"uuids" => [comment.uuid]})
+      html = render_click(view, "bulk_approve", %{"uuids" => [comment.uuid]})
+
+      # The failure said so in English but read as the success message in
+      # Estonian and Russian, whose translations dropped "could not be".
+      assert html =~ "1 comment could not be approved"
 
       # The row menu hides Approve on a deleted comment for a reason:
       # approving must never mean undeleting. Selecting the same row and
@@ -239,14 +246,28 @@ defmodule PhoenixKitComments.Web.ModerationLiveTest do
       comment = comment_with_status(author, "published")
       {:ok, view, _html} = live(put_test_scope(conn, scope), @path)
 
-      render_click(view, "bulk_hide", %{"uuids" => [comment.uuid]})
+      html = render_click(view, "bulk_hide", %{"uuids" => [comment.uuid]})
 
       assert status_of(comment) == "hidden"
+      assert html =~ "1 comment hidden"
 
       assert_activity_logged("comments.comment_hidden",
         resource_uuid: comment.uuid,
         actor_uuid: moderator.uuid
       )
+    end
+  end
+
+  describe "dates" do
+    test "follow the site's date format instead of English month names",
+         %{conn: conn, scope: scope, author: author} do
+      comment = comment_with_status(author, "published")
+      {:ok, _view, html} = live(put_test_scope(conn, scope), @path)
+
+      # `Calendar.strftime(…, "%b %d, %Y")` printed "Nov 08, 2026" on every
+      # locale. The site's `date_format` defaults to Y-m-d.
+      assert html =~ comment.inserted_at |> NaiveDateTime.to_date() |> Date.to_iso8601()
+      refute html =~ Calendar.strftime(comment.inserted_at, "%b %d, %Y")
     end
   end
 

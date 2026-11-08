@@ -430,11 +430,16 @@ defmodule PhoenixKitComments do
 
   @impl PhoenixKit.Module
   def permission_metadata do
+    # Core shows the labels (not the descriptions) translated, the label
+    # being the msgid against `gettext_backend:`; sub-permission labels
+    # inherit it. `gettext_noop/1` puts each label in this module's catalog.
     %{
       key: "comments",
-      label: "Comments",
+      label: gettext_noop("Comments"),
       icon: "hero-chat-bubble-left-right",
       description: "Moderate comments on records you manage",
+      gettext_backend: PhoenixKitComments.Gettext,
+      gettext_domain: "default",
       # The base key used to mean "moderate every comment on the site and
       # change the module's settings". It now means "moderate comments on the
       # records you manage" (each resource handler's `moderatable_resources/2`
@@ -446,13 +451,13 @@ defmodule PhoenixKitComments do
       sub_permissions: [
         %{
           key: "moderate_all",
-          label: "Moderate every comment on the site",
+          label: gettext_noop("Moderate every comment on the site"),
           description:
             "See, approve, hide, delete and restore every comment, whoever's record it is on, and see authors' emails"
         },
         %{
           key: "settings",
-          label: "Change the comments settings",
+          label: gettext_noop("Change the comments settings"),
           description:
             "Open the comments settings page: the on/off switch, moderation, limits, the Giphy API key and resource paths"
         }
@@ -559,7 +564,7 @@ defmodule PhoenixKitComments do
     [
       Tab.new!(
         id: :admin_comments,
-        label: "Comments",
+        label: gettext_noop("Comments"),
         gettext_backend: PhoenixKitComments.Gettext,
         gettext_domain: "default",
         icon: "hero-chat-bubble-left-right",
@@ -579,7 +584,7 @@ defmodule PhoenixKitComments do
     [
       Tab.new!(
         id: :admin_settings_comments,
-        label: "Comments",
+        label: gettext_noop("Comments"),
         gettext_backend: PhoenixKitComments.Gettext,
         gettext_domain: "default",
         icon: "hero-chat-bubble-left-right",

@@ -76,6 +76,7 @@ defmodule PhoenixKitComments.Web.Index do
         |> assign(:resource_types, [])
         |> assign(:scoped, true)
         |> assign(:can_change_settings, false)
+        |> assign(:date_settings, date_settings())
         |> assign_filter_defaults()
         |> maybe_load_dashboard_data()
 
@@ -263,17 +264,17 @@ defmodule PhoenixKitComments.Web.Index do
       # All three return `{ok_count, error_count}`, which every branch used
       # to throw away and flash success unconditionally — so a bulk action
       # where every row failed still reported "Comments approved".
-      {{ok_count, err_count}, label} =
+      {ok_count, err_count} =
         case action do
-          "approve" -> {PhoenixKitComments.bulk_approve(uuids, opts), gettext("approved")}
-          "hide" -> {PhoenixKitComments.bulk_hide(uuids, opts), gettext("hidden")}
-          "delete" -> {bulk_delete(uuids, opts), gettext("deleted")}
+          "approve" -> PhoenixKitComments.bulk_approve(uuids, opts)
+          "hide" -> PhoenixKitComments.bulk_hide(uuids, opts)
+          "delete" -> bulk_delete(uuids, opts)
         end
 
       socket = refresh(socket, rule)
 
       {:noreply,
-       put_flash(socket, bulk_flash_kind(err_count), bulk_message(ok_count, err_count, label))}
+       put_flash(socket, bulk_flash_kind(err_count), bulk_message(action, ok_count, err_count))}
     end
   end
 
@@ -460,30 +461,68 @@ defmodule PhoenixKitComments.Web.Index do
   defp bulk_flash_kind(0), do: :info
   defp bulk_flash_kind(_), do: :error
 
-  defp bulk_message(ok_count, 0, label),
-    do:
-      ngettext("%{count} comment %{action}", "%{count} comments %{action}", ok_count,
-        count: ok_count,
-        action: label
-      )
+  # One whole sentence per action and outcome. These were one sentence with
+  # the action spliced in ("%{count} comments %{action}"), which a locale
+  # cannot agree with its count and subject (Russian "одобрен"/"одобрены"/
+  # "одобрено"), and whose failure form the translators rendered as the
+  # success one.
+  defp bulk_message("approve", ok, 0),
+    do: ngettext("%{count} comment approved", "%{count} comments approved", ok, count: ok)
 
-  defp bulk_message(0, err_count, label),
+  defp bulk_message("approve", 0, failed),
     do:
       ngettext(
-        "%{count} comment could not be %{action}",
-        "%{count} comments could not be %{action}",
-        err_count,
-        count: err_count,
-        action: label
+        "%{count} comment could not be approved",
+        "%{count} comments could not be approved",
+        failed,
+        count: failed
       )
 
-  defp bulk_message(ok_count, err_count, label),
+  defp bulk_message("approve", ok, failed),
+    do: gettext("%{ok} approved, %{failed} failed", ok: ok, failed: failed)
+
+  defp bulk_message("hide", ok, 0),
+    do: ngettext("%{count} comment hidden", "%{count} comments hidden", ok, count: ok)
+
+  defp bulk_message("hide", 0, failed),
     do:
-      gettext("%{ok} %{action}, %{failed} failed",
-        ok: ok_count,
-        action: label,
-        failed: err_count
+      ngettext(
+        "%{count} comment could not be hidden",
+        "%{count} comments could not be hidden",
+        failed,
+        count: failed
       )
+
+  defp bulk_message("hide", ok, failed),
+    do: gettext("%{ok} hidden, %{failed} failed", ok: ok, failed: failed)
+
+  defp bulk_message("delete", ok, 0),
+    do: ngettext("%{count} comment deleted", "%{count} comments deleted", ok, count: ok)
+
+  defp bulk_message("delete", 0, failed),
+    do:
+      ngettext(
+        "%{count} comment could not be deleted",
+        "%{count} comments could not be deleted",
+        failed,
+        count: failed
+      )
+
+  defp bulk_message("delete", ok, failed),
+    do: gettext("%{ok} deleted, %{failed} failed", ok: ok, failed: failed)
+
+  # The date in the site's (or the viewer's country's) date format and time
+  # zone. `Calendar.strftime(…, "%b %d, %Y")` wrote English month names on
+  # every locale. The two settings are read once at mount, not per row.
+  defp date_settings do
+    Settings.get_settings_cached(["date_format", "time_zone"], %{
+      "date_format" => "Y-m-d",
+      "time_zone" => "0"
+    })
+  end
+
+  defp format_date(datetime, settings),
+    do: PhoenixKit.Utils.Date.format_datetime_with_cached_settings(datetime, settings)
 
   defp check_authorization(socket) do
     if PhoenixKitComments.can_moderate?(socket.assigns[:phoenix_kit_current_scope]),
