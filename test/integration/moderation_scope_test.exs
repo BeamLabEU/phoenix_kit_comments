@@ -112,9 +112,9 @@ defmodule PhoenixKitComments.Web.ModerationScopeTest do
         user_uuid: author.uuid,
         parent_uuid: secret_parent.uuid,
         depth: 1,
-        content: "visible reply",
-        status: "pending"
+        content: "visible reply"
       })
+      |> Comment.put_status("pending")
       |> Repo.insert()
 
     %{

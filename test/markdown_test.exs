@@ -116,4 +116,52 @@ defmodule PhoenixKitComments.Web.MarkdownTest do
       refute function_exported?(Markdown, :render_markdown, 2)
     end
   end
+
+  describe "inline images" do
+    # A remote image is fetched by every reader's browser, and every
+    # moderator's: a tracking pixel in a comment reported their IP addresses.
+
+    test "a remote image becomes a link to it, named by its alt text" do
+      html = Markdown.render_markdown("![chart](https://evil.example/pixel.png?u=1&v=2)")
+
+      refute html =~ "<img"
+      assert html =~ ~s(<a href="https://evil.example/pixel.png?u=1&amp;v=2")
+      assert html =~ ">chart</a>"
+    end
+
+    test "with no alt text the link shows the address" do
+      html = Markdown.render_markdown(~s(<img src="//evil.example/x.gif">))
+
+      refute html =~ "<img"
+      assert html =~ ">//evil.example/x.gif</a>"
+    end
+
+    test "the alt text is escaped on its way into the link" do
+      html =
+        Markdown.render_markdown(
+          ~s|<img src="https://evil.example/x.png" alt="<script>alert(1)</script>">|
+        )
+
+      refute html =~ "<script"
+      assert html =~ "&lt;script&gt;"
+    end
+
+    test "this site's own images and Giphy's are shown" do
+      for src <- [
+            "/files/x.png",
+            "https://media2.giphy.com/media/a/giphy.gif",
+            "https://i.giphy.com/a.gif"
+          ] do
+        assert Markdown.render_markdown("![](#{src})") =~ ~s(<img src="#{src}")
+      end
+    end
+
+    test "Giphy over plain http is not Giphy" do
+      refute Markdown.render_markdown("![](http://media2.giphy.com/a.gif)") =~ "<img"
+    end
+
+    test "text that only mentions an image tag is left alone" do
+      assert Markdown.render_markdown("use `<img>` for pictures") =~ "&lt;img&gt;"
+    end
+  end
 end

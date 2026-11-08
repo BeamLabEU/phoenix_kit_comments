@@ -47,9 +47,9 @@ defmodule PhoenixKitComments.Integration.ConcurrentApprovalTest do
             resource_type: "concurrent_probe",
             resource_uuid: Ecto.UUID.generate(),
             user_uuid: author.uuid,
-            content: "held for moderation",
-            status: "pending"
+            content: "held for moderation"
           })
+          |> Comment.put_status("pending")
           |> Repo.insert!()
 
         {author, comment}

@@ -162,6 +162,10 @@ defmodule PhoenixKitComments.Comment do
 
   Updates go through `update_changeset/3`, which cannot move a comment.
 
+  `status` is not cast, here or there: it decides whether a comment skips the
+  moderation queue, so params can never set it. Server code sets it with
+  `put_status/2`.
+
   ## Options
 
   - `:has_media` — boolean. When set, overrides the inferred media
@@ -186,7 +190,6 @@ defmodule PhoenixKitComments.Comment do
       :user_uuid,
       :parent_uuid,
       :content,
-      :status,
       :depth,
       :metadata
     ])
@@ -204,7 +207,7 @@ defmodule PhoenixKitComments.Comment do
   end
 
   @doc """
-  Changeset for updating a comment: its `content`, `metadata` and `status`.
+  Changeset for updating a comment: its `content` and `metadata`.
 
   Who wrote it, what it is on and where it sits in the thread are fixed at
   creation. The create changeset casts them, and `update_comment/3` used it,
@@ -212,18 +215,38 @@ defmodule PhoenixKitComments.Comment do
   move it to another record, or make it its own parent — after which it
   vanished from the thread.
 
-  Takes the options and returns the errors of `changeset/3`.
+  Takes the options and returns the errors of `changeset/3`. The status
+  changes through `put_status/2`.
   """
   @spec update_changeset(%__MODULE__{}, map(), keyword()) :: Ecto.Changeset.t()
   def update_changeset(comment, attrs, opts \\ []) do
     comment
-    |> cast(attrs, [:content, :status, :metadata])
+    |> cast(attrs, [:content, :metadata])
     |> validate_common(opts)
+  end
+
+  @statuses ["published", "hidden", "deleted", "pending"]
+
+  @doc """
+  Sets the status. Server-side only: neither changeset casts `status`.
+
+  It used to be castable, so a host that forwarded a commenter's params —
+  to `PhoenixKitComments.create_comment/4`, to `update_comment/3`, or to
+  these changesets directly — let the commenter send `status: "published"`
+  and skip the moderation queue, or un-hide what a moderator hid. `nil`
+  leaves the changeset as it is.
+  """
+  @spec put_status(Ecto.Changeset.t(), String.t() | nil) :: Ecto.Changeset.t()
+  def put_status(changeset, nil), do: changeset
+
+  def put_status(changeset, status) do
+    changeset
+    |> put_change(:status, status)
+    |> validate_inclusion(:status, @statuses)
   end
 
   defp validate_common(changeset, opts) do
     changeset
-    |> validate_inclusion(:status, ["published", "hidden", "deleted", "pending"])
     # Matches the ceiling `comments_max_length` can be clamped to
     # (`Web.Settings` allows up to 100_000). It used to be 10_000 while the
     # setting went to 100_000, so an admin raising the setting produced

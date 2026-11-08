@@ -168,18 +168,22 @@ warnings.
   (`Storage.content_mime_type/3`) and serves non-runnable types as downloads
   with `nosniff`. Only the comment was wrong, and it is corrected.
 
-## Open — needs a decision
+## Decided (follow-up, same day)
 
-1. **Inline images in comments.** The sanitiser allows `<img>` with any
-   `https` source, so a comment can embed a tracking pixel that reports
-   readers' and moderators' IP addresses. The options: allow only the host's
-   own and Giphy's origins, or render images as links.
-2. **Replies under a hidden parent.** Hiding (or a pending) parent takes its
-   published replies out of the thread, while `count_comments/3` still counts
-   them. Either show a placeholder for a hidden parent, as for a deleted one,
-   or exclude orphaned replies from the count.
-3. **`:status` castable on create** (open since August, by decision). String
-   keys can no longer carry it; atom-keyed callers still can.
+The three decisions above went the recommended way:
+
+1. **Inline images.** An `<img>` stays only from this site (relative, or its
+   own host) or Giphy over HTTPS; any other becomes a link to it, so showing
+   a comment never makes a browser fetch a third party's image.
+2. **Replies under a hidden parent.** A hidden or pending parent is kept as a
+   `[removed]` placeholder while it has published replies, as a deleted one
+   was. Its body and media are blanked in `get_comment_tree/2` itself, so a
+   taken-down text never reaches a page. The replies show again, and the
+   count matches what is shown.
+3. **Status from params.** Neither changeset casts `status`;
+   `Comment.put_status/2` sets it, from atom-keyed server code only. A
+   forwarded edit can no longer un-hide a comment, nor a forwarded create
+   skip the queue.
 
 ## Open — known gaps
 

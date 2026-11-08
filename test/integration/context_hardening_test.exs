@@ -365,4 +365,76 @@ defmodule PhoenixKitComments.Integration.ContextHardeningTest do
       refute log =~ "SECRET-BODY-123"
     end
   end
+
+  describe "get_comment_tree/2 placeholders" do
+    test "a hidden parent stays, blanked, while it has a published reply",
+         %{author: author, comment: parent} do
+      reply =
+        comment_fixture(author, %{
+          resource_type: @type_name,
+          resource_uuid: parent.resource_uuid,
+          parent_uuid: parent.uuid,
+          content: "reply"
+        })
+
+      {:ok, _} = PhoenixKitComments.hide_comment(parent)
+
+      assert [%Comment{status: "hidden", content: "", media: [], children: [child]}] =
+               PhoenixKitComments.get_comment_tree(@type_name, parent.resource_uuid)
+
+      assert child.uuid == reply.uuid
+    end
+
+    test "a hidden comment without a published reply is not in the tree",
+         %{author: author, comment: parent} do
+      reply =
+        comment_fixture(author, %{
+          resource_type: @type_name,
+          resource_uuid: parent.resource_uuid,
+          parent_uuid: parent.uuid
+        })
+
+      {:ok, _} = PhoenixKitComments.delete_comment(reply)
+      {:ok, _} = PhoenixKitComments.hide_comment(parent)
+
+      # Pruned bottom-up: its only reply was a placeholder with no replies.
+      assert PhoenixKitComments.get_comment_tree(@type_name, parent.resource_uuid) == []
+    end
+  end
+
+  describe "status from params" do
+    test "neither changeset casts it", %{comment: comment} do
+      refute Map.has_key?(
+               Comment.changeset(%Comment{}, %{"status" => "hidden"}).changes,
+               :status
+             )
+
+      refute Map.has_key?(
+               Comment.update_changeset(comment, %{"status" => "hidden"}).changes,
+               :status
+             )
+
+      assert %{status: "hidden"} =
+               Comment.put_status(Ecto.Changeset.change(comment), "hidden").changes
+
+      refute Comment.put_status(Ecto.Changeset.change(comment), "gone").valid?
+    end
+
+    test "an edit forwarded with a status cannot un-hide a comment", %{comment: comment} do
+      {:ok, hidden} = PhoenixKitComments.hide_comment(comment)
+
+      assert {:ok, edited} =
+               PhoenixKitComments.update_comment(hidden, %{
+                 "content" => "edited",
+                 "status" => "published"
+               })
+
+      assert edited.status == "hidden"
+    end
+
+    test "server code still sets it with an atom key", %{comment: comment} do
+      assert {:ok, %Comment{status: "pending"}} =
+               PhoenixKitComments.update_comment(comment, %{status: "pending"})
+    end
+  end
 end

@@ -1115,7 +1115,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       nil ->
         {:noreply, put_notice(socket, :thread, :error, gettext("Comment not found"))}
 
-      %{status: "deleted"} ->
+      # A placeholder: deleted, or (kept for its replies) hidden or pending.
+      %{status: status} when status != "published" ->
         {:noreply,
          put_notice(
            socket,
@@ -1778,7 +1779,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp comments_with_text(comments) do
     Enum.flat_map(comments, fn comment ->
       own =
-        if comment.status != "deleted" and is_binary(comment.content) and comment.content != "",
+        if comment.status == "published" and is_binary(comment.content) and comment.content != "",
           do: [comment],
           else: []
 
@@ -2010,7 +2011,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         <%!-- The hover group is the comment itself, not its replies: hovering
              a reply showed the parent's actions too (2026-11-02). --%>
         <div class="group/comment min-w-0">
-        <%= if @comment.status == "deleted" do %>
+        <%!-- Any comment that is not published is here only as the parent of
+             published replies (`get_comment_tree/2`): deleted, hidden or
+             pending, it shows as the same placeholder. --%>
+        <%= if @comment.status != "published" do %>
           <div class="text-sm text-base-content/50 italic py-1">{gettext("[removed]")}</div>
         <% else %>
         <%!-- One line (the compact look, 2026-10-31): a small avatar, the  --%>

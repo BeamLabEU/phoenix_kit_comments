@@ -9,6 +9,8 @@ defmodule PhoenixKitComments.Integration.ModuleConfigTest do
   use PhoenixKitComments.DataCase, async: false
 
   alias PhoenixKit.Settings
+  alias PhoenixKit.Utils.Routes
+  alias PhoenixKitComments.Web.Markdown
 
   defp put(key, value), do: {:ok, _} = Settings.update_setting_with_module(key, value, "comments")
 
@@ -122,5 +124,13 @@ defmodule PhoenixKitComments.Integration.ModuleConfigTest do
     :ok = PhoenixKitComments.unsubscribe("post", resource)
     {:ok, _} = PhoenixKitComments.delete_comment(comment)
     refute_receive {:comments_updated, _}, 100
+  end
+
+  test "an image on this site's own host is shown inline; another host's is a link" do
+    own = URI.parse(Routes.base_url()).host
+    render = &Markdown.render_markdown/1
+
+    assert render.("![](https://#{own}/files/x.png)") =~ "<img"
+    refute render.("![](https://not-#{own}/files/x.png)") =~ "<img"
   end
 end

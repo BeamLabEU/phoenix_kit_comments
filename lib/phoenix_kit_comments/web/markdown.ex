@@ -12,6 +12,8 @@ defmodule PhoenixKitComments.Web.Markdown do
 
   import Phoenix.HTML, only: [raw: 1]
 
+  alias PhoenixKit.Utils.Routes
+
   @doc """
   Renders a comment's markdown content to sanitized HTML inside a `pk-comment-md`
   block. The `.pk-comment-md` class (styled by `comment_markdown_styles/1`)
@@ -119,10 +121,88 @@ defmodule PhoenixKitComments.Web.Markdown do
 
   def render_markdown(content) when is_binary(content) do
     case MDEx.to_html(content, @render_opts) do
-      {:ok, html} -> html
+      {:ok, html} -> restrict_images(html)
       {:error, _reason} -> content |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
     end
   end
 
   def render_markdown(_other), do: ""
+
+  # The sanitiser keeps `<img>` with any http(s) or relative `src`, so a
+  # comment could embed a tracking pixel: every reader's browser, and every
+  # moderator's, fetched it and handed the image's owner their IP address,
+  # whenever the comment was on screen. Images from this site (a relative
+  # path, or its own host) and from Giphy are shown; any other becomes a link
+  # to it, so a reader decides whether to open it.
+  #
+  # Run on the SANITISED output, which is serialised canonically: every
+  # attribute value double-quoted with `"` escaped inside it, so `[^"]*`
+  # cannot run past the end of a value. The values are decoded and escaped
+  # again before reuse rather than trusted to be safe as text.
+  @img_tag ~r/<img((?:\s+[a-zA-Z_:][-a-zA-Z0-9_:.]*(?:="[^"]*")?)*)\s*\/?>/
+  @img_attr ~r/([a-zA-Z_:][-a-zA-Z0-9_:.]*)="([^"]*)"/
+
+  defp restrict_images(html) do
+    if String.contains?(html, "<img"),
+      do: Regex.replace(@img_tag, html, fn tag, attrs -> shown_or_linked(tag, attrs) end),
+      else: html
+  end
+
+  defp shown_or_linked(tag, attrs) do
+    found =
+      @img_attr
+      |> Regex.scan(attrs, capture: :all_but_first)
+      |> Map.new(fn [name, value] -> {String.downcase(name), decode_attribute(value)} end)
+
+    case found["src"] do
+      nil -> ""
+      src -> if allowed_image?(src), do: tag, else: image_link(src, found["alt"])
+    end
+  end
+
+  defp image_link(src, alt) do
+    text = if is_binary(alt) and String.trim(alt) != "", do: alt, else: src
+
+    ~s(<a href="#{escape(src)}" rel="noopener noreferrer nofollow">#{escape(text)}</a>)
+  end
+
+  defp allowed_image?(src) do
+    case URI.parse(src) do
+      # A relative path is this site's own ("//host/…" has a host).
+      %URI{scheme: nil, host: nil} ->
+        true
+
+      %URI{host: host} when is_binary(host) ->
+        PhoenixKitComments.giphy_url?(src) or own_host?(host)
+
+      _ ->
+        false
+    end
+  end
+
+  # Asked only for an absolute, non-Giphy image: the site's base URL is a
+  # settings read, which every other comment never needs.
+  defp own_host?(host) do
+    case URI.parse(Routes.base_url()) do
+      %URI{host: own} when is_binary(own) -> String.downcase(own) == String.downcase(host)
+      _ -> false
+    end
+  rescue
+    _ -> false
+  catch
+    :exit, _ -> false
+  end
+
+  # The serialiser escapes `&`, `"` and U+00A0 in attribute values (and this
+  # one `<` and `>` too); `&amp;` last, so `&amp;quot;` stays `&quot;`.
+  defp decode_attribute(value) do
+    value
+    |> String.replace("&quot;", "\"")
+    |> String.replace("&lt;", "<")
+    |> String.replace("&gt;", ">")
+    |> String.replace("&nbsp;", "\u00A0")
+    |> String.replace("&amp;", "&")
+  end
+
+  defp escape(text), do: text |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
 end

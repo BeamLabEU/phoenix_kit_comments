@@ -429,9 +429,18 @@ defmodule PhoenixKitComments do
     end
   end
 
-  defp giphy_host?(url) when is_binary(url) do
+  defp giphy_host?(url), do: giphy_url?(url)
+
+  @doc """
+  Whether `url` is served by Giphy (`giphy.com` or a subdomain of it), over
+  HTTPS. The picker keeps only such GIFs, and the comment renderer shows an
+  inline image from Giphy where it turns other remote images into links.
+  """
+  @spec giphy_url?(term()) :: boolean()
+  def giphy_url?(url) when is_binary(url) do
     case URI.parse(url) do
-      %URI{host: host} when is_binary(host) ->
+      %URI{scheme: "https", host: host} when is_binary(host) ->
+        host = String.downcase(host)
         String.ends_with?(host, ".giphy.com") or host == "giphy.com"
 
       _ ->
@@ -439,7 +448,7 @@ defmodule PhoenixKitComments do
     end
   end
 
-  defp giphy_host?(_), do: false
+  def giphy_url?(_), do: false
 
   # ============================================================================
   # Module Behaviour Callbacks
@@ -682,12 +691,12 @@ defmodule PhoenixKitComments do
 
   > #### `:status` is server-side only {: .warning}
   >
-  > An explicit `:status` in `attrs` overrides the moderation default, so a
-  > host that forwards raw user params into this function lets a commenter
-  > send `status: "published"` and skip the queue entirely. Treat it like
-  > `:inserted_at` and `:allow_empty_content`: set it from your own code, and
-  > never from anything a client can influence. `:depth` needs no such care —
-  > it is always recomputed from the parent here.
+  > An explicit `:status` overrides the moderation default. It is read from
+  > an ATOM key only, never from a string key, and no changeset casts it
+  > (`Comment.put_status/2` sets it), so forwarded form params cannot skip
+  > the queue. Treat it like `:inserted_at` and `:allow_empty_content`: set
+  > it from your own code, never from anything a client can influence.
+  > `:depth` needs no such care — it is always recomputed from the parent.
 
   ## Parameters
 
@@ -854,6 +863,7 @@ defmodule PhoenixKitComments do
       has_media: false,
       allow_empty: attrs[:allow_empty_content] == true
     )
+    |> Comment.put_status(attrs[:status])
     |> apply_backdate(attrs)
     |> Comment.put_attribution(attribution)
     |> repo().insert()
@@ -864,6 +874,7 @@ defmodule PhoenixKitComments do
       with {:ok, comment} <-
              %Comment{}
              |> Comment.changeset(attrs, has_media: true)
+             |> Comment.put_status(attrs[:status])
              |> apply_backdate(attrs)
              |> Comment.put_attribution(attribution)
              |> repo().insert(),
@@ -956,9 +967,10 @@ defmodule PhoenixKitComments do
   ## Parameters
 
   - `comment` - Comment to update
-  - `attrs` - `content`, `metadata` and/or `status` (`Comment.update_changeset/3`;
+  - `attrs` - `content` and/or `metadata` (`Comment.update_changeset/3`;
     who wrote a comment, what it is on and its place in the thread are
-    fixed at creation)
+    fixed at creation), and `:status` from an ATOM key only — server code
+    (the moderation functions); a string `"status"` from params is ignored
   - `opts` - `:broadcast` (default `true`) — send `{:comments_updated,
     %{action: :updated}}` on the resource's topic, the same message
     create/delete send, so a host rendering a preview or count of this
@@ -979,6 +991,7 @@ defmodule PhoenixKitComments do
       comment
       |> ensure_media_loaded()
       |> Comment.update_changeset(attrs)
+      |> Comment.put_status(server_status(attrs))
       |> repo().update()
       |> Activity.log_comment("comments.comment_updated", opts)
 
@@ -993,6 +1006,9 @@ defmodule PhoenixKitComments do
       {:ok, updated}
     end
   end
+
+  # `:status` only as an atom key, which only server code writes.
+  defp server_status(attrs), do: Map.get(attrs, :status)
 
   defp ensure_media_loaded(%Comment{media: %Ecto.Association.NotLoaded{}} = comment) do
     repo().preload(comment, :media)
@@ -1111,9 +1127,16 @@ defmodule PhoenixKitComments do
   @doc """
   Gets nested comment tree for a resource.
 
-  Returns all published comments organized in a tree structure. Deleted
-  comments with published descendants are preserved as `[removed]`
-  placeholders so reply chains stay attached; deleted leaves are pruned.
+  Returns all published comments organized in a tree structure. A comment
+  that is not published — deleted, hidden by a moderator, or back in the
+  moderation queue — is kept as a placeholder while it has published
+  replies, so they stay attached and readable, and pruned otherwise. A
+  hidden or pending placeholder comes with its `content` blanked and its
+  `media` empty: what a moderator took down is never handed to a page.
+
+  Only deleted comments used to be kept. A hidden one was not loaded at all,
+  so hiding a comment silently took its published replies out of the thread
+  — while `count_comments/3` still counted them.
   """
   @spec get_comment_tree(String.t(), term()) :: [Comment.t()]
   def get_comment_tree(resource_type, resource_uuid) do
@@ -1122,7 +1145,7 @@ defmodule PhoenixKitComments do
         where:
           c.resource_type == ^resource_type and
             c.resource_uuid == ^resource_uuid and
-            c.status in ["published", "deleted"],
+            c.status in ["published", "deleted", "hidden", "pending"],
         # The uuid settles two comments of the same instant, so turning the
         # list round (the component's `:order`) never swaps them.
         order_by: [asc: c.inserted_at, asc: c.uuid],
@@ -2371,7 +2394,7 @@ defmodule PhoenixKitComments do
     children_by_parent
     |> Map.get(nil, [])
     |> Enum.map(&add_children(&1, children_by_parent))
-    |> Enum.reject(&empty_deleted?/1)
+    |> Enum.reject(&placeholder_without_replies?/1)
   end
 
   defp add_children(comment, children_by_parent) do
@@ -2379,13 +2402,23 @@ defmodule PhoenixKitComments do
       children_by_parent
       |> Map.get(comment.uuid, [])
       |> Enum.map(&add_children(&1, children_by_parent))
-      |> Enum.reject(&empty_deleted?/1)
+      |> Enum.reject(&placeholder_without_replies?/1)
 
-    Map.put(comment, :children, children)
+    comment
+    |> Map.put(:children, children)
+    |> as_placeholder()
   end
 
-  defp empty_deleted?(%{status: "deleted", children: []}), do: true
-  defp empty_deleted?(_), do: false
+  # Pruned bottom-up, so a placeholder whose replies were all placeholders
+  # without replies goes too.
+  defp placeholder_without_replies?(%{status: "published"}), do: false
+  defp placeholder_without_replies?(%{children: []}), do: true
+  defp placeholder_without_replies?(_comment), do: false
+
+  defp as_placeholder(%{status: status} = comment) when status in ["hidden", "pending"],
+    do: %{comment | content: "", media: []}
+
+  defp as_placeholder(comment), do: comment
 
   # Insert a like/dislike via the changeset, then bump the counter.
   #

@@ -186,6 +186,29 @@ defmodule PhoenixKitComments.ComponentHardeningTest do
     end
   end
 
+  describe "a parent taken down under its replies" do
+    # Hiding a parent used to take its published replies out of the thread
+    # (only a deleted parent was kept), while the count still included them.
+    for status <- ["hidden", "pending", "deleted"] do
+      test "a #{status} parent is a placeholder, and its replies still show",
+           %{conn: conn, scope: scope, user: user, r: r} do
+        parent = comment!(user, r, %{content: "TAKEN-DOWN-TEXT"})
+        comment!(user, r, %{content: "the reply survives", parent_uuid: parent.uuid})
+
+        {1, _} =
+          Repo.update_all(from(c in Comment, where: c.uuid == ^parent.uuid),
+            set: [status: unquote(status)]
+          )
+
+        {:ok, _view, html} = mount_host(conn, scope, r)
+
+        assert html =~ "the reply survives"
+        assert html =~ "[removed]"
+        refute html =~ "TAKEN-DOWN-TEXT"
+      end
+    end
+  end
+
   describe "edits and deletes on a thread that is out of date" do
     test "an edit form left open is refused once the comment was deleted elsewhere",
          %{conn: conn, scope: scope, user: user, r: r} do

@@ -238,9 +238,13 @@ When `comments_moderation` is enabled:
 - New comments start with status `"pending"`, and the poster is told it awaits approval
 - Moderators approve (`"published"`) or hide (`"hidden"`) them, one at a time or in bulk
 - Approved comments become visible to all users
-- Hidden comments remain stored but are not shown
+- Hidden comments remain stored but are not shown; one with published replies
+  shows as a `[removed]` placeholder so the replies stay readable (as for a
+  deleted one)
 - Approve never brings back a deleted comment; Restore does (back to `"pending"`
   while moderation is on)
+- `status` is never taken from params: `create_comment/4` and `update_comment/3`
+  read it from an atom key only, and the changesets do not cast it
 
 ### Permissions
 
@@ -370,6 +374,13 @@ lib/
     removal_guard.ex                   # Keeps attached files out of the media trash
     resource_handler.ex                # Behaviour for resource handlers
 ```
+
+### Images in comments
+
+Markdown images (`![alt](url)`) are shown inline only from this site (a relative
+path or its own host) and from Giphy over HTTPS. Any other image is rendered as a
+link to it, so a reader's browser never fetches a third party's image (a tracking
+pixel) just by showing the comment. Attachments are unaffected.
 
 ### Comment statuses
 
