@@ -194,8 +194,9 @@ The three decisions above went the recommended way:
   `Phoenix.LiveView.HTMLFormatter`, so templates are never formatted. Adding
   it is a whole-template churn commit of its own, best checked for
   whitespace-sensitive output (`<textarea>`).
-- **Voice-note tests** skip against the locked core 3.4.0; they need a core
-  with the recorder seam.
+- ~~**Voice-note tests** skip against the locked core 3.4.0; they need a core
+  with the recorder seam.~~ Closed in 0.6.0: the floor is core 3.5.0, the
+  runtime probe is gone and the tests run.
 - **Error strings** are still spread over four private functions (the
   August "Errors module" item). The new ones have tests; most of the old
   create-error clauses still do not.

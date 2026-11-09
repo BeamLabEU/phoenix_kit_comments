@@ -143,6 +143,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Users.Auth.User
   alias PhoenixKitComments.Web.Markdown
+  alias PhoenixKitWeb.Components.Core.AudioRecorder
 
   require Logger
 
@@ -203,7 +204,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:giphy_selected, nil)
      |> assign(:giphy_searching?, false)
      |> assign(:attach_menu_open?, false)
-     |> assign(:voice_notes?, core_recorder?())
      |> assign(:liked_comment_uuids, MapSet.new())
      |> assign(:disliked_comment_uuids, MapSet.new())
      |> assign(:expanded_comments, MapSet.new())
@@ -242,7 +242,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   def update(%{audio_recorder_error: {_recorder_id, reason}}, socket) do
     {:ok,
      socket
-     |> put_notice(:composer, :error, core_recorder_call(:error_message, [reason]))
+     |> put_notice(:composer, :error, AudioRecorder.error_message(reason))
      |> put_thread_ctx()}
   end
 
@@ -2860,25 +2860,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # comment components on one page do not collide.
   defp recorder_id(ctx, suffix), do: "audio-recorder-#{ctx.myself}-#{suffix}"
 
-  # The recorder's page-upload seam (`upload=`, `start_button=`, `start/2`)
-  # ships in a core release newer than this module's floor, so it is probed
-  # at runtime and called through `apply/3`; on an older core the composer
-  # simply offers no Record item.
-  @core_recorder PhoenixKitWeb.Components.Core.AudioRecorder
-
-  defp core_recorder?,
-    do: Code.ensure_loaded?(@core_recorder) and function_exported?(@core_recorder, :start, 2)
-
-  defp core_recorder, do: @core_recorder
-
-  defp core_recorder_call(fun, args), do: credo_safe_apply(@core_recorder, fun, args)
-
   # Five minutes: a voice note, not a podcast. The upload's own size limit
   # (the attachment setting) still applies on top.
   defp voice_note_max_seconds, do: 300
 
-  defp start_recording(ctx, suffix),
-    do: core_recorder_call(:start, [%JS{}, recorder_id(ctx, suffix)])
+  defp start_recording(ctx, suffix), do: AudioRecorder.start(%JS{}, recorder_id(ctx, suffix))
 
   # Shared comment-form body used by both the top/bottom composer and the
   # inline reply form. Everything inside `<.form>` (editor, char counter,
@@ -3008,8 +2994,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
            sends lands in the staged list below. --%>
       <%= if @ctx.attachments_enabled? do %>
         <.live_component
-          :if={@ctx.voice_notes?}
-          module={core_recorder()}
+          module={AudioRecorder}
           id={recorder_id(@ctx, @suffix)}
           format={:native}
           max_seconds={voice_note_max_seconds()}
@@ -3154,7 +3139,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                         </label>
                       </li>
 
-                      <li :if={@ctx.voice_notes?} role="none">
+                      <li role="none">
                         <button
                           type="button"
                           role="menuitem"

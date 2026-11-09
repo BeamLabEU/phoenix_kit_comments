@@ -24,7 +24,7 @@ Add `phoenix_kit_comments` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:phoenix_kit_comments, "~> 0.5"}
+    {:phoenix_kit_comments, "~> 0.6"}
   ]
 end
 ```

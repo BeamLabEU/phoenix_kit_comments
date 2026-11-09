@@ -2,6 +2,54 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.6.0 - 2026-11-09
+
+Needs PhoenixKit 3.5.0 (run its `mix phoenix_kit.update`). No migration of this module's own.
+
+⚠️ To check in a host:
+
+- **`status` is server-only.** Neither `Comment.changeset/3` nor the new `Comment.update_changeset/3` casts it; `Comment.put_status/2` sets it, and `create_comment/4` / `update_comment/3` read it from an atom key only. String-keyed attrs to `create_comment/4` are read for `"content"`, `"parent_uuid"` and `"metadata"` only.
+- **Status transitions refuse what makes no sense** and are decided on the locked row: approve and hide a deleted comment → `{:error, :comment_deleted}`, restore one that is not deleted → `{:error, :not_deleted}`, delete a deleted one → `{:error, :already_deleted}`. A transition to the current state returns `{:ok, comment}` with no callback, audit row or broadcast.
+- **A reply to a comment on another record**, or with a malformed parent, is refused with `{:error, :invalid_parent}`.
+- `update_comment/3` changes only `content` and `metadata`; it can no longer move a comment or change its author.
+
+### Changed
+
+- **Core pin raised to `>= 3.5.0 and < 4.0.0`.** Voice notes are now core's `<.audio_recorder>`, recording into the composer's own upload, so a clip is staged, limited and cancelled like any picked file; 3.5.0 is the first core that has it, and the floor makes sure no host loses voice notes by upgrading this module alone. The module's own recorder hook (`PhoenixKitCommentsAudioRecorder`) is gone.
+- **A compact thread.** No card around it and no count in the title; flat rows with a small avatar, the name and a live, localised "time ago" on one line, the actions quiet until hover (always shown on touch); replies hang off a line under their parent; attachments as a thumbnail strip; an editor that grows with its text, the character count shown only near the limit.
+- **A new comment shows up next to its box.** A box on top lists the newest first, a box at the bottom the oldest first and follows the newest while the reader is at the bottom (`order`: `:auto` by default, or `:newest_first` / `:oldest_first`). Replies keep the order they were written in.
+- A success ("Comment added", deleted, updated) is a toast that leaves by itself; errors stay next to what failed. A comment posted as a person shows their face, only one posted as the project the project mark.
+- A hidden or pending comment with published replies stays in the thread as a `[removed]` placeholder, its text and media blanked by `get_comment_tree/2` itself, so the replies show again and the count matches what is shown.
+- **Images in a comment** stay inline only from this site or from Giphy over HTTPS; any other becomes a link, so reading a comment never makes the browser fetch a third party's image.
+- `bulk_update_status/3`, `bulk_approve/2` and `bulk_hide/2` route each row through the matching single-row function, so callbacks, audit rows and refusals are the same as one by one.
+- Settings writes go through one `update_settings_batch/2` carrying the actor; Reset no longer switches the module off or erases the Giphy key; the on/off switch is written only when it changed.
+
+### Added
+
+- **Translations for German, Spanish, French, Italian and Chinese** (`de`, `es`, `fr`, `it`, `zh`), and the English, Estonian and Russian catalogs completed and corrected. Permission and tab labels are translated too.
+- **Pasted and dropped files become attachments.** A paste carrying files and no text, or a file dragged in from the desktop, takes the attach button's path with the same limits; where nothing can be attached the composer says why. A body still carrying an inline `data:` image is refused.
+- **`PhoenixKitComments.RemovalGuard`** answers core's file removal guard (`config :phoenix_kit, :file_removal_guard, …`), so the media page refuses to trash a file a comment shows.
+- `file_references/0` (`PhoenixKitComments.FileReferences`): core 3.0's orphan check no longer covered this module's tables.
+- `PhoenixKitComments.moderation_enabled?/0`, `giphy_url?/1` and `Comment.update_changeset/3` / `put_status/2`. With moderation on, the poster is told the comment awaits approval.
+- The JS hooks' own tests run inside `mix test` (`test/js_hooks_test.exs`, when node is installed).
+
+### Fixed
+
+- **Comment attachments were taken for orphaned files on core 3.0**, and "Delete all orphaned" trashed them.
+- **The thread's messages were never shown**: a LiveComponent's `put_flash` goes nowhere. They render in the thread, where the person is looking, until their next action.
+- **One crafted comment crashed every render of its thread** (nested metadata in an attribute).
+- **The markdown sanitiser left `style` and `class`** on `span`, `code`, `pre` (and `class` on `div`), so a comment could draw over the reader's page.
+- **Bulk moderation was unreachable**: its bar sat outside core's bulk-select scope and never showed.
+- **Hide undeleted a deleted comment**, a crafted restore published a hidden one, and a repeated delete fired `on_comment_deleted` and logged again.
+- **Reactions deadlocked** (like against undislike in two tabs). Every path locks the comment first; a switch fires both callbacks; counters clamp at zero.
+- A missing author or comment raised `Ecto.ConstraintError` (the changesets named the wrong foreign keys). A NUL byte in a body, metadata or a search raised from Postgres. `list_all_comments/1` raised on `per_page: 0` or a huge page, and a malformed user filter listed every comment.
+- An edit saved into a comment deleted or hidden meanwhile; a malformed or unknown event crashed the host page; a rejected upload left "Wait for uploads to finish." on screen; a double-clicked ✕ on a staged file crashed the page; `composer_position: nil` still allowed replies; `withhold_mention_titles` did nothing; every keystroke re-rendered every comment's markdown.
+- The voice recorder answered every thread on the page; the chat-scroll hook scrolled the page behind a drawer and ignored a comment link's place.
+- Admin path templates accepted an off-site (`//host`) or `javascript:` link; adding one overwrote what another admin had saved; an overflowing page number or crafted params crashed the moderation page.
+- A resource handler's exception or exit was logged with the comment in it; now only its shape.
+- PubSub topics and payloads lower-case the resource uuid, so a subscriber no longer misses a create sent with another spelling.
+- A mixed-case migration prefix could not be re-run.
+
 ## 0.5.0 - 2026-10-27
 
 ### Changed

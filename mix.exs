@@ -1,7 +1,7 @@
 defmodule PhoenixKitComments.MixProject do
   use Mix.Project
 
-  @version "0.5.0"
+  @version "0.6.0"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_comments"
 
   def project do
@@ -74,14 +74,15 @@ defmodule PhoenixKitComments.MixProject do
   defp deps do
     [
       # PhoenixKit provides the Module behaviour and Settings API.
-      # Floor 2.65.0: the first core with the `file_references/0` and
-      # `expected_schema/0` callbacks this module implements (`@impl`). It
-      # also carries what the module uses without feature-detecting it —
-      # `Storage.ResourceFolders`, `PhoenixKitWeb.Actor`,
-      # `PhoenixKit.Activity.log/3` (2.38.0) and V166's attribution columns.
+      # Floor 3.5.0: the first core whose `AudioRecorder` takes the page's
+      # upload (`upload=`, `start_button=`, `start/2`), which voice notes are
+      # built on. It also carries the `file_references/0` and
+      # `expected_schema/0` callbacks (2.65.0), `Storage.ResourceFolders`,
+      # `PhoenixKitWeb.Actor`, `PhoenixKit.Activity.log/3` and V166's
+      # attribution columns.
       # Patch-precise floor in the compound form, so the ceiling stays open
       # through every core 3.x (see test/core_pin_conformance_test.exs).
-      pk_dep(:phoenix_kit, ">= 2.65.0 and < 4.0.0"),
+      pk_dep(:phoenix_kit, ">= 3.5.0 and < 4.0.0"),
 
       # LiveView is needed for the admin pages.
       {:phoenix_live_view, "~> 1.1"},

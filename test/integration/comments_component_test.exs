@@ -939,13 +939,6 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       %{view: view}
     end
 
-    # Voice notes need core's recorder seam (`upload=`, `start/2`), which is
-    # newer than this module's core floor; against an older core the Record
-    # item is not offered at all (the last test here).
-    @core_recorder? Code.ensure_loaded?(PhoenixKitWeb.Components.Core.AudioRecorder) and
-                      function_exported?(PhoenixKitWeb.Components.Core.AudioRecorder, :start, 2)
-    @needs_core_recorder if(@core_recorder?, do: false, else: "core without the recorder seam")
-
     @recorder ~s([phx-hook="AudioRecorder"])
 
     defp recorder_id(view, thread) do
@@ -961,7 +954,6 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       )
     end
 
-    @tag skip: @needs_core_recorder
     test "each thread's Record item starts its own recorder, nothing page-wide",
          %{view: view} do
       first = recorder_id(view, "#first-thread")
@@ -980,7 +972,6 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       refute render(view) =~ "window.dispatchEvent"
     end
 
-    @tag skip: @needs_core_recorder
     test "the recorder has no button of its own and no upload of its own", %{view: view} do
       for thread <- ["#first-thread", "#second-thread"] do
         assert has_element?(view, "#{thread} #{@recorder}[data-start-button='false']")
@@ -991,7 +982,6 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       refute render(view) =~ "audio_recorder_audio-recorder"
     end
 
-    @tag skip: @needs_core_recorder
     test "each recorder hands its clip to the file input of its own form", %{view: view} do
       for thread <- ["#first-thread", "#second-thread"] do
         input =
@@ -1011,7 +1001,6 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       end
     end
 
-    @tag skip: @needs_core_recorder
     test "a recorder's problem shows in its own thread's composer, translated",
          %{view: view} do
       view
@@ -1020,15 +1009,6 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
 
       assert has_element?(view, "#first-thread", "Microphone access was refused")
       refute has_element?(view, "#second-thread", "Microphone access was refused")
-    end
-
-    @tag skip: if(@core_recorder?, do: "core has the recorder seam", else: false)
-    test "an older core offers no Record item and renders no recorder", %{view: view} do
-      view |> element("#first-thread button[phx-click='toggle_attach_menu']") |> render_click()
-
-      assert has_element?(view, "#first-thread [role='menu']")
-      refute has_element?(view, "#first-thread button", "Record")
-      refute render(view) =~ "audio-recorder-"
     end
   end
 

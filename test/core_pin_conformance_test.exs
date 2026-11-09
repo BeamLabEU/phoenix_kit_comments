@@ -12,18 +12,20 @@ defmodule PhoenixKitComments.CorePinConformanceTest do
   outright, with no degraded mode. Nothing else in this repo's own test run
   would notice, which is why the check is a test rather than a convention.
 
-  The requirement is `>= 2.65.0 and < 4.0.0`. The floor is the first core
-  with the `file_references/0` and `expected_schema/0` callbacks this module
-  implements (`@impl`); it also carries everything the module uses without
-  feature-detecting it — `Storage.ResourceFolders`, `PhoenixKitWeb.Actor`,
-  `Activity.log/3` (all from 2.38.0) and V166's attribution columns. The
-  ceiling is open through every core 3.x.
+  The requirement is `>= 3.5.0 and < 4.0.0`. The floor is the first core
+  whose `AudioRecorder` takes a page's upload (`upload=`, `start_button=`,
+  `start/2`), which the composer's voice notes are built on: below it the
+  Record item would have to be hidden, and a host upgrading this module
+  without core would lose voice notes. It also carries the `file_references/0`
+  and `expected_schema/0` callbacks (2.65.0), `Storage.ResourceFolders`,
+  `PhoenixKitWeb.Actor`, `Activity.log/3` and V166's attribution columns.
+  The ceiling is open through every core 3.x.
   """
 
-  @must_admit ["2.65.0", "2.65.1", "2.99.4", "3.0.0", "3.9.9"]
-  @must_reject ["1.7.236", "2.0.0", "2.9.4", "2.23.2", "2.37.5", "2.64.9", "4.0.0"]
+  @must_admit ["3.5.0", "3.5.1", "3.6.0", "3.9.9"]
+  @must_reject ["1.7.236", "2.0.0", "2.65.0", "2.99.4", "3.0.0", "3.4.0", "3.4.9", "4.0.0"]
 
-  test "the :phoenix_kit requirement admits every core >= 2.65.0 minor and nothing else" do
+  test "the :phoenix_kit requirement admits every core >= 3.5.0 minor and nothing else" do
     requirement = core_requirement()
 
     assert match?({:ok, _parsed}, Version.parse_requirement(requirement)),
@@ -34,7 +36,7 @@ defmodule PhoenixKitComments.CorePinConformanceTest do
              "`:phoenix_kit` requirement #{inspect(requirement)} rejects core #{version}. " <>
                "A pin that excludes a core minor breaks `mix deps.get` for every host " <>
                "running this module alongside that core. Keep the floor patch-precise " <>
-               "and the ceiling open (`>= 2.65.0 and < 4.0.0`), never a three-segment `~>`."
+               "and the ceiling open (`>= 3.5.0 and < 4.0.0`), never a three-segment `~>`."
     end
 
     for version <- @must_reject do
