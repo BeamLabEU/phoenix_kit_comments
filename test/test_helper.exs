@@ -122,24 +122,8 @@ end
   Enum.uniq([PhoenixKitComments | :persistent_term.get({PhoenixKit, :registered_modules}, [])])
 )
 
-# `migrations_build_alone_test.exs` uses core's
-# `PhoenixKit.TestSupport.ModuleChainCheck`, which the first core release after
-# 2.64.1 ships; against an older core in `deps/` it is excluded.
-exclude =
-  if Code.ensure_loaded?(PhoenixKit.TestSupport.ModuleChainCheck),
-    do: [],
-    else: [:requires_module_chain_check]
-
 if repo_available do
-  ExUnit.start(exclude: exclude)
+  ExUnit.start()
 else
-  ExUnit.start(exclude: [:integration | exclude])
-end
-
-# The manifest test builds the module's tables with `ModuleChainCheck.build_alone/4`
-# and hands the manifest to repair (`PhoenixKit.Module.expected_schema/0`); both
-# arrive in the first core release after 2.64.1.
-unless Code.ensure_loaded?(PhoenixKit.TestSupport.ModuleChainCheck) and
-         function_exported?(PhoenixKit.TestSupport.ModuleChainCheck, :build_alone, 4) do
-  ExUnit.configure(exclude: [:requires_core_expected_schema | ExUnit.configuration()[:exclude]])
+  ExUnit.start(exclude: [:integration])
 end

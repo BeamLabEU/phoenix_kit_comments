@@ -24,14 +24,8 @@ defmodule PhoenixKitComments.RemovalGuard do
   The label is `nil` — "not available to you" in the browser — unless the
   viewer may moderate comments on the resource. The base comments key alone
   does not reveal uses outside the handler's moderation scope.
-
-  Older core versions can compile this module and hosts can call `places/2`
-  directly; the media-browser integration requires a core with removal guards.
   """
-  # Removal guards arrived after the oldest core this package supports.
-  if Code.ensure_loaded?(PhoenixKit.Modules.Storage.RemovalGuard) do
-    @behaviour PhoenixKit.Modules.Storage.RemovalGuard
-  end
+  @behaviour PhoenixKit.Modules.Storage.RemovalGuard
 
   import Ecto.Query, only: [from: 2]
 
@@ -39,10 +33,7 @@ defmodule PhoenixKitComments.RemovalGuard do
 
   use Gettext, backend: PhoenixKitComments.Gettext
 
-  if Code.ensure_loaded?(PhoenixKit.Modules.Storage.RemovalGuard) do
-    @impl true
-  end
-
+  @impl true
   def places([], _ctx), do: []
 
   def places(file_uuids, ctx) when is_list(file_uuids) do

@@ -157,11 +157,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # behavior is guarded by `leaf_available?/0`.
   @compile {:no_warn_undefined, [Leaf]}
 
-  # `get_editor_mode/0` only exists in newer phoenix_kit builds, but our
-  # pin still allows older ones — `default_editor_mode/0` probes for it at
-  # runtime, so the compiler shouldn't flag the call in the meantime.
-  @compile {:no_warn_undefined, {PhoenixKit.Settings, :get_editor_mode, 0}}
-
   # The modes Leaf's `:mode` attr accepts, and the one Leaf itself
   # defaults to. Anything outside this list must never reach Leaf —
   # its mode clauses have no catch-all.
@@ -1683,16 +1678,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     )
   end
 
-  # Mentions ship in a core release newer than this module's declared floor,
-  # so the call has to be resolved at runtime — `apply/3` is the point, not
-  # an oversight, which is why the check is disabled just here.
-  defp mentions_available? do
-    Code.ensure_loaded?(PhoenixKit.Mentions) and
-      credo_safe_apply(PhoenixKit.Mentions, :enabled?, [])
-  end
-
-  # credo:disable-for-next-line Credo.Check.Refactor.Apply
-  defp credo_safe_apply(mod, fun, args), do: apply(mod, fun, args)
+  defp mentions_available?, do: PhoenixKit.Mentions.enabled?()
 
   defp uploads_done?(entries), do: Enum.all?(entries, & &1.done?)
 
@@ -1859,19 +1845,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     # nil scope made `Mentions.visible/3` fail closed, so every mention
     # rendered locked WITH its title still printed, the exact leak
     # withholding exists to prevent.
-    if Code.ensure_loaded?(PhoenixKit.Mentions) do
-      # credo:disable-for-next-line Credo.Check.Refactor.Apply
-      apply(PhoenixKit.Mentions, :to_markdown, [
-        content,
-        [
-          scope: assigns[:pk_scope],
-          user_uuid: assigns[:current_user] && assigns.current_user.uuid,
-          withhold_titles: assigns[:withhold_mention_titles] == true
-        ]
-      ])
-    else
-      content
-    end
+    PhoenixKit.Mentions.to_markdown(
+      content,
+      scope: assigns[:pk_scope],
+      user_uuid: assigns[:current_user] && assigns.current_user.uuid,
+      withhold_titles: assigns[:withhold_mention_titles] == true
+    )
   rescue
     _ -> content
   end
@@ -1880,28 +1859,23 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # durable create, never on a draft keystroke. Wrapped so a mention
   # failure can never cost someone their comment.
   defp sync_mentions(comment, actor_uuid) do
-    if Code.ensure_loaded?(PhoenixKit.Mentions) do
-      # credo:disable-for-next-line Credo.Check.Refactor.Apply
-      case apply(PhoenixKit.Mentions, :sync, [
-             "comment",
-             comment.uuid,
-             comment.content,
-             [field: "content", actor_uuid: actor_uuid]
-           ]) do
-        {:ok, new} ->
-          # credo:disable-for-next-line Credo.Check.Refactor.Apply
-          apply(PhoenixKit.Mentions, :notify, [
-            new,
-            [
-              source_type: comment.resource_type,
-              source_uuid: comment.resource_uuid,
-              preview: comment.content
-            ]
-          ])
+    case PhoenixKit.Mentions.sync(
+           "comment",
+           comment.uuid,
+           comment.content,
+           field: "content",
+           actor_uuid: actor_uuid
+         ) do
+      {:ok, new} ->
+        PhoenixKit.Mentions.notify(
+          new,
+          source_type: comment.resource_type,
+          source_uuid: comment.resource_uuid,
+          preview: comment.content
+        )
 
-        _ ->
-          :ok
-      end
+      _ ->
+        :ok
     end
   rescue
     _ -> :ok
@@ -3384,62 +3358,20 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   def author_name(%{user: %User{} = user}), do: display_name(user)
   def author_name(_), do: gettext("Unknown")
 
-  # `User.display_name/1` landed in a core release NEWER than this module's
-  # declared floor (`mix.exs` pins `~> 1.7.189`). Calling it unguarded meant a
-  # host resolving core from Hex at that floor got UndefinedFunctionError on
-  # the main comment-render path. Pinning the newer core is not an option
-  # while it is unreleased, so the chain is reproduced here for older cores.
-  #
-  # The chain must stay in step with core's: name, then username, then the
-  # LOCAL PART of the email — never the address itself, which is what this
-  # module used to print next to every comment.
-  defp display_name(user) do
-    if function_exported?(User, :display_name, 1) do
-      # `apply/3` on purpose: a direct call is resolved at compile time and
-      # warns against the older core this module still declares as its
-      # floor, which is exactly the version the guard exists for.
-      # credo:disable-for-next-line Credo.Check.Refactor.Apply
-      apply(User, :display_name, [user])
-    else
-      fallback_display_name(user)
-    end
-  end
-
-  defp fallback_display_name(user) do
-    [
-      [Map.get(user, :first_name), Map.get(user, :last_name)]
-      |> Enum.reject(&(&1 in [nil, ""]))
-      |> Enum.join(" "),
-      Map.get(user, :username),
-      user |> Map.get(:email) |> to_string() |> String.split("@") |> List.first()
-    ]
-    |> Enum.find_value("User", fn
-      value when is_binary(value) ->
-        if String.trim(value) == "", do: nil, else: String.trim(value)
-
-      _ ->
-        nil
-    end)
-  end
+  # Core's chain: name, then username, then the LOCAL PART of the email —
+  # never the address itself.
+  defp display_name(user), do: User.display_name(user)
 
   defp leaf_available?, do: Code.ensure_loaded?(Leaf)
 
   # Site-wide default editor mode for every Leaf instance we render.
-  # `PhoenixKit.Settings.get_editor_mode/0` only exists in newer core
-  # builds, but our pin allows older ones — so probe for the function
-  # before calling it (the `no_warn_undefined` above covers the compile
-  # side). Leaf's `:mode` clauses have no catch-all, so a string setting
+  # Leaf's `:mode` clauses have no catch-all, so a string setting
   # value or anything unrecognised is normalised here rather than blowing
   # up inside Leaf's update/2. Settings reads can also raise when no repo
   # is configured, same as `PhoenixKitComments.enabled?/0` — hence the
   # rescue.
   defp default_editor_mode do
-    if Code.ensure_loaded?(PhoenixKit.Settings) and
-         function_exported?(PhoenixKit.Settings, :get_editor_mode, 0) do
-      __normalize_editor_mode__(PhoenixKit.Settings.get_editor_mode())
-    else
-      @default_editor_mode
-    end
+    __normalize_editor_mode__(PhoenixKit.Settings.get_editor_mode())
   rescue
     _ -> @default_editor_mode
   end
