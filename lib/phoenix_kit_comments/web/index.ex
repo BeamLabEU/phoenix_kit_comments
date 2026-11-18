@@ -601,7 +601,7 @@ defmodule PhoenixKitComments.Web.Index do
   # phoenix_kit paths (`ResourceLinks.url/1`), plus the annotation deep-link
   # param for file comments.
   defp resource_url(comment, info),
-    do: info |> PhoenixKit.ResourceLinks.url() |> link_with_annotation(comment)
+    do: info |> PhoenixKit.ResourceLinks.url() |> CommentsComponent.with_annotation(comment)
 
   # The resource shown as a compact clickable chip — a thumbnail for image
   # files (else the type badge) + the truncated title. Shared by the desktop
@@ -883,23 +883,6 @@ defmodule PhoenixKitComments.Web.Index do
   # Appends `?annotation=<uuid>` to a file comment's resource link so the media
   # page can select the Etcher shape the comment is anchored to (annotation
   # comments carry the back-reference in `metadata["annotation_uuid"]`).
-  defp link_with_annotation(url, %{resource_type: "file", metadata: metadata})
-       when is_map(metadata) do
-    # Cast, don't just check for a non-empty string. This metadata is
-    # free-form JSONB the client sets at create time, and the result goes
-    # into an href the ADMIN clicks — so `annotation_uuid=x&status=published`
-    # (or a `#fragment`) would ride along as extra query params on the target
-    # page. Only a real uuid can be appended.
-    with uuid when is_binary(uuid) <- Map.get(metadata, "annotation_uuid"),
-         {:ok, valid} <- Ecto.UUID.cast(uuid) do
-      sep = if String.contains?(url, "?"), do: "&", else: "?"
-      url <> sep <> "annotation=" <> valid
-    else
-      _ -> url
-    end
-  end
-
-  defp link_with_annotation(url, _comment), do: url
 
   defp status_badge_class("published"), do: "badge badge-success badge-sm"
   defp status_badge_class("pending"), do: "badge badge-warning badge-sm"

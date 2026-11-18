@@ -63,8 +63,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     what edit/delete rights are decided against, including at event time.
     Without it the component builds the viewer's scope from the database
     (once per update for rendering, and afresh for every write).
-  - `mentions_on` - Offer the @/# mention typeahead on the plain textarea
-    (default: whether core's `PhoenixKit.Mentions` is available and on).
+  - `mentions_on` - Offer the @/# mention typeahead (default: whether
+    core's `PhoenixKit.Mentions` is available and on). On the plain textarea
+    through core's `MentionInput` hook; in the rich (Leaf) editor through
+    Leaf's suggestion popup, answered by this component — which needs a
+    Leaf with `notify` (0.11+). An older Leaf offers no mentions in the rich
+    editor.
   - `withhold_mention_titles` - Set on PUBLIC pages: a `#[type:uuid]`
     mention of a record the reader cannot open renders without its title
     (default: `false`). Nothing validates mention tokens on write, so a
@@ -138,6 +142,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   import PhoenixKitComments.Web.Markdown, only: [comment_markdown_styles: 1]
 
   alias Phoenix.LiveView.JS
+  alias PhoenixKit.Mentions.Token
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Users.Auth.Scope
@@ -216,6 +221,18 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      )}
   end
 
+  # Leaf's own messages, when it can address this component (`notify`, Leaf
+  # 0.11): every editor here then reports to the thread directly, so a host
+  # that never wired `forward_leaf_event/2` still posts what was typed, and
+  # the `@` / `#` popup has somewhere to ask. Only this thread's editors are
+  # taken; anything else — a message for an editor that is gone, a kind
+  # Leaf adds later — is dropped, since an unmatched clause here would take
+  # the host's page down.
+  @impl true
+  def update(%{leaf: message}, socket) do
+    {:ok, socket |> handle_leaf(message) |> put_thread_ctx()}
+  end
+
   # Leaf content forwarded from a host LV via `forward_leaf_event/2`.
   # `:draft` updates the new-comment / reply assign; `:edit` updates
   # the inline-edit assign. Either way the next form submit reads
@@ -224,11 +241,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   @impl true
   def update(%{leaf_content_changed: %{kind: kind, content: content}}, socket)
       when kind in [:draft, :reply] do
-    {:ok, socket |> assign(:new_comment, content) |> put_thread_ctx()}
+    {:ok, socket |> assign(:new_comment, unescape_mention_tokens(content)) |> put_thread_ctx()}
   end
 
   def update(%{leaf_content_changed: %{kind: :edit, content: content}}, socket) do
-    {:ok, socket |> assign(:editing_content, content) |> put_thread_ctx()}
+    {:ok,
+     socket |> assign(:editing_content, unescape_mention_tokens(content)) |> put_thread_ctx()}
   end
 
   # Core's recorder (`errors={:notify}`, `target={@myself}`) reports what went
@@ -359,9 +377,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> assign(:giphy_enabled?, PhoenixKitComments.giphy_enabled?())
       |> assign(:attachments_enabled?, PhoenixKitComments.attachments_enabled?())
       |> assign(:max_length, PhoenixKitComments.get_max_length())
-      # Effective editor choice: rich text only when the host wants it AND
-      # Leaf is loaded. All composer/edit/submit paths key off this.
-      |> then(&assign(&1, :leaf_editor?, &1.assigns.rich_text and leaf_available?()))
+      |> assign_editor_flags()
       # Site-wide default editor mode (admin-set under Settings → Content
       # Editor); passed to every Leaf instance this component renders.
       # Seeded once: Leaf only honours `:mode` on its first render, so
@@ -464,6 +480,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     :composer_position,
     :viewer_moderates?,
     :leaf_editor?,
+    :leaf_notify?,
     :editor_mode,
     :mentions_on,
     :expanded_comments,
@@ -1871,7 +1888,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           new,
           source_type: comment.resource_type,
           source_uuid: comment.resource_uuid,
-          preview: comment.content
+          preview: comment.content,
+          link: comment_link(comment)
         )
 
       _ ->
@@ -1882,6 +1900,49 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   catch
     :exit, _ -> :ok
   end
+
+  @doc false
+  # Where a notification about this comment takes its reader: the page of the
+  # record it is on (core's `ResourceLinks`, the same resolution the
+  # moderation page links with), with the annotation for a file's comment,
+  # and the comment's own anchor. `nil` when the record has no page — core
+  # then sends the notification without a link rather than a wrong one, and
+  # drops anything that is not a path on this site.
+  @spec comment_link(map()) :: String.t() | nil
+  def comment_link(%{resource_type: type, resource_uuid: uuid} = comment) do
+    case PhoenixKit.ResourceLinks.resolve([comment]) do
+      %{{^type, ^uuid} => %{path: path} = info} when is_binary(path) and path != "" ->
+        info
+        |> PhoenixKit.ResourceLinks.url()
+        |> with_annotation(comment)
+        |> Kernel.<>("#pk-comment-" <> comment.uuid)
+
+      _ ->
+        nil
+    end
+  rescue
+    _ -> nil
+  catch
+    :exit, _ -> nil
+  end
+
+  def comment_link(_comment), do: nil
+
+  @doc false
+  # A file's comment is about one annotation on it: the page opens on it. Only
+  # a real uuid is appended — the metadata is the client's (see `Index`).
+  @spec with_annotation(String.t(), map()) :: String.t()
+  def with_annotation(url, %{resource_type: "file", metadata: %{} = metadata}) do
+    with uuid when is_binary(uuid) <- Map.get(metadata, "annotation_uuid"),
+         {:ok, valid} <- Ecto.UUID.cast(uuid) do
+      sep = if String.contains?(url, "?"), do: "&", else: "?"
+      url <> sep <> "annotation=" <> valid
+    else
+      _ -> url
+    end
+  end
+
+  def with_annotation(url, _comment), do: url
 
   # A full scope for the person reading, so a handler can answer questions
   # that need permissions (a site admin sees more than their memberships).
@@ -1968,10 +2029,16 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       )
 
     ~H"""
+    <%!-- The id is the target of a link to this comment (`#pk-comment-…`,
+         what a mention notification links to); the thread's
+         `PhoenixKitCommentsJumpToComment` hook brings it into view.
+         `scroll-mt-20` keeps it clear of a sticky header. --%>
     <div
+      id={"pk-comment-#{@comment.uuid}"}
       data-comment-uuid={@comment.uuid}
       data-annotation-uuid={@annotation_uuid}
       class={[
+        "scroll-mt-20",
         # A reply hangs off a line under the centre of its parent's 24px
         # avatar (ml-[11px] + the 2px line), not past the parent's text:
         # the text was indented twice (2026-11-02).
@@ -2241,6 +2308,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 id={edit_editor_id(@component_id, @comment.uuid)}
                 content={@editing_content || ""}
                 mode={@ctx.editor_mode}
+                notify={if @ctx.leaf_notify?, do: {__MODULE__, @ctx.id}}
+                mentions={@ctx.leaf_notify? and @ctx.mentions_on}
+                suggestions={
+                  if @ctx.leaf_notify? and @ctx.mentions_on, do: mention_suggestions(), else: []
+                }
                 preset={:advanced}
                 placeholder={gettext("Edit your comment...")}
                 height="auto"
@@ -2749,6 +2821,168 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp editor_kind("edit", component_id), do: {:ok, component_id, :edit}
   defp editor_kind(_kind, _component_id), do: :pass
 
+  # ── Leaf `notify` (see `update(%{leaf: _}, _)`) ──────────────
+
+  # What `forward_leaf_event/2` does for a host, without the host.
+  defp handle_leaf(socket, {:leaf_changed, %{editor_id: editor_id} = payload}) do
+    case own_editor(socket, editor_id) do
+      {:ok, kind} when kind in [:draft, :reply] ->
+        assign(socket, :new_comment, unescape_mention_tokens(payload[:markdown] || ""))
+
+      {:ok, :edit} ->
+        assign(socket, :editing_content, unescape_mention_tokens(payload[:markdown] || ""))
+
+      :pass ->
+        socket
+    end
+  end
+
+  # The `@` / `#` popup asks what matches. Every question from one of this
+  # thread's editors is answered — an empty list when mentions are off — or
+  # the popup spins until it times out. `trigger`, `query` and `seq` are
+  # echoed so Leaf can drop a reply to a query already typed past. An editor
+  # that is not ours has no Leaf here to answer.
+  defp handle_leaf(
+         socket,
+         {:leaf_suggest, %{editor_id: editor_id, trigger: trigger, query: query, seq: seq}}
+       ) do
+    if own_editor(socket, editor_id) != :pass do
+      results =
+        if socket.assigns[:mentions_on], do: mention_results(socket, trigger, query), else: []
+
+      send_update(Leaf,
+        id: editor_id,
+        action: :suggestions,
+        trigger: trigger,
+        query: query,
+        seq: seq,
+        results: results
+      )
+    end
+
+    socket
+  end
+
+  defp handle_leaf(socket, _message), do: socket
+
+  defp own_editor(socket, editor_id) when is_binary(editor_id) do
+    own_id = socket.assigns[:id]
+
+    case parse_editor_id(editor_id) do
+      {:ok, ^own_id, kind} -> {:ok, kind}
+      _ -> :pass
+    end
+  end
+
+  defp own_editor(_socket, _editor_id), do: :pass
+
+  # Leaf's visual mode turns its HTML back into markdown, and that escapes
+  # the token's `[` (and `_` in a type such as `project_task`): a picked
+  # mention came back as `@\[user:…|Ada]`, which is no token — stored as
+  # text, rendered raw, nobody pinged. Undone only for a complete token
+  # (trigger, type, uuid, `|`, label, `]`); anything else keeps its escapes.
+  # A writer who wants a token NOT to link escapes the trigger (`\@[…]`),
+  # which this leaves alone.
+  @escaped_mention ~r/(?<!\\)([@#])\\\[([a-z][a-z0-9_\\]*):([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|([^\]\n|]*)\]/
+
+  @doc false
+  @spec unescape_mention_tokens(String.t() | nil) :: String.t()
+  def unescape_mention_tokens(text) when is_binary(text) do
+    if String.contains?(text, ["@\\[", "#\\["]) do
+      Regex.replace(@escaped_mention, text, fn _, trigger, type, uuid, label ->
+        type = String.replace(type, "\\", "")
+        label = String.replace(label, ~r/\\([\\`*_{}()#+\-.!~<>])/, "\\1")
+        "#{trigger}[#{type}:#{uuid}|#{label}]"
+      end)
+    else
+      text
+    end
+  end
+
+  def unescape_mention_tokens(_), do: ""
+
+  # The popup's two triggers. `@` opens on the bare trigger (people are few
+  # and the list is the point); `#` waits for a letter, so a markdown
+  # heading (`# Title`) never opens it. Neither keeps the trigger: the value
+  # inserted is core's finished token, which carries its own `@` / `#`.
+  @doc false
+  def mention_suggestions do
+    [
+      %{
+        trigger: "@",
+        token: ~S"[\p{L}\p{N}_.+@-]",
+        min_chars: 0,
+        max_length: 60,
+        keep_trigger: false,
+        label: pgettext("mentions", "People")
+      },
+      %{
+        trigger: "#",
+        first_char: ~S"\p{L}",
+        token: ~S"[\p{L}\p{N}_.-]",
+        min_chars: 1,
+        max_length: 60,
+        keep_trigger: false,
+        label: pgettext("mentions", "Records")
+      }
+    ]
+  end
+
+  # Core's search, with the scope of the person typing (a handler answers
+  # for a scope, not a uuid — a site admin sees more than their own
+  # memberships), each result turned into the token core would insert from a
+  # textarea. A result whose token cannot be built is not offered.
+  defp mention_results(socket, trigger, query) do
+    kind = if trigger == "@", do: :user, else: :resource
+    user = socket.assigns[:current_user]
+
+    if is_nil(user) do
+      []
+    else
+      kind
+      |> PhoenixKit.Mentions.search(to_string(query),
+        scope: event_scope(socket),
+        user_uuid: user.uuid
+      )
+      |> Enum.flat_map(&mention_result(kind, &1))
+    end
+  rescue
+    _ -> []
+  catch
+    :exit, _ -> []
+  end
+
+  defp mention_result(kind, result) do
+    case mention_token(kind, result) do
+      nil ->
+        []
+
+      token ->
+        [
+          %{
+            value: token,
+            label: to_string(result[:title] || ""),
+            sublabel: to_string(result[:subtitle] || ""),
+            icon: if(kind == :user, do: "hero-user", else: "hero-hashtag")
+          }
+        ]
+    end
+  end
+
+  # Core's own rule (`PhoenixKit.Mentions.Live`): a title holding the
+  # token's delimiters is offered under a cleaned name rather than dropped.
+  defp mention_token(kind, result) do
+    build = fn title ->
+      case Token.to_string(kind, result[:type], result[:uuid], title) do
+        {:ok, token} -> token
+        _ -> nil
+      end
+    end
+
+    title = to_string(result[:title] || "")
+    build.(title) || build.(String.replace(title, ["|", "]"], " "))
+  end
+
   # The notice, where it belongs (`put_notice/4`). Each place renders it
   # only when the notice is addressed there.
   attr(:ctx, :map, required: true)
@@ -2897,6 +3131,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           id={@editor_id}
           content={@ctx.new_comment || ""}
           mode={@ctx.editor_mode}
+          notify={if @ctx.leaf_notify?, do: {__MODULE__, @ctx.id}}
+          mentions={@ctx.leaf_notify? and @ctx.mentions_on}
+          suggestions={
+            if @ctx.leaf_notify? and @ctx.mentions_on, do: mention_suggestions(), else: []
+          }
           preset={:advanced}
           placeholder={@placeholder}
           height="auto"
@@ -2908,6 +3147,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           loading_preset={:random}
           loading_text={nil}
         />
+        <p :if={@ctx.leaf_notify? and @ctx.mentions_on} class="text-xs opacity-50">
+          {gettext("Type @ to mention someone, # to link a record.")}
+        </p>
       <% else %>
         <textarea
           name="comment"
@@ -3363,6 +3605,47 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp display_name(user), do: User.display_name(user)
 
   defp leaf_available?, do: Code.ensure_loaded?(Leaf)
+
+  # Effective editor choice: rich text only when the host wants it AND Leaf
+  # is loaded — every composer/edit/submit path keys off `:leaf_editor?`.
+  # `:leaf_notify?`: that Leaf talks to this component directly (see
+  # `leaf_notify?/0`), which the `@` / `#` popup in the rich editor needs.
+  defp assign_editor_flags(socket) do
+    leaf_editor? = socket.assigns.rich_text and leaf_available?()
+
+    socket
+    |> assign(:leaf_editor?, leaf_editor?)
+    |> assign(:leaf_notify?, leaf_editor? and leaf_notify?())
+  end
+
+  @doc false
+  # Whether the installed Leaf can send its messages to this component
+  # (`notify`, Leaf 0.11). Read from Leaf's own attribute declarations
+  # rather than its version, so an unreleased checkout with the feature
+  # counts. Without it Leaf reports to the host LiveView as before
+  # (`forward_leaf_event/2`), and the rich editor offers no mentions — the
+  # popup's question would have nowhere to go.
+  #
+  # `config :phoenix_kit_comments, :leaf_notify, true | false` overrides the
+  # detection (the tests use it to exercise both sides with one Leaf).
+  @spec leaf_notify?() :: boolean()
+  def leaf_notify? do
+    case Application.get_env(:phoenix_kit_comments, :leaf_notify, :auto) do
+      value when is_boolean(value) -> value
+      _ -> leaf_available?() and detect_leaf_notify()
+    end
+  end
+
+  defp detect_leaf_notify do
+    with true <- function_exported?(Leaf, :__components__, 0),
+         %{attrs: attrs} <- Map.get(Leaf.__components__(), :leaf_editor) do
+      Enum.any?(attrs, &(&1.name == :notify))
+    else
+      _ -> false
+    end
+  rescue
+    _ -> false
+  end
 
   # Site-wide default editor mode for every Leaf instance we render.
   # Leaf's `:mode` clauses have no catch-all, so a string setting

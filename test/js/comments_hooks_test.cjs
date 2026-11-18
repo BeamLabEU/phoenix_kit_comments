@@ -298,3 +298,43 @@ test("time-ago picks its unit from the rounded value", () => {
   // 6.8 days used to read "7 days ago"; a week and more is a date.
   assert.doesNotMatch(timeAgo(6.8 * 86400), /ago/);
 });
+
+// A link to a comment (a mention notification's) lands on it, once.
+function jumpHook(hash, found = true) {
+  const window = { location: { hash } };
+  const timers = [];
+  vm.runInNewContext(bundle, { window, navigator: {}, File, Blob, setTimeout: (fn) => timers.push(fn) });
+  const target = { scrolled: 0, style: {}, scrollIntoView() { this.scrolled += 1; } };
+  const asked = [];
+  const el = { querySelector: (sel) => { asked.push(sel); return found ? target : null; } };
+  const hook = Object.assign(Object.create(window.PhoenixKitCommentsHooks.PhoenixKitCommentsJumpToComment), { el });
+  return { hook, target, asked, timers };
+}
+
+const COMMENT = "#pk-comment-01a0306e-577c-790e-971a-4e8dee4d3200";
+
+test("a comment link scrolls to its comment and outlines it, once", () => {
+  const { hook, target, asked, timers } = jumpHook(COMMENT);
+  hook.mounted();
+  hook.updated();
+  hook.updated();
+  assert.equal(target.scrolled, 1);
+  assert.deepEqual(asked, [COMMENT]);
+  assert.match(target.style.outline, /solid/);
+  timers.forEach((fn) => fn());
+  assert.equal(target.style.outline, "");
+});
+
+test("a comment rendered after the thread mounted is still reached", () => {
+  const page = jumpHook(COMMENT, false);
+  page.hook.mounted();
+  assert.equal(page.target.scrolled, 0);
+});
+
+test("any other hash is left to the browser", () => {
+  for (const hash of ["", "#top", "#pk-comment-x", "#pk-comment-01a0306e-577c-790e-971a-4e8dee4d3200 .x"]) {
+    const { hook, asked } = jumpHook(hash);
+    hook.mounted();
+    assert.deepEqual(asked, [], hash);
+  }
+});

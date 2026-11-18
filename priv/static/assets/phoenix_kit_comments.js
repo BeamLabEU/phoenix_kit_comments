@@ -310,6 +310,48 @@
     };
   })();
 
+  // PhoenixKitCommentsJumpToComment: a link to a comment
+  // (`…#pk-comment-<uuid>`, what a mention notification links to) lands on
+  // it. The browser's own jump does not happen: the page arrives by LiveView
+  // navigation (pushState, no load), and the thread may render after it.
+  // On the thread's body, so one hook covers every comment in it; looked up
+  // inside this thread only — a page can show several. Each hash is jumped
+  // to once, so later patches (a reply, a like) never pull the reader back.
+  // The highlight is an inline outline that fades: the host's CSS need not
+  // know any class of this module's.
+  (function() {
+    window.PhoenixKitCommentsHooks = window.PhoenixKitCommentsHooks || {};
+    if (window.PhoenixKitCommentsHooks.PhoenixKitCommentsJumpToComment) return;
+
+    var PATTERN = /^#pk-comment-[0-9a-fA-F-]{36}$/;
+
+    function jump(hook) {
+      var hash = window.location.hash;
+      if (!PATTERN.test(hash) || hook.done === hash) return;
+      var target = hook.el.querySelector(hash);
+      if (!target) return;
+      hook.done = hash;
+      target.scrollIntoView({ block: "center" });
+      target.style.transition = "outline-color 1.5s ease-out";
+      target.style.outline = "2px solid var(--color-primary, currentColor)";
+      target.style.outlineOffset = "4px";
+      target.style.borderRadius = "0.5rem";
+      setTimeout(function() { target.style.outlineColor = "transparent"; }, 2000);
+      setTimeout(function() {
+        target.style.outline = "";
+        target.style.outlineOffset = "";
+        target.style.transition = "";
+      }, 3600);
+    }
+
+    // Mounted again by every LiveView navigation, which is how a notification
+    // arrives; no page-wide listener (this module's rule for hooks).
+    window.PhoenixKitCommentsHooks.PhoenixKitCommentsJumpToComment = {
+      mounted: function() { jump(this); },
+      updated: function() { jump(this); }
+    };
+  })();
+
   // PhoenixKitCommentsTimeAgo: a comment's "… ago" kept current in the page's
   // language (Intl.RelativeTimeFormat: "now", "1 min ago", "2 h ago"; a
   // week and more shows the date). Re-applied after every LiveView patch,
