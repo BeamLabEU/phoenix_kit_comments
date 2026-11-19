@@ -77,6 +77,43 @@ defmodule PhoenixKitComments.EmbedTest do
       end
     end
 
+    # The rich composer's @ / # typeahead (it showed nothing before: the
+    # editor's suggestion requests reached no one).
+    test "routes a :leaf_suggest from a comments editor to its component" do
+      msg =
+        {:leaf_suggest,
+         %{editor_id: "pk-comments:comments:post:42:draft:top", trigger: "@", query: "an", seq: 3}}
+
+      assert {:noreply, _socket} = CommentsComponent.forward_leaf_event(msg, socket())
+
+      assert_received {:phoenix, :send_update,
+                       {{CommentsComponent, "comments:post:42"},
+                        %{leaf: {:leaf_suggest, %{trigger: "@", query: "an", seq: 3}}}}}
+    end
+
+    test "passes a :leaf_suggest from a host's own editor through" do
+      msg = {:leaf_suggest, %{editor_id: "my-app:body", trigger: "@", query: "", seq: 1}}
+      assert CommentsComponent.forward_leaf_event(msg, socket()) == :pass
+      refute_received {:phoenix, :send_update, _}
+    end
+
+    test "the Embed hook halts a comments editor's :leaf_suggest and continues a host's" do
+      ours =
+        {:leaf_suggest, %{editor_id: "pk-comments:t:draft:top", trigger: "@", query: "", seq: 1}}
+
+      theirs = {:leaf_suggest, %{editor_id: "my-app:body", trigger: "@", query: "", seq: 1}}
+
+      assert {:halt, _} = PhoenixKitComments.Embed.__forward_leaf__(ours, socket())
+      assert {:cont, _} = PhoenixKitComments.Embed.__forward_leaf__(theirs, socket())
+    end
+
+    test "the rich editor is given @ and # triggers that insert the finished token" do
+      [at, hash] = CommentsComponent.leaf_mention_suggestions()
+
+      assert %{trigger: "@", min_chars: 0, keep_trigger: false} = at
+      assert %{trigger: "#", min_chars: 1, keep_trigger: false} = hash
+    end
+
     for editor_id <- [
           "my-app:body-editor",
           "pk-comments:",

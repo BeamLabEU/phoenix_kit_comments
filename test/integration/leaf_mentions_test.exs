@@ -190,6 +190,76 @@ defmodule PhoenixKitComments.Web.LeafMentionsTest do
     refute html =~ "data-leaf-suggestions"
   end
 
+  # #53's host attrs, on #52's route: the popup answered through `notify`
+  # puts the host's people first.
+  test "the host's people come first in the popup", %{conn: conn, scope: scope, resource_uuid: r} do
+    zed = user_fixture()
+    {view, _html, editor_id} = open(conn, scope, r)
+
+    Phoenix.LiveView.send_update(view.pid, CommentsComponent,
+      id: "test-thread",
+      mention_people: [%{uuid: zed.uuid, title: "Zed Host", subtitle: "On this task"}]
+    )
+
+    assert [%{value: value, label: "Zed Host", sublabel: "On this task"} | _] =
+             suggest(view, editor_id, "@", "zed")
+
+    assert value == "@[user:#{zed.uuid}|Zed Host]"
+  end
+
+  test "a host warning follows the draft, asked once per set of people", %{
+    conn: conn,
+    scope: scope,
+    resource_uuid: r
+  } do
+    anna = user_fixture()
+    test_pid = self()
+
+    check = fn uuid ->
+      send(test_pid, {:asked, uuid})
+      if uuid == anna.uuid, do: "Anna can't open this project"
+    end
+
+    {view, _html, editor_id} = open(conn, scope, r)
+
+    Phoenix.LiveView.send_update(view.pid, CommentsComponent,
+      id: "test-thread",
+      mention_warning: check
+    )
+
+    type = fn text ->
+      leaf(view, {:leaf_changed, %{editor_id: editor_id, markdown: text, html: "", dirty: true}})
+    end
+
+    html = type.("Hi @[user:#{anna.uuid}|Anna]")
+    assert html =~ "Anna can&#39;t open this project"
+    assert_received {:asked, uuid} when uuid == anna.uuid
+
+    # More typing, same people: the host is not asked again.
+    assert type.("Hi @[user:#{anna.uuid}|Anna], see this") =~ "Anna can&#39;t open"
+    refute_received {:asked, _}
+
+    # Posted: the box is empty and the warning goes with the draft.
+    html = view |> element("form[phx-submit='add_comment']") |> render_submit(%{})
+    refute html =~ "data-mention-warnings"
+  end
+
+  test "a host warning that raises is no warning", %{conn: conn, scope: scope, resource_uuid: r} do
+    {view, _html, editor_id} = open(conn, scope, r)
+
+    Phoenix.LiveView.send_update(view.pid, CommentsComponent,
+      id: "test-thread",
+      mention_warning: fn _ -> raise "boom" end
+    )
+
+    text = "Hi @[user:#{Ecto.UUID.generate()}|Bo]"
+
+    html =
+      leaf(view, {:leaf_changed, %{editor_id: editor_id, markdown: text, html: "", dirty: true}})
+
+    refute html =~ "data-mention-warnings"
+  end
+
   describe "where a mention notification takes its reader" do
     setup do
       previous = PhoenixKit.ResourceLinks.get_resource_path_templates()
