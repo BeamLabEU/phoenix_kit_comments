@@ -74,4 +74,54 @@ defmodule PhoenixKitComments.Integration.MentionChipsTest do
 
     assert thread(conn, viewer, r) =~ "PKCHIPAAAAX0X stays"
   end
+
+  describe "a mention where a chip cannot go (codex, 2026-11-19)" do
+    setup %{anna: anna} do
+      %{m: "@[user:#{anna.uuid}|Anna Kask]"}
+    end
+
+    defp body(conn, viewer, r, content) do
+      comment_fixture(viewer, %{
+        resource_type: "test_resource",
+        resource_uuid: r,
+        content: content
+      })
+
+      thread(conn, viewer, r)
+    end
+
+    test "in a link's address or title it is the plain name, the attribute intact",
+         %{conn: conn, viewer: viewer, r: r, m: m} do
+      html = body(conn, viewer, r, ~s{[open](/help "#{m}") and [two](/people/#{m})})
+
+      assert html =~ ~s(title="@Anna Kask")
+      refute html =~ ~r/title="[^"]*</
+      refute html =~ ~r/href="[^"]*</
+      refute html =~ "PKCHIP"
+    end
+
+    test "in a code span, a link's text or an autolink it is the plain name",
+         %{conn: conn, viewer: viewer, r: r, m: m} do
+      html =
+        body(
+          conn,
+          viewer,
+          r,
+          "`#{m}` and [before #{m} after](/help) and <https://example.com/#{m}>"
+        )
+
+      refute html =~ "data-mention-user"
+      refute html =~ "PKCHIP"
+      assert html =~ "<code>@Anna Kask</code>"
+      assert html =~ ~r{<a [^>]*href="/help"[^>]*>before @Anna Kask after</a>}
+    end
+
+    test "a reference link whose label is a mention still links",
+         %{conn: conn, viewer: viewer, r: r, m: m} do
+      html = body(conn, viewer, r, "[open][#{m}]\n\n[#{m}]: /help")
+
+      assert html =~ ~r{<a [^>]*href="/help"}
+      refute html =~ "PKCHIP"
+    end
+  end
 end

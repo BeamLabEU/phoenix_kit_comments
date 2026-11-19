@@ -1867,11 +1867,58 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # the placeholders are swapped for the chips in the sanitised HTML.
   defp render_body(content, assigns, people) do
     {content, chips} = chip_mentions(content, assigns, people)
-    html = Markdown.render_markdown(resolve_mentions(content, assigns))
 
-    Enum.reduce(chips, html, fn {placeholder, chip}, acc ->
-      String.replace(acc, placeholder, chip)
+    content
+    |> resolve_mentions(assigns)
+    |> Markdown.render_markdown()
+    |> put_chips(chips)
+  end
+
+  # Each placeholder is judged where it landed in the SANITISED html (the
+  # writer can put a mention in a link's address or title, an image's alt
+  # text, their own raw HTML, a link's text or a code span): inside a tag —
+  # an attribute — or inside an `<a>`, `<code>` or `<pre>`, it becomes the
+  # escaped "@Name"; only in plain text the chip (codex, 2026-11-19). The
+  # sanitiser's output is canonical — attribute values double-quoted — so
+  # a tag is `<`, its name, and quoted values that may hold `>`, up to `>`.
+  @html_tag ~r{<(/?)([a-zA-Z][a-zA-Z0-9]*)(?:[^>"]|"[^"]*")*>}
+  @chip_holders ~w(a code pre)
+
+  defp put_chips(html, chips) when chips == %{}, do: html
+
+  defp put_chips(html, chips) do
+    @html_tag
+    |> Regex.split(html, include_captures: true)
+    |> Enum.map_reduce(0, fn piece, inside ->
+      case Regex.run(@html_tag, piece) do
+        [^piece, slash, name] ->
+          {swap_placeholders(piece, chips, :plain), inside + holder_step(slash, name, piece)}
+
+        _ ->
+          {swap_placeholders(piece, chips, if(inside > 0, do: :plain, else: :chip)), inside}
+      end
     end)
+    |> elem(0)
+    |> IO.iodata_to_binary()
+  end
+
+  defp holder_step(slash, name, tag) do
+    cond do
+      String.downcase(name) not in @chip_holders -> 0
+      slash == "/" -> -1
+      String.ends_with?(tag, "/>") -> 0
+      true -> 1
+    end
+  end
+
+  defp swap_placeholders(piece, chips, form) do
+    if String.contains?(piece, "PKCHIP") do
+      Enum.reduce(chips, piece, fn {placeholder, versions}, acc ->
+        String.replace(acc, placeholder, Map.fetch!(versions, form))
+      end)
+    else
+      piece
+    end
   end
 
   # The accounts every readable @ mention on the page names, in one read.
@@ -1901,9 +1948,23 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     :exit, _ -> %{}
   end
 
-  defp chip_mentions(content, _assigns, people) when people == %{}, do: {content, []}
+  defp chip_mentions(content, _assigns, people) when people == %{}, do: {content, %{}}
 
   defp chip_mentions(content, assigns, people) when is_binary(content) do
+    if Enum.any?(Token.parse(content), &(&1.kind == :user and is_map_key(people, &1.uuid))) do
+      chip_readable_mentions(content, assigns, people)
+    else
+      {content, %{}}
+    end
+  rescue
+    _ -> {content, %{}}
+  end
+
+  defp chip_mentions(content, _assigns, _people), do: {content, %{}}
+
+  # One placeholder per distinct token, so the same mention written twice
+  # (a reference link's label and its definition) stays the same text.
+  defp chip_readable_mentions(content, assigns, people) do
     context =
       PhoenixKit.Mentions.context(content,
         scope: assigns[:pk_scope],
@@ -1913,34 +1974,47 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
     nonce = chip_nonce(content)
 
-    {pieces, chips} =
+    {pieces, {_by_raw, chips}} =
       content
       |> Token.split()
-      |> Enum.with_index()
-      |> Enum.map_reduce([], fn
-        {%Token{kind: :user, uuid: uuid} = token, i}, acc when is_map_key(people, uuid) ->
-          case Map.get(context, {token.type, uuid}) do
-            %{state: :ok} = info ->
-              placeholder = "PKCHIP#{nonce}X#{i}X"
-              {placeholder, [{placeholder, mention_chip_html(uuid, info, people[uuid])} | acc]}
+      |> Enum.map_reduce({%{}, %{}}, fn
+        %Token{kind: :user, uuid: uuid} = token, {by_raw, chips} = acc
+        when is_map_key(people, uuid) ->
+          case {Map.get(by_raw, token.raw), Map.get(context, {token.type, uuid})} do
+            {placeholder, _} when is_binary(placeholder) ->
+              {placeholder, acc}
+
+            {nil, %{state: :ok} = info} ->
+              placeholder = "PKCHIP#{nonce}X#{map_size(by_raw)}X"
+
+              versions = %{
+                chip: mention_chip_html(uuid, info, people[uuid]),
+                plain: plain_mention(info)
+              }
+
+              {placeholder,
+               {Map.put(by_raw, token.raw, placeholder), Map.put(chips, placeholder, versions)}}
 
             _ ->
               {token.raw, acc}
           end
 
-        {%Token{} = token, _i}, acc ->
+        %Token{} = token, acc ->
           {token.raw, acc}
 
-        {piece, _i}, acc ->
+        piece, acc ->
           {piece, acc}
       end)
 
     {Enum.join(pieces), chips}
-  rescue
-    _ -> {content, []}
   end
 
-  defp chip_mentions(content, _assigns, _people), do: {content, []}
+  # "@Name", escaped for an attribute or text.
+  defp plain_mention(info) do
+    ("@" <> to_string(info[:title] || ""))
+    |> Phoenix.HTML.html_escape()
+    |> Phoenix.HTML.safe_to_string()
+  end
 
   # Letters and digits only, so markdown leaves it alone; never one the
   # text already holds.
