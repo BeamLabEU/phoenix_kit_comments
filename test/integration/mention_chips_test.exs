@@ -10,6 +10,13 @@ defmodule PhoenixKitComments.Integration.MentionChipsTest do
 
   import PhoenixKitComments.DataCase, only: [user_fixture: 0, user_fixture: 1, comment_fixture: 2]
 
+  defmodule RecordHandler do
+    def visible_resource_uuids(uuids, _opts), do: uuids
+
+    def resolve_comment_resources(uuids),
+      do: Map.new(uuids, &{&1, %{title: "Workshop", path: "/workshop"}})
+  end
+
   setup do
     {:ok, _} = PhoenixKit.Settings.update_boolean_setting("mentions_enabled", true)
     PhoenixKit.Settings.update_boolean_setting_with_module("comments_enabled", true, "comments")
@@ -46,12 +53,15 @@ defmodule PhoenixKitComments.Integration.MentionChipsTest do
     # No block element inside the chip: a <div> there closes the paragraph
     # and puts the chip on a line of its own.
     [_, chip] = Regex.run(~r/data-mention-user="[^"]*"(.*?)Anna Kask/s, html)
+    refute chip =~ "<img"
     assert chip =~ "AK"
     refute chip =~ "<div"
   end
 
-  test "a hostile label is escaped, in the chip and the text around it",
-       %{conn: conn, viewer: viewer, anna: anna, r: r} do
+  test "the resolved display name is escaped inside the chip",
+       %{conn: conn, viewer: viewer, r: r} do
+    anna = user_fixture(%{first_name: "<display-name>", last_name: "Kask"})
+
     comment_fixture(viewer, %{
       resource_type: "test_resource",
       resource_uuid: r,
@@ -61,18 +71,25 @@ defmodule PhoenixKitComments.Integration.MentionChipsTest do
     html = thread(conn, viewer, r)
 
     assert html =~ ~s(data-mention-user="#{anna.uuid}")
+    assert html =~ "&lt;display-name&gt; Kask"
+    refute html =~ "<display-name>"
     refute html =~ "<img src=x"
     refute html =~ "<script>alert(2)"
   end
 
-  test "text that merely looks like a placeholder stays text", %{conn: conn, viewer: viewer, r: r} do
+  test "text that merely looks like a placeholder stays text", %{
+    conn: conn,
+    viewer: viewer,
+    anna: anna,
+    r: r
+  } do
     comment_fixture(viewer, %{
       resource_type: "test_resource",
       resource_uuid: r,
-      content: "PKCHIPAAAAX0X stays"
+      content: "PKCHIPAAAAAAAAAAX0X stays @[user:#{anna.uuid}|Anna Kask]"
     })
 
-    assert thread(conn, viewer, r) =~ "PKCHIPAAAAX0X stays"
+    assert thread(conn, viewer, r) =~ "PKCHIPAAAAAAAAAAX0X stays"
   end
 
   describe "a mention where a chip cannot go (codex, 2026-11-19)" do
@@ -114,6 +131,66 @@ defmodule PhoenixKitComments.Integration.MentionChipsTest do
       refute html =~ "PKCHIP"
       assert html =~ "<code>@Anna Kask</code>"
       assert html =~ ~r{<a [^>]*href="/help"[^>]*>before @Anna Kask after</a>}
+    end
+
+    test "a stored avatar appears inline in the chip", %{conn: conn, viewer: viewer, r: r} do
+      file = Ecto.UUID.generate()
+      person = user_fixture(%{custom_fields: %{"avatar_file_uuid" => file}})
+      html = body(conn, viewer, r, "@[user:#{person.uuid}|A]")
+      assert html =~ ~s(data-mention-user="#{person.uuid}")
+      assert html =~ "/file/#{file}/"
+    end
+
+    test "a different resource type with an account's uuid keeps its own rendering",
+         %{conn: conn, viewer: viewer, anna: anna, r: r} do
+      previous = Application.fetch_env(:phoenix_kit, :comment_resource_handlers)
+
+      Application.put_env(:phoenix_kit, :comment_resource_handlers, %{"workshop" => RecordHandler})
+
+      on_exit(fn ->
+        case previous do
+          {:ok, value} -> Application.put_env(:phoenix_kit, :comment_resource_handlers, value)
+          :error -> Application.delete_env(:phoenix_kit, :comment_resource_handlers)
+        end
+      end)
+
+      html = body(conn, viewer, r, "@[workshop:#{anna.uuid}|Workshop]")
+      assert html =~ "Workshop"
+      refute html =~ "data-mention-user"
+    end
+
+    test "an escaped mention stays literal alongside a real chip",
+         %{conn: conn, viewer: viewer, r: r, m: m} do
+      html = body(conn, viewer, r, "#{m} and \\#{m}")
+      assert html =~ "data-mention-user"
+      assert html =~ m
+    end
+
+    test "a mention in a URL is encoded as one value",
+         %{conn: conn, viewer: viewer, r: r} do
+      person = user_fixture(%{first_name: "Ann", last_name: "A&B"})
+      html = body(conn, viewer, r, "[find](/search?q=@[user:#{person.uuid}|Ann])")
+      assert html =~ ~s(href="/search?q=%40Ann%20A%26B")
+    end
+
+    test "withholding titles removes the account chip and link on an open thread",
+         %{conn: conn, viewer: viewer, anna: anna, r: r, m: m} do
+      comment_fixture(viewer, %{resource_type: "test_resource", resource_uuid: r, content: m})
+
+      {:ok, view, _} =
+        live(put_test_scope(conn, fake_scope(user: viewer)), "/en/test/thread/#{r}")
+
+      assert has_element?(view, "[data-mention-user]")
+
+      Phoenix.LiveView.send_update(view.pid, PhoenixKitComments.Web.CommentsComponent,
+        id: "test-thread",
+        withhold_mention_titles: true
+      )
+
+      html = render(view)
+      assert html =~ "Anna Kask"
+      refute html =~ anna.uuid
+      refute html =~ "data-mention-user"
     end
 
     test "a reference link whose label is a mention still links",

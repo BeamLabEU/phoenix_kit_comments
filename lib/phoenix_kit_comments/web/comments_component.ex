@@ -1858,9 +1858,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     assign(socket, :rendered_bodies, bodies)
   end
 
-  # A body with each readable @ mention of a person as a chip, their face
-  # and name (the boss, 2026-11-18: "a user thing with like their icon and
-  # their name"). The chip is built here, not in the markdown: the sanitiser
+  # Render a readable person mention with their avatar and display name.
+  # The chip is built after markdown rendering because the sanitiser
   # strips classes, and nothing a writer typed may reach the page unescaped.
   # Each such mention becomes a placeholder no one can type (a per-render
   # nonce), the rest goes through markdown and the sanitiser as before, and
@@ -1874,13 +1873,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     |> put_chips(chips)
   end
 
-  # Each placeholder is judged where it landed in the SANITISED html (the
-  # writer can put a mention in a link's address or title, an image's alt
-  # text, their own raw HTML, a link's text or a code span): inside a tag —
-  # an attribute — or inside an `<a>`, `<code>` or `<pre>`, it becomes the
-  # escaped "@Name"; only in plain text the chip (codex, 2026-11-19). The
-  # sanitiser's output is canonical — attribute values double-quoted — so
-  # a tag is `<`, its name, and quoted values that may hold `>`, up to `>`.
+  # The sanitiser serialises quoted attributes canonically. A placeholder in
+  # a URL needs percent encoding, one in another attribute or in a link or
+  # code block needs escaped text, and one in ordinary text can become HTML.
   @html_tag ~r{<(/?)([a-zA-Z][a-zA-Z0-9]*)(?:[^>"]|"[^"]*")*>}
   @chip_holders ~w(a code pre)
 
@@ -1892,7 +1887,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     |> Enum.map_reduce(0, fn piece, inside ->
       case Regex.run(@html_tag, piece) do
         [^piece, slash, name] ->
-          {swap_placeholders(piece, chips, :plain), inside + holder_step(slash, name, piece)}
+          {swap_attributes(piece, chips), inside + holder_step(slash, name, piece)}
 
         _ ->
           {swap_placeholders(piece, chips, if(inside > 0, do: :plain, else: :chip)), inside}
@@ -1911,14 +1906,20 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     end
   end
 
+  defp swap_attributes(tag, chips) do
+    Regex.replace(~r/([\w:-]+)="([^"]*)"/, tag, fn _, attr, value ->
+      form = if attr in ["src", "href", "cite"], do: :url, else: :plain
+      attr <> "=\"" <> swap_placeholders(value, chips, form) <> "\""
+    end)
+  end
+
   defp swap_placeholders(piece, chips, form) do
-    if String.contains?(piece, "PKCHIP") do
-      Enum.reduce(chips, piece, fn {placeholder, versions}, acc ->
-        String.replace(acc, placeholder, Map.fetch!(versions, form))
-      end)
-    else
-      piece
-    end
+    Regex.replace(~r/PKCHIP[A-Z2-7]{10}X[0-9]+X/, piece, fn placeholder ->
+      case chips do
+        %{^placeholder => versions} -> Map.fetch!(versions, form)
+        _ -> placeholder
+      end
+    end)
   end
 
   # The accounts every readable @ mention on the page names, in one read.
@@ -1932,7 +1933,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         comments
         |> Enum.flat_map(&Token.parse(&1.content || ""))
         |> Enum.flat_map(fn
-          %Token{kind: :user, uuid: uuid} when is_binary(uuid) -> [uuid]
+          %Token{kind: :user, type: "user", uuid: uuid} when is_binary(uuid) -> [uuid]
           _ -> []
         end)
         |> Enum.uniq()
@@ -1951,10 +1952,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp chip_mentions(content, _assigns, people) when people == %{}, do: {content, %{}}
 
   defp chip_mentions(content, assigns, people) when is_binary(content) do
-    if Enum.any?(Token.parse(content), &(&1.kind == :user and is_map_key(people, &1.uuid))) do
-      chip_readable_mentions(content, assigns, people)
-    else
-      {content, %{}}
+    tokens =
+      content
+      |> Token.parse()
+      |> Enum.filter(&(&1.kind == :user and &1.type == "user" and is_map_key(people, &1.uuid)))
+      |> Enum.uniq_by(& &1.raw)
+
+    case tokens do
+      [] -> {content, %{}}
+      _ -> chip_readable_mentions(content, assigns, people, tokens)
     end
   rescue
     _ -> {content, %{}}
@@ -1964,9 +1970,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   # One placeholder per distinct token, so the same mention written twice
   # (a reference link's label and its definition) stays the same text.
-  defp chip_readable_mentions(content, assigns, people) do
+  defp chip_readable_mentions(content, assigns, people, tokens) do
     context =
-      PhoenixKit.Mentions.context(content,
+      PhoenixKit.Mentions.context(Enum.map_join(tokens, " ", & &1.raw),
         scope: assigns[:pk_scope],
         user_uuid: assigns[:current_user] && assigns.current_user.uuid,
         withhold_titles: false
@@ -1974,46 +1980,30 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
     nonce = chip_nonce(content)
 
-    {pieces, {_by_raw, chips}} =
-      content
-      |> Token.split()
-      |> Enum.map_reduce({%{}, %{}}, fn
-        %Token{kind: :user, uuid: uuid} = token, {by_raw, chips} = acc
-        when is_map_key(people, uuid) ->
-          case {Map.get(by_raw, token.raw), Map.get(context, {token.type, uuid})} do
-            {placeholder, _} when is_binary(placeholder) ->
-              {placeholder, acc}
+    {by_raw, chips} =
+      Enum.reduce(tokens, {%{}, %{}}, fn token, {by_raw, chips} = acc ->
+        case Map.get(context, {token.type, token.uuid}) do
+          %{state: :ok} = info ->
+            placeholder = "PKCHIP#{nonce}X#{map_size(by_raw)}X"
+            name = "@" <> to_string(info[:title] || "")
 
-            {nil, %{state: :ok} = info} ->
-              placeholder = "PKCHIP#{nonce}X#{map_size(by_raw)}X"
+            versions = %{
+              chip: mention_chip_html(token.uuid, info, people[token.uuid]),
+              plain: name |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string(),
+              url: URI.encode(name, &URI.char_unreserved?/1)
+            }
 
-              versions = %{
-                chip: mention_chip_html(uuid, info, people[uuid]),
-                plain: plain_mention(info)
-              }
+            {Map.put(by_raw, token.raw, placeholder), Map.put(chips, placeholder, versions)}
 
-              {placeholder,
-               {Map.put(by_raw, token.raw, placeholder), Map.put(chips, placeholder, versions)}}
-
-            _ ->
-              {token.raw, acc}
-          end
-
-        %Token{} = token, acc ->
-          {token.raw, acc}
-
-        piece, acc ->
-          {piece, acc}
+          _ ->
+            acc
+        end
       end)
 
-    {Enum.join(pieces), chips}
-  end
-
-  # "@Name", escaped for an attribute or text.
-  defp plain_mention(info) do
-    ("@" <> to_string(info[:title] || ""))
-    |> Phoenix.HTML.html_escape()
-    |> Phoenix.HTML.safe_to_string()
+    # Token.split/1 removes a literal mention's escape. Preserve the original
+    # spelling until core processes the remaining tokens in resolve_mentions/2.
+    body = Regex.replace(Token.pattern(), content, fn raw -> Map.get(by_raw, raw, raw) end)
+    {body, chips}
   end
 
   # Letters and digits only, so markdown leaves it alone; never one the
@@ -2040,8 +2030,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # its own. Every element's layout is in its classes (`avatar`, `flex`), so
   # the spans look the same. The markup is core's own, built from escaped
   # values; no text a writer typed is in it.
-  defp inline_avatar(person, title) do
-    %{__changed__: nil, person: person, title: title}
+  defp inline_avatar(%{custom_fields: %{"avatar_file_uuid" => file}} = person, _title)
+       when is_binary(file) and file != "" do
+    %{__changed__: nil, person: person}
     |> chip_avatar()
     |> Safe.to_iodata()
     |> IO.iodata_to_binary()
@@ -2049,9 +2040,25 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     |> String.replace("</div>", "</span>")
   end
 
+  # A mention must not make readers contact an OAuth provider or Gravatar.
+  # On cores without name-based avatar initials, use the resolved name here too.
+  defp inline_avatar(_person, title) do
+    words = String.split(title || "")
+    ends = if length(words) > 1, do: [hd(words), List.last(words)], else: words
+    assigns = %{initials: ends |> Enum.map_join(&String.first/1) |> String.upcase()}
+
+    ~H"""
+    <span aria-hidden="true" class="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-neutral text-neutral-content text-[10px] font-bold">
+      {@initials}
+    </span>
+    """
+    |> Safe.to_iodata()
+    |> IO.iodata_to_binary()
+  end
+
   defp chip_avatar(assigns) do
     ~H"""
-    <.user_avatar user={@person} name={@title} size="xs" />
+    <.user_avatar user={@person} size="xs" />
     """
   end
 
