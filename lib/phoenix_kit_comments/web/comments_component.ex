@@ -1955,14 +1955,35 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       uuid: uuid,
       title: info[:title] || "",
       path: info[:path] && Routes.path(info[:path]),
-      person: person
+      avatar: inline_avatar(person, info[:title])
     }
 
     assigns |> mention_chip() |> Safe.to_iodata() |> IO.iodata_to_binary()
   end
 
+  # Core's avatar, as spans: its `<div>`s inside a comment's paragraph
+  # make the browser close the paragraph and push the chip onto a line of
+  # its own. Every element's layout is in its classes (`avatar`, `flex`), so
+  # the spans look the same. The markup is core's own, built from escaped
+  # values; no text a writer typed is in it.
+  defp inline_avatar(person, title) do
+    %{__changed__: nil, person: person, title: title}
+    |> chip_avatar()
+    |> Safe.to_iodata()
+    |> IO.iodata_to_binary()
+    |> String.replace("<div", "<span")
+    |> String.replace("</div>", "</span>")
+  end
+
+  defp chip_avatar(assigns) do
+    ~H"""
+    <.user_avatar user={@person} name={@title} size="xs" />
+    """
+  end
+
   # The same chip as core's `<.mention_text>`: a face and the name, a link
-  # when the mention resolves to a page.
+  # when the mention resolves to a page (never underlined by the comment's
+  # link style).
   defp mention_chip(assigns) do
     ~H"""
     <a
@@ -1970,13 +1991,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       href={@path}
       data-phx-link="redirect"
       data-phx-link-state="push"
-      class="inline-flex items-center gap-1 align-middle rounded-full bg-base-200 hover:bg-base-300 py-0.5 pl-0.5 pr-2 font-medium no-underline"
+      class="inline-flex items-center gap-1 align-middle rounded-full bg-base-200 hover:bg-base-300 py-0.5 pl-0.5 pr-2 font-medium no-underline!"
       data-mention-user={@uuid}
-    ><.user_avatar user={@person} name={@title} size="xs" />{@title}</a><span
+    >{Phoenix.HTML.raw(@avatar)}{@title}</a><span
       :if={is_nil(@path)}
       class="inline-flex items-center gap-1 align-middle rounded-full bg-base-200 py-0.5 pl-0.5 pr-2 font-medium"
       data-mention-user={@uuid}
-    ><.user_avatar user={@person} name={@title} size="xs" />{@title}</span>
+    >{Phoenix.HTML.raw(@avatar)}{@title}</span>
     """
   end
 

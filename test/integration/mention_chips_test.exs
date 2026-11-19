@@ -42,6 +42,12 @@ defmodule PhoenixKitComments.Integration.MentionChipsTest do
     assert html =~ "<strong>Ping</strong>"
     refute html =~ "PKCHIP"
     refute html =~ "@[user:"
+
+    # No block element inside the chip: a <div> there closes the paragraph
+    # and puts the chip on a line of its own.
+    [_, chip] = Regex.run(~r/data-mention-user="[^"]*"(.*?)Anna Kask/s, html)
+    assert chip =~ "AK"
+    refute chip =~ "<div"
   end
 
   test "a hostile label is escaped, in the chip and the text around it",
