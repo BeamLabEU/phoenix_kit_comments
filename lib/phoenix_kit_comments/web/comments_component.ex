@@ -150,12 +150,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   import PhoenixKitWeb.Components.Core.UserInfo, only: [user_avatar: 1]
   import PhoenixKitComments.Web.Markdown, only: [comment_markdown_styles: 1]
 
+  alias Phoenix.HTML.Safe
   alias Phoenix.LiveView.JS
   alias PhoenixKit.Mentions.Token
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
+  alias PhoenixKit.Users.Auth
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Users.Auth.User
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKitComments.Web.Markdown
   alias PhoenixKitWeb.Components.Core.AudioRecorder
 
@@ -1844,15 +1847,137 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # re-render of the list. `Markdown.render_markdown/1` is the sanitiser, so
   # what is stored here is already safe to print.
   defp render_bodies(socket) do
+    comments = comments_with_text(socket.assigns.comments)
+    people = mentioned_people(comments, socket.assigns)
+
     bodies =
-      socket.assigns.comments
-      |> comments_with_text()
-      |> Map.new(fn comment ->
-        {comment.uuid,
-         Markdown.render_markdown(resolve_mentions(comment.content, socket.assigns))}
+      Map.new(comments, fn comment ->
+        {comment.uuid, render_body(comment.content, socket.assigns, people)}
       end)
 
     assign(socket, :rendered_bodies, bodies)
+  end
+
+  # A body with each readable @ mention of a person as a chip, their face
+  # and name (the boss, 2026-11-18: "a user thing with like their icon and
+  # their name"). The chip is built here, not in the markdown: the sanitiser
+  # strips classes, and nothing a writer typed may reach the page unescaped.
+  # Each such mention becomes a placeholder no one can type (a per-render
+  # nonce), the rest goes through markdown and the sanitiser as before, and
+  # the placeholders are swapped for the chips in the sanitised HTML.
+  defp render_body(content, assigns, people) do
+    {content, chips} = chip_mentions(content, assigns, people)
+    html = Markdown.render_markdown(resolve_mentions(content, assigns))
+
+    Enum.reduce(chips, html, fn {placeholder, chip}, acc ->
+      String.replace(acc, placeholder, chip)
+    end)
+  end
+
+  # The accounts every readable @ mention on the page names, in one read.
+  # None on a public surface (`withhold_mention_titles`): there a person is
+  # a name only, never their uuid or avatar.
+  defp mentioned_people(comments, assigns) do
+    uuids =
+      if assigns[:withhold_mention_titles] == true do
+        []
+      else
+        comments
+        |> Enum.flat_map(&Token.parse(&1.content || ""))
+        |> Enum.flat_map(fn
+          %Token{kind: :user, uuid: uuid} when is_binary(uuid) -> [uuid]
+          _ -> []
+        end)
+        |> Enum.uniq()
+      end
+
+    case uuids do
+      [] -> %{}
+      _ -> uuids |> Auth.get_users_by_uuids() |> Map.new(&{&1.uuid, &1})
+    end
+  rescue
+    _ -> %{}
+  catch
+    :exit, _ -> %{}
+  end
+
+  defp chip_mentions(content, _assigns, people) when people == %{}, do: {content, []}
+
+  defp chip_mentions(content, assigns, people) when is_binary(content) do
+    context =
+      PhoenixKit.Mentions.context(content,
+        scope: assigns[:pk_scope],
+        user_uuid: assigns[:current_user] && assigns.current_user.uuid,
+        withhold_titles: false
+      )
+
+    nonce = chip_nonce(content)
+
+    {pieces, chips} =
+      content
+      |> Token.split()
+      |> Enum.with_index()
+      |> Enum.map_reduce([], fn
+        {%Token{kind: :user, uuid: uuid} = token, i}, acc when is_map_key(people, uuid) ->
+          case Map.get(context, {token.type, uuid}) do
+            %{state: :ok} = info ->
+              placeholder = "PKCHIP#{nonce}X#{i}X"
+              {placeholder, [{placeholder, mention_chip_html(uuid, info, people[uuid])} | acc]}
+
+            _ ->
+              {token.raw, acc}
+          end
+
+        {%Token{} = token, _i}, acc ->
+          {token.raw, acc}
+
+        {piece, _i}, acc ->
+          {piece, acc}
+      end)
+
+    {Enum.join(pieces), chips}
+  rescue
+    _ -> {content, []}
+  end
+
+  defp chip_mentions(content, _assigns, _people), do: {content, []}
+
+  # Letters and digits only, so markdown leaves it alone; never one the
+  # text already holds.
+  defp chip_nonce(content) do
+    nonce = :crypto.strong_rand_bytes(6) |> Base.encode32(padding: false)
+    if String.contains?(content, nonce), do: chip_nonce(content), else: nonce
+  end
+
+  defp mention_chip_html(uuid, info, person) do
+    assigns = %{
+      __changed__: nil,
+      uuid: uuid,
+      title: info[:title] || "",
+      path: info[:path] && Routes.path(info[:path]),
+      person: person
+    }
+
+    assigns |> mention_chip() |> Safe.to_iodata() |> IO.iodata_to_binary()
+  end
+
+  # The same chip as core's `<.mention_text>`: a face and the name, a link
+  # when the mention resolves to a page.
+  defp mention_chip(assigns) do
+    ~H"""
+    <a
+      :if={@path}
+      href={@path}
+      data-phx-link="redirect"
+      data-phx-link-state="push"
+      class="inline-flex items-center gap-1 align-middle rounded-full bg-base-200 hover:bg-base-300 py-0.5 pl-0.5 pr-2 font-medium no-underline"
+      data-mention-user={@uuid}
+    ><.user_avatar user={@person} name={@title} size="xs" />{@title}</a><span
+      :if={is_nil(@path)}
+      class="inline-flex items-center gap-1 align-middle rounded-full bg-base-200 py-0.5 pl-0.5 pr-2 font-medium"
+      data-mention-user={@uuid}
+    ><.user_avatar user={@person} name={@title} size="xs" />{@title}</span>
+    """
   end
 
   # A `[removed]` placeholder keeps its text in the row; it is never shown.
