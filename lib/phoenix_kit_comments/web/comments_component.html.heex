@@ -90,7 +90,10 @@
       <%!-- wrapper id is the header toggle's aria-controls target and --%>
       <%!-- stays in the DOM (empty when collapsed) so the reference   --%>
       <%!-- is always valid. --%>
-      <div id={"pk-comments-body-#{@id}"}>
+      <%!-- PhoenixKitCommentsJumpToComment: a link to one of this thread's
+           comments (`#pk-comment-<uuid>`, a mention notification's) lands
+           on it, wherever it sits on the page. --%>
+      <div id={"pk-comments-body-#{@id}"} phx-hook="PhoenixKitCommentsJumpToComment">
         <%= unless @collapsible and @collapsed? do %>
           <.notice ctx={assigns} place={:thread} class="mb-2" />
           <%!-- Top composer --%>
