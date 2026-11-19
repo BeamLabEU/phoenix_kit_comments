@@ -138,6 +138,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   import PhoenixKitComments.Web.Markdown, only: [comment_markdown_styles: 1]
 
   alias Phoenix.LiveView.JS
+  alias PhoenixKit.Mentions.Token
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Users.Auth.Scope
@@ -224,11 +225,39 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   @impl true
   def update(%{leaf_content_changed: %{kind: kind, content: content}}, socket)
       when kind in [:draft, :reply] do
-    {:ok, socket |> assign(:new_comment, content) |> put_thread_ctx()}
+    {:ok,
+     socket
+     |> assign(:new_comment, content)
+     |> assign_mention_warnings(content)
+     |> put_thread_ctx()}
   end
 
   def update(%{leaf_content_changed: %{kind: :edit, content: content}}, socket) do
-    {:ok, socket |> assign(:editing_content, content) |> put_thread_ctx()}
+    {:ok,
+     socket
+     |> assign(:editing_content, content)
+     |> assign_mention_warnings(content)
+     |> put_thread_ctx()}
+  end
+
+  # The rich editor's `@` / `#` typeahead (`forward_leaf_event/2` routes the
+  # editor's `{:leaf_suggest, …}` here): the same search the textarea's
+  # `MentionInput` uses, answered back to the editor. Before this the Leaf
+  # composer had no typeahead at all — `@` showed nothing and a typed name
+  # stayed text (the boss's list, 2026-11-18, item 21).
+  def update(%{leaf_suggest: %{editor_id: id, trigger: trigger} = req}, socket) do
+    if socket.assigns[:mentions_on] == true and trigger in ["@", "#"] do
+      Phoenix.LiveView.send_update(Leaf,
+        id: id,
+        action: :suggestions,
+        trigger: trigger,
+        query: req[:query],
+        seq: req[:seq],
+        results: mention_suggestions(socket.assigns, trigger, req[:query] || "")
+      )
+    end
+
+    {:ok, socket}
   end
 
   # Core's recorder (`errors={:notify}`, `target={@myself}`) reports what went
@@ -290,6 +319,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # its own key handling, and a second listener fighting it for the
       # caret is how you get a composer that eats keystrokes.
       |> assign_new(:mentions_on, fn -> mentions_available?() end)
+      # The host's people to offer first after `@` (the task's people, then
+      # the project's members, say), in order: `[%{uuid, title, subtitle}]`.
+      # Everyone else comes from core's search below them.
+      |> assign_new(:mention_people, fn -> nil end)
+      # `(user_uuid -> nil | message)`: the host's word on whether a person
+      # mentioned in the draft will hear of it ("Anna can't open this
+      # project, so she won't be told."). Shown under the composer.
+      |> assign_new(:mention_warning, fn -> nil end)
+      |> assign_new(:mention_warnings, fn -> [] end)
       # Built ONCE per render, not per comment: resolving a mention needs a
       # scope (permissions, not just a uuid), and Scope.for_user/1 reads the
       # database — doing it inside the comment loop would be one query per
@@ -466,6 +504,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     :leaf_editor?,
     :editor_mode,
     :mentions_on,
+    :mention_warnings,
     :expanded_comments,
     :rendered_bodies,
     :notice,
@@ -621,7 +660,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   defp handle("update_comment_draft", %{"comment" => text}, socket) when is_binary(text) do
-    {:noreply, assign(socket, :new_comment, text)}
+    {:noreply, socket |> assign(:new_comment, text) |> assign_mention_warnings(text)}
   end
 
   defp handle("update_comment_draft", _params, socket), do: {:noreply, socket}
@@ -1680,6 +1719,148 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp mentions_available?, do: PhoenixKit.Mentions.enabled?()
 
+  @mention_limit 8
+
+  # The rich editor's triggers: `@` opens on the bare sign, `#` after one
+  # letter (a `#` alone starts a markdown heading). The picked row's value
+  # is the finished token, so the trigger is not kept.
+  @doc false
+  def leaf_mention_suggestions do
+    [
+      %{
+        trigger: "@",
+        min_chars: 0,
+        max_results: @mention_limit,
+        keep_trigger: false,
+        label: gettext("People")
+      },
+      %{
+        trigger: "#",
+        min_chars: 1,
+        max_results: @mention_limit,
+        keep_trigger: false,
+        label: gettext("Records")
+      }
+    ]
+  end
+
+  # `@`: the host's own people first (`mention_people`, in its order, those
+  # matching what was typed), then core's search for everyone else, each
+  # person once. `#`: core's record search. Rows carry the finished token.
+  @doc false
+  def mention_suggestions(assigns, "@", query) do
+    first =
+      assigns
+      |> Map.get(:mention_people)
+      |> List.wrap()
+      |> Enum.filter(&person_matches?(&1, query))
+      |> Enum.map(&Map.put(&1, :type, "user"))
+
+    rest =
+      PhoenixKit.Mentions.search(:user, query,
+        scope: assigns[:pk_scope],
+        user_uuid: assigns[:current_user] && assigns.current_user.uuid,
+        limit: @mention_limit
+      )
+
+    (first ++ rest)
+    |> Enum.uniq_by(&to_string(&1[:uuid]))
+    |> Enum.take(@mention_limit)
+    |> Enum.flat_map(&suggestion_row(:user, &1))
+  rescue
+    _ -> []
+  catch
+    :exit, _ -> []
+  end
+
+  def mention_suggestions(assigns, "#", query) do
+    :resource
+    |> PhoenixKit.Mentions.search(query,
+      scope: assigns[:pk_scope],
+      user_uuid: assigns[:current_user] && assigns.current_user.uuid,
+      limit: @mention_limit
+    )
+    |> Enum.flat_map(&suggestion_row(:resource, &1))
+  rescue
+    _ -> []
+  catch
+    :exit, _ -> []
+  end
+
+  def mention_suggestions(_assigns, _trigger, _query), do: []
+
+  defp person_matches?(%{title: title}, query) when is_binary(title) do
+    q = query |> String.trim() |> String.downcase()
+    q == "" or String.contains?(String.downcase(title), q)
+  end
+
+  defp person_matches?(_person, _query), do: false
+
+  # Leaf's row: the token as the inserted value, the name, a second line.
+  # A label `Token.to_string/4` cannot hold ("|", "]") is cleaned once
+  # rather than the person dropped.
+  defp suggestion_row(kind, %{uuid: uuid, title: title} = r) when is_binary(uuid) do
+    type = to_string(r[:type] || if(kind == :user, do: "user", else: ""))
+    token = mention_token(kind, type, uuid, title)
+
+    if token,
+      do: [%{value: token, label: to_string(title), sublabel: r[:subtitle]}],
+      else: []
+  end
+
+  defp suggestion_row(_kind, _r), do: []
+
+  defp mention_token(kind, type, uuid, title) do
+
+    case Token.to_string(kind, type, uuid, to_string(title)) do
+      {:ok, token} ->
+        token
+
+      :error ->
+        cleaned = title |> to_string() |> String.replace(["|", "]"], " ")
+
+        case Token.to_string(kind, type, uuid, cleaned) do
+          {:ok, token} -> token
+          :error -> nil
+        end
+    end
+  end
+
+  # The host's warnings for the people the draft mentions, once each, in
+  # the order they appear (`mention_warning`). Nothing without a host
+  # check, and never a raise from it.
+  defp assign_mention_warnings(socket, text) do
+    case socket.assigns[:mention_warning] do
+      check when is_function(check, 1) ->
+        warnings =
+          text
+          |> Token.parse()
+          |> Enum.filter(&(&1.kind == :user))
+          |> Enum.uniq_by(& &1.uuid)
+          |> Enum.flat_map(fn token ->
+            case safe_warning(check, token.uuid) do
+              message when is_binary(message) and message != "" -> [message]
+              _ -> []
+            end
+          end)
+
+        assign(socket, :mention_warnings, warnings)
+
+      _ ->
+        assign(socket, :mention_warnings, [])
+    end
+  rescue
+    _ -> assign(socket, :mention_warnings, [])
+  end
+
+  defp safe_warning(check, uuid) do
+    check.(uuid)
+  rescue
+    _ -> nil
+  catch
+    :exit, _ -> nil
+  end
+
   defp uploads_done?(entries), do: Enum.all?(entries, & &1.done?)
 
   defp store_entry(meta, entry, user_uuid, folder_uuid) do
@@ -2249,6 +2430,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 debounce={400}
                 upload_handler={nil}
                 sync_input_name="content"
+                suggestions={if @ctx.mentions_on, do: leaf_mention_suggestions(), else: []}
                 loading_preset={:random}
                 loading_text={nil}
               />
@@ -2718,6 +2900,20 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     end
   end
 
+  # The editor's `@` / `#` typeahead asks the host LiveView for matches; the
+  # component answers it (`update/2`, `:leaf_suggest`).
+  def forward_leaf_event({:leaf_suggest, %{editor_id: editor_id} = request}, socket)
+      when is_binary(editor_id) do
+    case parse_editor_id(editor_id) do
+      {:ok, component_id, _kind} ->
+        Phoenix.LiveView.send_update(__MODULE__, id: component_id, leaf_suggest: request)
+        {:noreply, socket}
+
+      :pass ->
+        :pass
+    end
+  end
+
   def forward_leaf_event(_msg, _socket), do: :pass
 
   # Parse "pk-comments:<component_id>:<kind>:<arg>" into
@@ -2905,9 +3101,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           debounce={400}
           upload_handler={nil}
           sync_input_name="comment"
+          suggestions={if @ctx.mentions_on, do: leaf_mention_suggestions(), else: []}
           loading_preset={:random}
           loading_text={nil}
         />
+        <p :if={@ctx.mentions_on} class="text-xs opacity-50">
+          {gettext("Type @ to mention someone, # to link a record.")}
+        </p>
       <% else %>
         <textarea
           name="comment"
@@ -2924,6 +3124,18 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       <% end %>
       </div>
       <.notice ctx={@ctx} place={:composer} />
+      <%!-- The host's word on people mentioned who will not hear of it
+           (`mention_warning`), while the draft is written. --%>
+      <ul
+        :if={(@ctx[:mention_warnings] || []) != []}
+        class="text-xs text-warning flex flex-col gap-0.5"
+        data-mention-warnings
+      >
+        <li :for={warning <- @ctx.mention_warnings} class="flex items-start gap-1">
+          <.icon name="hero-exclamation-triangle" class="w-3.5 h-3.5 shrink-0 mt-px" />
+          <span>{warning}</span>
+        </li>
+      </ul>
 
       <%!-- The count shows only near the limit (the last tenth) and past it. --%>
       <div

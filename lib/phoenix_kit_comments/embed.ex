@@ -30,7 +30,8 @@ defmodule PhoenixKitComments.Embed do
   `on_mount/4` (not injected `handle_info` clauses), so it **composes** with
   a host that already defines its own `handle_info` — no "clauses should be
   grouped" warning, no clobbering. Non-comments messages pass straight
-  through (`{:cont, socket}`); a `{:leaf_changed, ...}` for one of our
+  through (`{:cont, socket}`); a `{:leaf_changed, ...}` or a
+  `{:leaf_suggest, ...}` (the composer's `@` / `#` typeahead) for one of our
   editors is forwarded and halted. Mirrors the lifecycle-hook approach
   `PhoenixKitWeb.Components.MediaBrowser.Embed` uses for the same purpose.
 
@@ -87,7 +88,7 @@ defmodule PhoenixKitComments.Embed do
   @doc false
   # Lifecycle-hook body. `{:cont, socket}` lets the host's own handle_info
   # (and other hooks) run; `{:halt, socket}` consumes the message.
-  def __forward_leaf__({:leaf_changed, _} = msg, socket) do
+  def __forward_leaf__({tag, _} = msg, socket) when tag in [:leaf_changed, :leaf_suggest] do
     case CommentsComponent.forward_leaf_event(msg, socket) do
       {:noreply, socket} -> {:halt, socket}
       # `:pass` (editor isn't ours) or any unexpected return — let the
