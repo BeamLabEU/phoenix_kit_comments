@@ -2,6 +2,29 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.7.0 - 2026-11-23
+
+No migration, no core floor change (still `>= 3.5.0 and < 4.0.0`). Hosts using the rich (Leaf) editor get the mentions popup best on Leaf 0.11+ (`notify`).
+
+### Added
+
+- **`@` and `#` mentions in the rich (Leaf) editor.** The composer, reply and edit forms offer People and Records suggestions through Leaf's `notify`; the component answers `:leaf_suggest` itself (core's `Mentions.search/3` under the event scope, after the host's `mention_people` for `@`). A Leaf without `notify` gets no suggestions rather than crashing a host that has only a `{:leaf_changed, _}` clause. `mention_warning` results are tied to the draft they were computed for and re-asked only when the set of mentioned people changes.
+- **A mentioned person shows as a chip** in a posted comment: their avatar and name, linked when the mention resolves to a page, inline in the paragraph and never underlined. Built on the server after the sanitiser, so nothing a writer typed reaches the page unescaped; a mention inside a link, code span or autolink stays plain `@Name`; `withhold_mention_titles` keeps the plain name; the accounts of every mention on a page are read in one query.
+- Translations for the composer's People and Records suggestion headings in every catalog.
+
+### Changed
+
+- `PhoenixKitComments.Embed` forwards `{:leaf_suggest, _}` as well as `{:leaf_changed, _}` for this module's editors. A `:leaf_suggest` that reaches the host LiveView goes through `forward_leaf_event/2` to the same component clause.
+- Dropped the older-core fallbacks now that the floor is 3.5.0 (`RemovalGuard` always adopts core's behaviour).
+- The moderation page's annotation link for a file comment shares `CommentsComponent.with_annotation/2` with the thread's comment links.
+- Dependencies updated (Leaf 0.13.2, MDEx 0.14.7, Etcher 0.29.1, Hackney 4.12.4 and others); `ex_aws_ec2` is no longer locked.
+
+### Fixed
+
+- A visual-mode mention forwarded from a host was stored as escaped text, so the mention warning never fired and nobody was notified; a forwarded draft or reply is now unescaped like the notify path and the edit form.
+- A file comment whose resolved URL is `nil` no longer crashes the annotation link helper.
+- Mention chips render correctly on supported PhoenixKit hosts.
+
 ## 0.6.0 - 2026-11-09
 
 Needs PhoenixKit 3.5.0 (run its `mix phoenix_kit.update`). No migration of this module's own.
