@@ -304,4 +304,29 @@ defmodule PhoenixKitCommentsTest do
       end
     end
   end
+
+  describe "with_annotation/2" do
+    alias PhoenixKitComments.Web.CommentsComponent
+
+    @annotation "01a0306e-577c-790e-971a-4e8dee4d3200"
+
+    test "appends only a real annotation uuid" do
+      comment = %{resource_type: "file", metadata: %{"annotation_uuid" => @annotation}}
+
+      assert CommentsComponent.with_annotation("/media/1", comment) ==
+               "/media/1?annotation=#{@annotation}"
+
+      assert CommentsComponent.with_annotation("/media/1?v=1", comment) ==
+               "/media/1?v=1&annotation=#{@annotation}"
+
+      junk = %{resource_type: "file", metadata: %{"annotation_uuid" => "x&status=published"}}
+      assert CommentsComponent.with_annotation("/media/1", junk) == "/media/1"
+      assert CommentsComponent.with_annotation("/media/1", %{resource_type: "post"}) == "/media/1"
+    end
+
+    test "a file comment with no page is not a crash" do
+      comment = %{resource_type: "file", metadata: %{"annotation_uuid" => @annotation}}
+      assert CommentsComponent.with_annotation(nil, comment) == nil
+    end
+  end
 end

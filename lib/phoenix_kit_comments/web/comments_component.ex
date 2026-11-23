@@ -249,11 +249,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # `:draft` updates the new-comment / reply assign; `:edit` updates
   # the inline-edit assign. Either way the next form submit reads
   # from socket.assigns instead of params (Leaf doesn't bubble
-  # form-collectable elements to the parent form).
+  # form-collectable elements to the parent form). Visual mode escapes
+  # the token's `[` on the way out; both assigns undo that, the same
+  # as `handle_leaf/2`, or a picked mention is stored as text and
+  # pings nobody. The host's mention warnings read the same text.
   @impl true
   def update(%{leaf_content_changed: %{kind: kind, content: content}}, socket)
       when kind in [:draft, :reply] do
-    {:ok, socket |> put_draft(content) |> put_thread_ctx()}
+    {:ok, socket |> put_draft(unescape_mention_tokens(content)) |> put_thread_ctx()}
   end
 
   def update(%{leaf_content_changed: %{kind: :edit, content: content}}, socket) do
@@ -2234,9 +2237,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   @doc false
   # A file's comment is about one annotation on it: the page opens on it. Only
-  # a real uuid is appended — the metadata is the client's (see `Index`).
-  @spec with_annotation(String.t(), map()) :: String.t()
-  def with_annotation(url, %{resource_type: "file", metadata: %{} = metadata}) do
+  # a real uuid is appended — the metadata is the client's, and the result is
+  # an href an admin clicks, so a crafted value must not add query params or a
+  # fragment. No page (`nil` from `ResourceLinks.url/1`) stays no page.
+  @spec with_annotation(String.t() | nil, map()) :: String.t() | nil
+  def with_annotation(url, %{resource_type: "file", metadata: %{} = metadata})
+      when is_binary(url) do
     with uuid when is_binary(uuid) <- Map.get(metadata, "annotation_uuid"),
          {:ok, valid} <- Ecto.UUID.cast(uuid) do
       sep = if String.contains?(url, "?"), do: "&", else: "?"
@@ -2246,7 +2252,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     end
   end
 
-  def with_annotation(url, _comment), do: url
+  def with_annotation(url, _comment) when is_binary(url) or is_nil(url), do: url
 
   # A full scope for the person reading, so a handler can answer questions
   # that need permissions (a site admin sees more than their memberships).

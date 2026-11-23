@@ -880,10 +880,6 @@ defmodule PhoenixKitComments.Web.Index do
     """
   end
 
-  # Appends `?annotation=<uuid>` to a file comment's resource link so the media
-  # page can select the Etcher shape the comment is anchored to (annotation
-  # comments carry the back-reference in `metadata["annotation_uuid"]`).
-
   defp status_badge_class("published"), do: "badge badge-success badge-sm"
   defp status_badge_class("pending"), do: "badge badge-warning badge-sm"
   defp status_badge_class("hidden"), do: "badge badge-info badge-sm"

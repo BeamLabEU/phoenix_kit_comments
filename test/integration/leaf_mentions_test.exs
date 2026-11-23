@@ -190,6 +190,61 @@ defmodule PhoenixKitComments.Web.LeafMentionsTest do
     refute html =~ "data-leaf-suggestions"
   end
 
+  # `notify` delivers `{:leaf_changed, _}` to the component, which unescapes
+  # visual-mode tokens. Without it the host forwards the markdown as
+  # `leaf_content_changed`, and that assign has to undo the same escapes:
+  # `Token.parse/1` ignores an escaped token, so the draft's warnings never
+  # fire and the posted comment pings nobody.
+  test "a forwarded draft or reply unescapes a visual-mode mention", %{
+    conn: conn,
+    scope: scope,
+    resource_uuid: r
+  } do
+    Application.put_env(:phoenix_kit_comments, :leaf_notify, false)
+    ada = user_fixture(%{first_name: "Ada", username: "ada"})
+    {:ok, _} = Roles.assign_role(ada, "Admin")
+    test_pid = self()
+
+    {view, _html, _editor_id} = open(conn, scope, r)
+
+    Phoenix.LiveView.send_update(view.pid, CommentsComponent,
+      id: "test-thread",
+      mention_warning: fn uuid ->
+        send(test_pid, {:asked, uuid})
+        "Ada can't see this"
+      end
+    )
+
+    forward = fn kind, text ->
+      Phoenix.LiveView.send_update(view.pid, CommentsComponent,
+        id: "test-thread",
+        leaf_content_changed: %{kind: kind, content: text}
+      )
+
+      render(view)
+    end
+
+    # A writer who escaped the trigger meant the token to stay text.
+    html = forward.(:draft, "See \\@\\[user:#{ada.uuid}|Ada]")
+    refute html =~ "data-mention-warnings"
+    refute_received {:asked, _}
+
+    html = forward.(:reply, "Hi @\\[user:#{ada.uuid}|Ada]")
+    assert html =~ "Ada can&#39;t see this"
+    assert_received {:asked, uuid} when uuid == ada.uuid
+
+    view |> element("form[phx-submit='add_comment']") |> render_submit(%{})
+
+    assert [%{content: content}] = PhoenixKitComments.list_comments("test_resource", r)
+    assert content == "Hi @[user:#{ada.uuid}|Ada]"
+
+    assert Repo.exists?(
+             from(m in Mention,
+               where: m.target_uuid == ^ada.uuid and m.source_type == "comment"
+             )
+           )
+  end
+
   # #53's host attrs, on #52's route: the popup answered through `notify`
   # puts the host's people first.
   test "the host's people come first in the popup", %{conn: conn, scope: scope, resource_uuid: r} do

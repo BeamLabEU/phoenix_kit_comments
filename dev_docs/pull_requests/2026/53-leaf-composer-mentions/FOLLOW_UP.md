@@ -21,3 +21,14 @@ What became of #53's parts:
 
 The author-side findings in `CLAUDE_REVIEW.md` here (host-chosen people,
 warning text, cross-composer ids) stand as written.
+
+## Grok, 2026-11-23
+
+- **Forwarded draft and reply dropped `unescape_mention_tokens/1`.**
+  The merge stored that text with `put_draft/2` and did not undo
+  visual-mode escapes. The notify path and the edit assign still did.
+  A host with `notify` off stored `@\[user:…|Ada]`, warned nobody, and
+  pinged nobody. The `:draft` / `:reply` clause unescapes before
+  `put_draft/2`. Test: "a forwarded draft or reply unescapes a
+  visual-mode mention" in `test/integration/leaf_mentions_test.exs`.
+  Detail: `GROK_REVIEW.md`.
