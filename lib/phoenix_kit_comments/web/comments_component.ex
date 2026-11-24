@@ -2515,7 +2515,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             <%= if @decoration_editing? do %>
               <.form
                 for={%{}}
-                id={"decoration-form-#{@myself}-#{@comment.uuid}"}
+                id={"decoration-form-#{@component_id}-#{@comment.uuid}"}
                 phx-submit="save_decoration"
                 phx-target={@myself}
                 class="flex items-center gap-2"
@@ -2580,7 +2580,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         <%= if @editing_uuid == @comment.uuid do %>
           <.form
             for={%{}}
-            id={"comment-edit-form-#{@myself}-#{@comment.uuid}"}
+            id={"comment-edit-form-#{@component_id}-#{@comment.uuid}"}
             phx-submit="save_edit"
             phx-target={@myself}
             class="mt-1 space-y-2"
@@ -3432,9 +3432,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # this composer's recorder, so the click itself asks for the microphone and
   # two open threads never both record), and the clip goes into this
   # component's own `:attachment` upload, staged, limited, cancelled and
-  # consumed exactly like a picked file. The id carries `@myself`, so two
-  # comment components on one page do not collide.
-  defp recorder_id(ctx, suffix), do: "audio-recorder-#{ctx.myself}-#{suffix}"
+  # consumed exactly like a picked file. The id carries the component's id,
+  # never its CID: a CID starts again at 1 in every LiveView, and a popup
+  # LiveView over a page made `start/2`'s document-wide dispatch start both
+  # recorders.
+  defp recorder_id(ctx, suffix), do: "audio-recorder-#{ctx.id}-#{suffix}"
 
   # Five minutes: a voice note, not a podcast. The upload's own size limit
   # (the attachment setting) still applies on top.
@@ -3461,7 +3463,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     ~H"""
     <.form
       for={%{}}
-      id={"comment-composer-#{@ctx.myself}-#{@suffix}"}
+      id={"comment-composer-#{@ctx.id}-#{@suffix}"}
       phx-submit="add_comment"
       phx-change="update_comment_draft"
       phx-target={@ctx.myself}
@@ -3471,7 +3473,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
            the comment through the upload below, not written into its
            text (`PhoenixKitCommentsPasteFiles`). --%>
       <div
-        id={"comment-paste-#{@ctx.myself}-#{@suffix}"}
+        id={"comment-paste-#{@ctx.id}-#{@suffix}"}
         phx-hook="PhoenixKitCommentsPasteFiles"
         phx-target={@ctx.myself}
         data-upload-name="attachment"
@@ -3768,11 +3770,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                       aria-label={gettext("Giphy picker")}
                       class="pk-giphy-picker p-3 shadow-lg bg-base-100 rounded-box border border-base-300"
                     >
-                      <label for={"giphy-search-#{@ctx.myself}-#{@suffix}"} class="sr-only">
+                      <label for={"giphy-search-#{@ctx.id}-#{@suffix}"} class="sr-only">
                         {gettext("Search GIFs")}
                       </label>
                       <input
-                        id={"giphy-search-#{@ctx.myself}-#{@suffix}"}
+                        id={"giphy-search-#{@ctx.id}-#{@suffix}"}
                         type="text"
                         name="q"
                         value={@ctx.giphy_query}
@@ -3833,7 +3835,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         </div>
 
         <div class="flex items-center gap-2">
+          <%!-- No Hide on an editor that is always open (composer_start_open):
+               it only emptied the box, which came straight back. A reply
+               box keeps it. --%>
           <button
+            :if={not (@ctx[:composer_start_open] == true and is_nil(@ctx[:reply_to]))}
             type="button"
             phx-click="cancel_new_comment"
             phx-target={@ctx.myself}

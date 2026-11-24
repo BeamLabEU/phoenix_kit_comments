@@ -247,6 +247,27 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       assert html =~ ~s(phx-submit="add_comment")
     end
 
+    # A CID starts again at 1 in every LiveView: a host page and a popup
+    # LiveView over it each had `comment-composer-1-top`, and the browser
+    # kept one of the two forms (the task popup's editor never showed).
+    test "the composer's ids come from the component id, not its CID",
+         %{conn: conn, scope: scope, resource_uuid: r} do
+      {:ok, _view, html} = live(put_test_scope(conn, scope), "/en/test/thread/#{r}?open=1")
+      assert html =~ ~s(id="comment-composer-test-thread-top")
+      assert html =~ ~s(id="comment-paste-test-thread-top")
+    end
+
+    test "an always-open editor has no Hide button (it only emptied the box)",
+         %{conn: conn, scope: scope, resource_uuid: r} do
+      {:ok, _view, html} = live(put_test_scope(conn, scope), "/en/test/thread/#{r}?open=1")
+      refute html =~ ~s(phx-click="cancel_new_comment")
+
+      # A box opened by a click still has it.
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(r))
+      html = view |> element("button[phx-click='open_composer']") |> render_click()
+      assert html =~ ~s(phx-click="cancel_new_comment")
+    end
+
     test "without it, the box opens on a click as before", %{
       conn: conn,
       scope: scope,
