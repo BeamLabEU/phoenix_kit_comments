@@ -53,6 +53,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     (default), `:bottom`, `:both`, or `nil` for none — a read-only thread:
     no box, no Reply, and posting is refused. Editing or deleting one's own
     comment still works.
+  - `composer_start_open` - Show the editor itself at the main position
+    from the first render instead of a "Write comment" button that loads it
+    on a click (default: `false`). It stays open after a post or a cancel;
+    while a reply box is open, the reply has it.
   - `order` - Which way the top-level comments run: `:auto` (default) puts
     a new comment next to the box — newest first, except with the box at
     the `:bottom`, where the oldest come first and the thread follows the
@@ -352,6 +356,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # Where the "Write comment" composer renders: :top (default),
       # :bottom, or :both. Bottom is off by default.
       |> assign_new(:composer_position, fn -> :top end)
+      |> assign_new(:composer_start_open, fn -> false end)
       # Which way the comments run: `:auto` (default) puts a new comment
       # next to the box it was written in — a box on top lists the newest
       # first, a box at the bottom the oldest first (a chat), a box at both
@@ -2075,11 +2080,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       href={@path}
       data-phx-link="redirect"
       data-phx-link-state="push"
-      class="inline-flex items-center gap-1 align-middle rounded-full bg-base-200 hover:bg-base-300 py-0.5 pl-0.5 pr-2 font-medium no-underline!"
+      class="inline-flex items-center gap-1 align-middle rounded-full bg-base-200 hover:bg-base-300 py-0 pl-0 pr-2 font-medium no-underline!"
       data-mention-user={@uuid}
     >{Phoenix.HTML.raw(@avatar)}{@title}</a><span
       :if={is_nil(@path)}
-      class="inline-flex items-center gap-1 align-middle rounded-full bg-base-200 py-0.5 pl-0.5 pr-2 font-medium"
+      class="inline-flex items-center gap-1 align-middle rounded-full bg-base-200 py-0 pl-0 pr-2 font-medium"
       data-mention-user={@uuid}
     >{Phoenix.HTML.raw(@avatar)}{@title}</span>
     """
@@ -3876,7 +3881,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             {gettext("Sign in to post a comment.")}
           </div>
         <% end %>
-      <% @ctx.composer_open_at == @position and is_nil(@ctx.reply_to) -> %>
+      <% composer_open_here?(@ctx, @position) and is_nil(@ctx.reply_to) -> %>
         <div class={@spacing}>
           <.composer_form
             ctx={@ctx}
@@ -3908,6 +3913,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # The single position that shows the "sign in to post" notice when the
   # viewer can't post — avoids rendering it twice for composer_position
   # :both. First present position wins.
+  # Open at this position: the one the reader opened, or — with
+  # `composer_start_open` and nothing opened — the main one.
+  defp composer_open_here?(ctx, position) do
+    ctx.composer_open_at == position or
+      (is_nil(ctx.composer_open_at) and ctx[:composer_start_open] == true and
+         position == primary_composer_position(ctx.composer_position))
+  end
+
   defp primary_composer_position(:bottom), do: :bottom
   defp primary_composer_position(_), do: :top
 

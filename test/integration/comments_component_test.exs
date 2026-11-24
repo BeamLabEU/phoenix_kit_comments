@@ -231,6 +231,32 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
     end
   end
 
+  describe "composer_start_open" do
+    # Max, 2026-11-24: the editor was not there until the box was clicked.
+    test "the editor is there from the first render, and back after a post",
+         %{conn: conn, scope: scope, resource_uuid: r} do
+      {:ok, view, html} = live(put_test_scope(conn, scope), "/en/test/thread/#{r}?open=1")
+
+      assert html =~ ~s(phx-submit="add_comment")
+      refute html =~ ~s(phx-click="open_composer")
+
+      view |> element("form[phx-submit='add_comment']") |> render_submit(%{"comment" => "first"})
+
+      html = render(view)
+      assert html =~ "first"
+      assert html =~ ~s(phx-submit="add_comment")
+    end
+
+    test "without it, the box opens on a click as before", %{
+      conn: conn,
+      scope: scope,
+      resource_uuid: r
+    } do
+      {:ok, _view, html} = live(put_test_scope(conn, scope), host_path(r))
+      assert html =~ ~s(phx-click="open_composer")
+    end
+  end
+
   describe "the module kill switch" do
     test "an explicit enabled host attr still respects the module switch",
          %{conn: conn, scope: scope, resource_uuid: resource_uuid} do

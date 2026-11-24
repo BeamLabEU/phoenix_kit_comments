@@ -47,6 +47,8 @@ defmodule PhoenixKitComments.Test.HostLive do
      |> assign(:composer_position, if(params["composer"] == "bottom", do: :bottom, else: :top))
      # `?likes=off` is a host that turned reactions off (`show_likes`).
      |> assign(:show_likes, params["likes"] != "off")
+     # `?open=1`: the editor shown from the first render (`composer_start_open`).
+     |> assign(:start_open, params["open"] == "1")
      |> assign(:comments_updated, nil)}
   end
 
@@ -63,6 +65,7 @@ defmodule PhoenixKitComments.Test.HostLive do
         resource_type="test_resource"
         resource_uuid={@resource_uuid}
         composer_position={@composer_position}
+        composer_start_open={@start_open}
         show_likes={@show_likes}
         current_user={@current_user}
         pk_scope={@pk_scope}
