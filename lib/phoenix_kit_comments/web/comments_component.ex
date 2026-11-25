@@ -2029,7 +2029,38 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     if String.contains?(content, nonce), do: chip_nonce(content), else: nonce
   end
 
+  # Core's one person chip (`UserInfo.person_chip/1`, core 3.8+) where the
+  # installed core has it, so a tag in a comment, a tag in a description
+  # and a task's assignee look the same and the name sits on the text's
+  # baseline (Max, 2026-11-25). Called through `apply/3`: an older core has
+  # no such function, and this module's own chip stands in.
   defp mention_chip_html(uuid, info, person) do
+    if core_person_chip?() do
+      chip_assigns = %{
+        __changed__: nil,
+        person: person,
+        name: info[:title] || "",
+        uuid: uuid,
+        href: info[:path] && Routes.path(info[:path]),
+        class: nil,
+        rest: %{}
+      }
+
+      PhoenixKitWeb.Components.Core.UserInfo
+      |> apply(:person_chip, [chip_assigns])
+      |> Safe.to_iodata()
+      |> IO.iodata_to_binary()
+    else
+      own_mention_chip_html(uuid, info, person)
+    end
+  end
+
+  defp core_person_chip? do
+    Code.ensure_loaded?(PhoenixKitWeb.Components.Core.UserInfo) and
+      function_exported?(PhoenixKitWeb.Components.Core.UserInfo, :person_chip, 1)
+  end
+
+  defp own_mention_chip_html(uuid, info, person) do
     assigns = %{
       __changed__: nil,
       uuid: uuid,
