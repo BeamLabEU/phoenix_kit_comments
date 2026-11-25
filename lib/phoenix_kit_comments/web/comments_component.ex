@@ -53,6 +53,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     (default), `:bottom`, `:both`, or `nil` for none — a read-only thread:
     no box, no Reply, and posting is refused. Editing or deleting one's own
     comment still works.
+  - `composer_start_open` - Show the editor itself at the main position
+    from the first render instead of a "Write comment" button that loads it
+    on a click (default: `false`). It stays open after a post or a cancel;
+    while a reply box is open, the reply has it.
   - `order` - Which way the top-level comments run: `:auto` (default) puts
     a new comment next to the box — newest first, except with the box at
     the `:bottom`, where the oldest come first and the thread follows the
@@ -352,6 +356,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # Where the "Write comment" composer renders: :top (default),
       # :bottom, or :both. Bottom is off by default.
       |> assign_new(:composer_position, fn -> :top end)
+      |> assign_new(:composer_start_open, fn -> false end)
+      |> assign_new(:draft_seq, fn -> 0 end)
       # Which way the comments run: `:auto` (default) puts a new comment
       # next to the box it was written in — a box on top lists the newest
       # first, a box at the bottom the oldest first (a chat), a box at both
@@ -452,8 +458,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # tree, where it is not, and with it open neither composer rendered.
   defp reset_on_new_resource(%{assigns: %{loaded?: true}} = socket) do
     if changed?(socket, :resource_uuid) or changed?(socket, :resource_type) do
+      clear_draft_editor(socket)
+
       socket.assigns.uploads.attachment.entries
       |> Enum.reduce(socket, &cancel_upload(&2, :attachment, &1.ref))
+      |> update(:draft_seq, &(&1 + 1))
       |> assign(
         reply_to: nil,
         composer_open_at: nil,
@@ -1231,10 +1240,16 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                attrs
              ) do
           {:ok, comment} ->
-            sync_mentions(comment, socket.assigns.current_user.uuid)
+            PhoenixKitComments.sync_comment_mentions(comment, socket.assigns.current_user.uuid)
 
-            # No reset of the Leaf editor here: closing the composer below
-            # unmounts it, and the next one opens on the cleared draft.
+            # The editor is emptied: an always-open composer
+            # (`composer_start_open`) is not unmounted by the close below,
+            # and Leaf keeps what it shows until told — Max, 2026-11-25:
+            # the posted text stayed in the box and Post could be pressed
+            # again. A textarea is re-keyed instead (`draft_seq`): LiveView
+            # does not overwrite a focused field's value.
+            clear_draft_editor(socket)
+
             send(
               self(),
               {:comments_updated,
@@ -1248,6 +1263,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             {:noreply,
              socket
              |> assign(:new_comment, "")
+             |> update(:draft_seq, &(&1 + 1))
              |> assign(:reply_to, nil)
              |> assign(:composer_open_at, nil)
              |> assign(:giphy_selected, nil)
@@ -1553,7 +1569,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         # An edit that ADDS a mention pings; one that only reshuffles text
         # already mentioning someone pings nobody, because sync/4 returns
         # what is new and delivery is claimed once.
-        sync_mentions(updated, socket.assigns.current_user.uuid)
+        PhoenixKitComments.sync_comment_mentions(updated, socket.assigns.current_user.uuid)
 
         # Same host contract as create/delete: a host showing this
         # resource's latest comments inline must see the new text without
@@ -1991,7 +2007,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             name = "@" <> to_string(info[:title] || "")
 
             versions = %{
-              chip: mention_chip_html(token.uuid, info, people[token.uuid]),
+              chip:
+                mention_chip_html(
+                  token.uuid,
+                  info,
+                  people[token.uuid],
+                  PhoenixKitWeb.Components.Core.UserInfo
+                ),
               plain: name |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string(),
               url: URI.encode(name, &URI.char_unreserved?/1)
             }
@@ -2016,7 +2038,33 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     if String.contains?(content, nonce), do: chip_nonce(content), else: nonce
   end
 
-  defp mention_chip_html(uuid, info, person) do
+  # Core's one person chip (`UserInfo.person_chip/1`) where the
+  # installed core has it, so a tag in a comment, a tag in a description
+  # and a task's assignee look the same and the name sits on the text's
+  # baseline (Max, 2026-11-25). Called through a module variable: an older core has
+  # no such function, and this module's own chip stands in.
+  defp mention_chip_html(uuid, info, person, user_info) do
+    if Code.ensure_loaded?(user_info) and function_exported?(user_info, :person_chip, 1) do
+      chip_assigns = %{
+        __changed__: nil,
+        person: person,
+        name: info[:title] || "",
+        uuid: uuid,
+        href: info[:path] && Routes.path(info[:path]),
+        class: nil,
+        rest: %{}
+      }
+
+      chip_assigns
+      |> user_info.person_chip()
+      |> Safe.to_iodata()
+      |> IO.iodata_to_binary()
+    else
+      own_mention_chip_html(uuid, info, person)
+    end
+  end
+
+  defp own_mention_chip_html(uuid, info, person) do
     assigns = %{
       __changed__: nil,
       uuid: uuid,
@@ -2075,11 +2123,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       href={@path}
       data-phx-link="redirect"
       data-phx-link-state="push"
-      class="inline-flex items-center gap-1 align-middle rounded-full bg-base-200 hover:bg-base-300 py-0.5 pl-0.5 pr-2 font-medium no-underline!"
+      class="inline-flex items-center gap-1 align-middle rounded-full bg-base-200 hover:bg-base-300 py-0 pl-0 pr-2 font-medium no-underline!"
       data-mention-user={@uuid}
     >{Phoenix.HTML.raw(@avatar)}{@title}</a><span
       :if={is_nil(@path)}
-      class="inline-flex items-center gap-1 align-middle rounded-full bg-base-200 py-0.5 pl-0.5 pr-2 font-medium"
+      class="inline-flex items-center gap-1 align-middle rounded-full bg-base-200 py-0 pl-0 pr-2 font-medium"
       data-mention-user={@uuid}
     >{Phoenix.HTML.raw(@avatar)}{@title}</span>
     """
@@ -2179,35 +2227,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     _ -> content
   end
 
-  # Indexes the comment's mentions and delivers its @ pings — on the
-  # durable create, never on a draft keystroke. Wrapped so a mention
-  # failure can never cost someone their comment.
-  defp sync_mentions(comment, actor_uuid) do
-    case PhoenixKit.Mentions.sync(
-           "comment",
-           comment.uuid,
-           comment.content,
-           field: "content",
-           actor_uuid: actor_uuid
-         ) do
-      {:ok, new} ->
-        PhoenixKit.Mentions.notify(
-          new,
-          source_type: comment.resource_type,
-          source_uuid: comment.resource_uuid,
-          preview: comment.content,
-          link: comment_link(comment)
-        )
-
-      _ ->
-        :ok
-    end
-  rescue
-    _ -> :ok
-  catch
-    :exit, _ -> :ok
-  end
-
   @doc false
   # Where a notification about this comment takes its reader: the page of the
   # record it is on (core's `ResourceLinks`, the same resolution the
@@ -2219,8 +2238,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   def comment_link(%{resource_type: type, resource_uuid: uuid} = comment) do
     case PhoenixKit.ResourceLinks.resolve([comment]) do
       %{{^type, ^uuid} => %{path: path} = info} when is_binary(path) and path != "" ->
+        # The record's own fragment goes (Projects' task path ends in
+        # `#task-<uuid>`): a URL has ONE fragment, and the comment's anchor
+        # must be all of it for the JumpToComment hook to land on it.
         info
         |> PhoenixKit.ResourceLinks.url()
+        |> without_fragment()
         |> with_annotation(comment)
         |> Kernel.<>("#pk-comment-" <> comment.uuid)
 
@@ -2234,6 +2257,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   def comment_link(_comment), do: nil
+
+  defp without_fragment(url) when is_binary(url), do: url |> String.split("#", parts: 2) |> hd()
+  defp without_fragment(url), do: url
 
   @doc false
   # A file's comment is about one annotation on it: the page opens on it. Only
@@ -2510,7 +2536,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             <%= if @decoration_editing? do %>
               <.form
                 for={%{}}
-                id={"decoration-form-#{@myself}-#{@comment.uuid}"}
+                id={"decoration-form-#{@component_id}-#{@comment.uuid}"}
                 phx-submit="save_decoration"
                 phx-target={@myself}
                 class="flex items-center gap-2"
@@ -2575,7 +2601,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         <%= if @editing_uuid == @comment.uuid do %>
           <.form
             for={%{}}
-            id={"comment-edit-form-#{@myself}-#{@comment.uuid}"}
+            id={"comment-edit-form-#{@component_id}-#{@comment.uuid}"}
             phx-submit="save_edit"
             phx-target={@myself}
             class="mt-1 space-y-2"
@@ -3427,9 +3453,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # this composer's recorder, so the click itself asks for the microphone and
   # two open threads never both record), and the clip goes into this
   # component's own `:attachment` upload, staged, limited, cancelled and
-  # consumed exactly like a picked file. The id carries `@myself`, so two
-  # comment components on one page do not collide.
-  defp recorder_id(ctx, suffix), do: "audio-recorder-#{ctx.myself}-#{suffix}"
+  # consumed exactly like a picked file. The id carries the component's id,
+  # never its CID: a CID starts again at 1 in every LiveView, and a popup
+  # LiveView over a page made `start/2`'s document-wide dispatch start both
+  # recorders.
+  defp recorder_id(ctx, suffix) do
+    # AudioRecorder.start/2 interpolates this id directly into a CSS selector.
+    component = Base.url_encode64(to_string(ctx.id), padding: false)
+    "audio-recorder-#{component}-#{suffix}"
+  end
 
   # Five minutes: a voice note, not a podcast. The upload's own size limit
   # (the attachment setting) still applies on top.
@@ -3456,7 +3488,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     ~H"""
     <.form
       for={%{}}
-      id={"comment-composer-#{@ctx.myself}-#{@suffix}"}
+      id={"comment-composer-#{@ctx.id}-#{@suffix}"}
       phx-submit="add_comment"
       phx-change="update_comment_draft"
       phx-target={@ctx.myself}
@@ -3466,7 +3498,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
            the comment through the upload below, not written into its
            text (`PhoenixKitCommentsPasteFiles`). --%>
       <div
-        id={"comment-paste-#{@ctx.myself}-#{@suffix}"}
+        id={"comment-paste-#{@ctx.id}-#{@suffix}"}
         phx-hook="PhoenixKitCommentsPasteFiles"
         phx-target={@ctx.myself}
         data-upload-name="attachment"
@@ -3521,7 +3553,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           rows="1"
           phx-debounce="150"
           phx-hook={@ctx.mentions_on && "MentionInput"}
-          id={@ctx.mentions_on && "#{@ctx.id}-new-comment"}
+          id={"#{@ctx.id}-new-comment-#{@suffix}-#{@ctx[:draft_seq] || 0}"}
         ><%= @ctx.new_comment %></textarea>
         <p :if={@ctx.mentions_on} class="text-xs opacity-50">
           {gettext("Type @ to mention someone, # to link a record.")}
@@ -3763,11 +3795,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                       aria-label={gettext("Giphy picker")}
                       class="pk-giphy-picker p-3 shadow-lg bg-base-100 rounded-box border border-base-300"
                     >
-                      <label for={"giphy-search-#{@ctx.myself}-#{@suffix}"} class="sr-only">
+                      <label for={"giphy-search-#{@ctx.id}-#{@suffix}"} class="sr-only">
                         {gettext("Search GIFs")}
                       </label>
                       <input
-                        id={"giphy-search-#{@ctx.myself}-#{@suffix}"}
+                        id={"giphy-search-#{@ctx.id}-#{@suffix}"}
                         type="text"
                         name="q"
                         value={@ctx.giphy_query}
@@ -3828,7 +3860,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         </div>
 
         <div class="flex items-center gap-2">
+          <%!-- No Hide on an editor that is always open (composer_start_open):
+               it only emptied the box, which came straight back. A reply
+               box keeps it. --%>
           <button
+            :if={not (@ctx[:composer_start_open] == true and is_nil(@ctx[:reply_to]))}
             type="button"
             phx-click="cancel_new_comment"
             phx-target={@ctx.myself}
@@ -3876,7 +3912,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             {gettext("Sign in to post a comment.")}
           </div>
         <% end %>
-      <% @ctx.composer_open_at == @position and is_nil(@ctx.reply_to) -> %>
+      <% composer_open_here?(@ctx, @position) and is_nil(@ctx.reply_to) -> %>
         <div class={@spacing}>
           <.composer_form
             ctx={@ctx}
@@ -3903,6 +3939,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       <% true -> %>
     <% end %>
     """
+  end
+
+  # Open at this position: the one the reader opened, or — with
+  # `composer_start_open` and nothing opened — the main one.
+  defp composer_open_here?(ctx, position) do
+    ctx.composer_open_at == position or
+      (is_nil(ctx.composer_open_at) and ctx[:composer_start_open] == true and
+         position == primary_composer_position(ctx.composer_position))
   end
 
   # The single position that shows the "sign in to post" notice when the
@@ -4044,6 +4088,27 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   def __normalize_editor_mode__(_mode), do: @default_editor_mode
+
+  # The Leaf editor of the box the comment was written in: the main box at
+  # its position, or a reply's (which closes anyway, but is cleared all the
+  # same so a re-opened reply never shows the old text).
+  defp clear_draft_editor(%{assigns: %{leaf_editor?: true} = assigns}) do
+    editor_id =
+      case assigns[:reply_to] do
+        uuid when is_binary(uuid) ->
+          reply_editor_id(assigns.id, uuid)
+
+        _ ->
+          position =
+            assigns[:composer_open_at] || primary_composer_position(assigns.composer_position)
+
+          draft_editor_id(assigns.id, position)
+      end
+
+    send_update(Leaf, id: editor_id, action: :set_content, content: "")
+  end
+
+  defp clear_draft_editor(_socket), do: :ok
 
   # Draft editor id is position-scoped (:top / :bottom) so a
   # composer_position: :both embed never mounts two Leaf editors under

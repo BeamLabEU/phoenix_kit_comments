@@ -231,6 +231,76 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
     end
   end
 
+  describe "composer_start_open" do
+    # Max, 2026-11-24: the editor was not there until the box was clicked.
+    test "the editor is there from the first render, and back after a post",
+         %{conn: conn, scope: scope, resource_uuid: r} do
+      {:ok, view, html} = live(put_test_scope(conn, scope), "/en/test/thread/#{r}?open=1")
+
+      assert html =~ ~s(phx-submit="add_comment")
+      refute html =~ ~s(phx-click="open_composer")
+
+      view |> element("form[phx-submit='add_comment']") |> render_submit(%{"comment" => "first"})
+
+      html = render(view)
+      assert html =~ "first"
+      assert html =~ ~s(phx-submit="add_comment")
+    end
+
+    # A CID starts again at 1 in every LiveView: a host page and a popup
+    # LiveView over it each had `comment-composer-1-top`, and the browser
+    # kept one of the two forms (the task popup's editor never showed).
+    test "the composer's ids come from the component id, not its CID",
+         %{conn: conn, scope: scope, resource_uuid: r} do
+      {:ok, _view, html} = live(put_test_scope(conn, scope), "/en/test/thread/#{r}?open=1")
+      assert html =~ ~s(id="comment-composer-test-thread-top")
+      assert html =~ ~s(id="comment-paste-test-thread-top")
+    end
+
+    test "a post leaves an empty box: the textarea is a new element", %{
+      conn: conn,
+      scope: scope,
+      resource_uuid: r
+    } do
+      # The plain textarea (the rich editor's own test is in leaf_mentions_test).
+      PhoenixKit.Settings.update_boolean_setting_with_module(
+        "comments_rich_text",
+        false,
+        "comments"
+      )
+
+      {:ok, view, html} = live(put_test_scope(conn, scope), "/en/test/thread/#{r}?open=1")
+      [_, before] = Regex.run(~r/<textarea[^>]*name="comment"[^>]*id="([^"]+)"/s, html)
+
+      view |> element("form[phx-submit='add_comment']") |> render_submit(%{"comment" => "first"})
+
+      html = render(view)
+      [_, after_id] = Regex.run(~r/<textarea[^>]*name="comment"[^>]*id="([^"]+)"/s, html)
+      assert before != after_id
+      assert html =~ ~r/<textarea[^>]*id="#{after_id}"[^>]*>\s*<\/textarea>/
+    end
+
+    test "an always-open editor has no Hide button (it only emptied the box)",
+         %{conn: conn, scope: scope, resource_uuid: r} do
+      {:ok, _view, html} = live(put_test_scope(conn, scope), "/en/test/thread/#{r}?open=1")
+      refute html =~ ~s(phx-click="cancel_new_comment")
+
+      # A box opened by a click still has it.
+      {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(r))
+      html = view |> element("button[phx-click='open_composer']") |> render_click()
+      assert html =~ ~s(phx-click="cancel_new_comment")
+    end
+
+    test "without it, the box opens on a click as before", %{
+      conn: conn,
+      scope: scope,
+      resource_uuid: r
+    } do
+      {:ok, _view, html} = live(put_test_scope(conn, scope), host_path(r))
+      assert html =~ ~s(phx-click="open_composer")
+    end
+  end
+
   describe "the module kill switch" do
     test "an explicit enabled host attr still respects the module switch",
          %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
@@ -959,6 +1029,10 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       first = recorder_id(view, "#first-thread")
       second = recorder_id(view, "#second-thread")
       assert first != second
+      # The second component has a colon in its id. The recorder command
+      # must still resolve to that element with an unescaped #id selector.
+      assert second =~ ~r/^[a-zA-Z][a-zA-Z0-9_-]*$/
+      assert has_element?(view, "#second-thread ##{second}")
 
       # The Record menu item lives in the attach menu.
       for thread <- ["#first-thread", "#second-thread"] do

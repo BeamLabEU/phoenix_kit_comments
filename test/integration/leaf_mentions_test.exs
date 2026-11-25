@@ -83,6 +83,19 @@ defmodule PhoenixKitComments.Web.LeafMentionsTest do
     assert [%{content: "Straight in"}] = PhoenixKitComments.list_comments("test_resource", r)
   end
 
+  test "a post empties the rich editor (Max, 2026-11-25: the text stayed and Post could be pressed again)",
+       %{conn: conn, scope: scope, resource_uuid: r} do
+    {:ok, view, html} = live(put_test_scope(conn, scope), "/en/test/thread/#{r}?open=1")
+    editor_id = "pk-comments:test-thread:draft:top"
+    assert html =~ editor_id
+
+    leaf(view, {:leaf_changed, %{editor_id: editor_id, markdown: "Once", html: "", dirty: true}})
+    view |> element("form[phx-submit='add_comment']") |> render_submit(%{})
+
+    assert [%{content: "Once"}] = PhoenixKitComments.list_comments("test_resource", r)
+    assert_push_event(view, "leaf-command:" <> ^editor_id, %{action: "set_content", content: ""})
+  end
+
   test "@ is answered with core's token for a person", %{
     conn: conn,
     scope: scope,

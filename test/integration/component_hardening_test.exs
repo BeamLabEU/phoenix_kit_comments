@@ -30,6 +30,7 @@ defmodule PhoenixKitComments.ComponentHardeningTest.Host do
        user: session["user"],
        scope: session["scope"],
        resource_uuid: session["resource_uuid"],
+       composer_start_open: Map.get(session, "composer_start_open", false),
        composer_position: Map.get(session, "composer_position", :top),
        decorations: Map.get(session, "decorations", %{}),
        test_pid: session["test_pid"]
@@ -48,6 +49,7 @@ defmodule PhoenixKitComments.ComponentHardeningTest.Host do
         resource_uuid={@resource_uuid}
         current_user={@user}
         pk_scope={@scope}
+        composer_start_open={@composer_start_open}
         composer_position={@composer_position}
         comment_decorations={@decorations}
         decoration_keys={Map.keys(@decorations)}
@@ -416,6 +418,26 @@ defmodule PhoenixKitComments.ComponentHardeningTest do
       push(view, @thread, "reply_to", %{"id" => parent.uuid})
 
       refute has_element?(view, "form[phx-submit='add_comment']")
+    end
+
+    test "switching resources clears the always-open rich editor",
+         %{conn: conn, r: r} = ctx do
+      PhoenixKit.Settings.update_boolean_setting_with_module(
+        "comments_rich_text",
+        true,
+        "comments"
+      )
+
+      {:ok, view, _html} =
+        isolated(conn, ctx, %{"resource_uuid" => r, "composer_start_open" => true})
+
+      assert has_element?(view, "form[phx-submit='add_comment']")
+      render_click(view, "switch_resource", %{"uuid" => Ecto.UUID.generate()})
+
+      assert_push_event(view, "leaf-command:pk-comments:hardening-thread:draft:top", %{
+        action: "set_content",
+        content: ""
+      })
     end
 
     # A host that keeps the component id and points it at another record.
