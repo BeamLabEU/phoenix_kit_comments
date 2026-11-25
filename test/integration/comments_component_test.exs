@@ -1029,6 +1029,10 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       first = recorder_id(view, "#first-thread")
       second = recorder_id(view, "#second-thread")
       assert first != second
+      # The second component has a colon in its id. The recorder command
+      # must still resolve to that element with an unescaped #id selector.
+      assert second =~ ~r/^[a-zA-Z][a-zA-Z0-9_-]*$/
+      assert has_element?(view, "#second-thread ##{second}")
 
       # The Record menu item lives in the attach menu.
       for thread <- ["#first-thread", "#second-thread"] do

@@ -458,8 +458,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # tree, where it is not, and with it open neither composer rendered.
   defp reset_on_new_resource(%{assigns: %{loaded?: true}} = socket) do
     if changed?(socket, :resource_uuid) or changed?(socket, :resource_type) do
+      clear_draft_editor(socket)
+
       socket.assigns.uploads.attachment.entries
       |> Enum.reduce(socket, &cancel_upload(&2, :attachment, &1.ref))
+      |> update(:draft_seq, &(&1 + 1))
       |> assign(
         reply_to: nil,
         composer_open_at: nil,
@@ -1237,7 +1240,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                attrs
              ) do
           {:ok, comment} ->
-            sync_mentions(comment, socket.assigns.current_user.uuid)
+            PhoenixKitComments.sync_comment_mentions(comment, socket.assigns.current_user.uuid)
 
             # The editor is emptied: an always-open composer
             # (`composer_start_open`) is not unmounted by the close below,
@@ -1260,7 +1263,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             {:noreply,
              socket
              |> assign(:new_comment, "")
-             |> update(:draft_seq, &((&1 || 0) + 1))
+             |> update(:draft_seq, &(&1 + 1))
              |> assign(:reply_to, nil)
              |> assign(:composer_open_at, nil)
              |> assign(:giphy_selected, nil)
@@ -1566,7 +1569,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         # An edit that ADDS a mention pings; one that only reshuffles text
         # already mentioning someone pings nobody, because sync/4 returns
         # what is new and delivery is claimed once.
-        sync_mentions(updated, socket.assigns.current_user.uuid)
+        PhoenixKitComments.sync_comment_mentions(updated, socket.assigns.current_user.uuid)
 
         # Same host contract as create/delete: a host showing this
         # resource's latest comments inline must see the new text without
@@ -2004,7 +2007,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             name = "@" <> to_string(info[:title] || "")
 
             versions = %{
-              chip: mention_chip_html(token.uuid, info, people[token.uuid]),
+              chip:
+                mention_chip_html(
+                  token.uuid,
+                  info,
+                  people[token.uuid],
+                  PhoenixKitWeb.Components.Core.UserInfo
+                ),
               plain: name |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string(),
               url: URI.encode(name, &URI.char_unreserved?/1)
             }
@@ -2029,13 +2038,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     if String.contains?(content, nonce), do: chip_nonce(content), else: nonce
   end
 
-  # Core's one person chip (`UserInfo.person_chip/1`, core 3.8+) where the
+  # Core's one person chip (`UserInfo.person_chip/1`) where the
   # installed core has it, so a tag in a comment, a tag in a description
   # and a task's assignee look the same and the name sits on the text's
-  # baseline (Max, 2026-11-25). Called through `apply/3`: an older core has
+  # baseline (Max, 2026-11-25). Called through a module variable: an older core has
   # no such function, and this module's own chip stands in.
-  defp mention_chip_html(uuid, info, person) do
-    if core_person_chip?() do
+  defp mention_chip_html(uuid, info, person, user_info) do
+    if Code.ensure_loaded?(user_info) and function_exported?(user_info, :person_chip, 1) do
       chip_assigns = %{
         __changed__: nil,
         person: person,
@@ -2046,9 +2055,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         rest: %{}
       }
 
-      # Through a variable: an older core has no person_chip to compile against.
-      user_info = PhoenixKitWeb.Components.Core.UserInfo
-
       chip_assigns
       |> user_info.person_chip()
       |> Safe.to_iodata()
@@ -2056,11 +2062,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     else
       own_mention_chip_html(uuid, info, person)
     end
-  end
-
-  defp core_person_chip? do
-    Code.ensure_loaded?(PhoenixKitWeb.Components.Core.UserInfo) and
-      function_exported?(PhoenixKitWeb.Components.Core.UserInfo, :person_chip, 1)
   end
 
   defp own_mention_chip_html(uuid, info, person) do
@@ -2225,12 +2226,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   rescue
     _ -> content
   end
-
-  # Indexes the comment's mentions and delivers its @ pings — on the
-  # durable create, never on a draft keystroke. Wrapped so a mention
-  # failure can never cost someone their comment.
-  defp sync_mentions(comment, actor_uuid),
-    do: PhoenixKitComments.sync_comment_mentions(comment, actor_uuid)
 
   @doc false
   # Where a notification about this comment takes its reader: the page of the
@@ -3462,7 +3457,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # never its CID: a CID starts again at 1 in every LiveView, and a popup
   # LiveView over a page made `start/2`'s document-wide dispatch start both
   # recorders.
-  defp recorder_id(ctx, suffix), do: "audio-recorder-#{ctx.id}-#{suffix}"
+  defp recorder_id(ctx, suffix) do
+    # AudioRecorder.start/2 interpolates this id directly into a CSS selector.
+    component = Base.url_encode64(to_string(ctx.id), padding: false)
+    "audio-recorder-#{component}-#{suffix}"
+  end
 
   # Five minutes: a voice note, not a podcast. The upload's own size limit
   # (the attachment setting) still applies on top.
@@ -3942,9 +3941,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     """
   end
 
-  # The single position that shows the "sign in to post" notice when the
-  # viewer can't post — avoids rendering it twice for composer_position
-  # :both. First present position wins.
   # Open at this position: the one the reader opened, or — with
   # `composer_start_open` and nothing opened — the main one.
   defp composer_open_here?(ctx, position) do
@@ -3953,6 +3949,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
          position == primary_composer_position(ctx.composer_position))
   end
 
+  # The single position that shows the "sign in to post" notice when the
+  # viewer can't post — avoids rendering it twice for composer_position
+  # :both. First present position wins.
   defp primary_composer_position(:bottom), do: :bottom
   defp primary_composer_position(_), do: :top
 
@@ -4090,10 +4089,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   def __normalize_editor_mode__(_mode), do: @default_editor_mode
 
-  # Draft editor id is position-scoped (:top / :bottom) so a
-  # composer_position: :both embed never mounts two Leaf editors under
-  # the same DOM id. Only one position is open at a time, but the ids
-  # still differ so morphdom can't confuse them.
   # The Leaf editor of the box the comment was written in: the main box at
   # its position, or a reply's (which closes anyway, but is cleared all the
   # same so a re-opened reply never shows the old text).
@@ -4115,6 +4110,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp clear_draft_editor(_socket), do: :ok
 
+  # Draft editor id is position-scoped (:top / :bottom) so a
+  # composer_position: :both embed never mounts two Leaf editors under
+  # the same DOM id. Only one position is open at a time, but the ids
+  # still differ so morphdom can't confuse them.
   defp draft_editor_id(component_id, position),
     do: "pk-comments:#{component_id}:draft:#{position}"
 

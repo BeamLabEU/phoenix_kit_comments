@@ -1045,7 +1045,7 @@ defmodule PhoenixKitComments do
       )
 
       broadcast_change(deleted.resource_type, deleted.resource_uuid, :deleted)
-      forget_mentions(deleted)
+      forget_mentions(deleted, PhoenixKit.Mentions)
 
       Activity.log_comment({:ok, deleted}, "comments.comment_deleted", opts)
     end
@@ -1716,30 +1716,18 @@ defmodule PhoenixKitComments do
     end
   end
 
-  # Readers see a pending comment only now (`on_comment_published/3`), and
-  # so do the people it mentions: a pending comment pings nobody (its text
-  # would reach them before a moderator saw it), so its mentions are synced
-  # and notified at approval, as its author.
-  defp notify_published(approved, "pending") do
-    notify_resource_handler(
-      :on_comment_published,
-      approved.resource_type,
-      approved.resource_uuid,
-      approved
-    )
+  defp notify_published(approved, previous_status) do
+    if previous_status == "pending" do
+      notify_resource_handler(
+        :on_comment_published,
+        approved.resource_type,
+        approved.resource_uuid,
+        approved
+      )
+    end
 
     sync_comment_mentions(approved, approved.user_uuid)
   end
-
-  # From any other status (a comment held, then hidden, then approved): its
-  # mentions ping now if they never did. Whether a person was already told is
-  # what the mention rows say — a comment published before keeps rows whose
-  # ping was claimed, so they send nothing again; one never published has
-  # none yet, so its people are told once. The resource handler is told only
-  # on the pending path: a comment hidden after it was published already
-  # told its readers.
-  defp notify_published(approved, _previous_status),
-    do: sync_comment_mentions(approved, approved.user_uuid)
 
   @doc """
   Restores a soft-deleted comment.
@@ -1761,7 +1749,9 @@ defmodule PhoenixKitComments do
     end
 
     with {:ok, result} <- transition_locked(uuid, decide) do
-      after_transition(result, "comments.comment_restored", opts)
+      after_transition(result, "comments.comment_restored", opts, fn restored, _previous ->
+        sync_comment_mentions(restored, restored.user_uuid)
+      end)
     end
   end
 
@@ -2847,6 +2837,18 @@ defmodule PhoenixKitComments do
   # claimed once. Never fails the caller.
   @spec sync_comment_mentions(Comment.t(), String.t() | nil) :: :ok
   def sync_comment_mentions(%Comment{status: "published"} = comment, actor_uuid) do
+    with_locked_comment(comment.uuid, fn
+      %Comment{status: "published", content: content} = current when content == comment.content ->
+        deliver_mentions(current, actor_uuid)
+
+      _ ->
+        :ok
+    end)
+  end
+
+  def sync_comment_mentions(_comment, _actor_uuid), do: :ok
+
+  defp deliver_mentions(comment, actor_uuid) do
     case PhoenixKit.Mentions.sync(
            "comment",
            comment.uuid,
@@ -2854,7 +2856,7 @@ defmodule PhoenixKitComments do
            field: "content",
            actor_uuid: actor_uuid
          ) do
-      {:ok, new} ->
+      {:ok, [_ | _] = new} ->
         PhoenixKit.Mentions.notify(
           new,
           source_type: comment.resource_type,
@@ -2868,24 +2870,33 @@ defmodule PhoenixKitComments do
       _ ->
         :ok
     end
-  rescue
-    _ -> :ok
-  catch
-    :exit, _ -> :ok
   end
-
-  def sync_comment_mentions(_comment, _actor_uuid), do: :ok
 
   # A deleted comment stops being quoted in the notifications its mentions
   # sent (core's `Mentions.forget_source/2`, probed: older cores lack it).
   # Never fails the delete.
-  defp forget_mentions(%Comment{uuid: uuid}) do
-    mod = PhoenixKit.Mentions
-
+  defp forget_mentions(%Comment{uuid: uuid}, mod) do
     if Code.ensure_loaded?(mod) and function_exported?(mod, :forget_source, 2) do
       # Through a variable: an older core has no such function to compile against.
-      mod.forget_source("comment", uuid)
+      with_locked_comment(uuid, fn
+        %Comment{status: "deleted"} -> mod.forget_source("comment", uuid)
+        _ -> :ok
+      end)
     end
+
+    :ok
+  end
+
+  # Serialize delivery and cleanup with edits and moderation, including when
+  # the original write's callback ran after another transaction committed.
+  defp with_locked_comment(uuid, fun) do
+    repo().transaction(fn ->
+      Comment
+      |> where([c], c.uuid == ^uuid)
+      |> lock("FOR UPDATE")
+      |> repo().one()
+      |> fun.()
+    end)
 
     :ok
   rescue
