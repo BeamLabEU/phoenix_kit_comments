@@ -105,6 +105,38 @@ defmodule PhoenixKitComments.MentionModerationTest do
     assert [_] = mentions_of(ada)
   end
 
+  test "delayed sync skips an older body and a hidden comment",
+       %{author: author, ada: ada, resource_uuid: r} do
+    PhoenixKit.Settings.update_boolean_setting("comments_moderation", false)
+
+    {:ok, original} =
+      PhoenixKitComments.create_comment("test_resource", r, author.uuid, %{
+        content: "Original @[user:#{ada.uuid}|Ada]"
+      })
+
+    {:ok, edited} =
+      PhoenixKitComments.update_comment(
+        original,
+        %{content: "Edited @[user:#{ada.uuid}|Ada]"}
+      )
+
+    PhoenixKitComments.sync_comment_mentions(original, author.uuid)
+    assert mentions_of(ada) == []
+    {:ok, _hidden} = PhoenixKitComments.hide_comment(edited)
+    PhoenixKitComments.sync_comment_mentions(edited, author.uuid)
+    assert mentions_of(ada) == []
+    assert pings(ada) == 0
+  end
+
+  test "restoring directly to published delivers a previously held mention",
+       %{author: author, ada: ada, resource_uuid: r} do
+    comment = pending_mentioning(author, ada, r)
+    {:ok, deleted} = PhoenixKitComments.delete_comment(comment)
+    PhoenixKit.Settings.update_boolean_setting("comments_moderation", false)
+    {:ok, %{status: "published"}} = PhoenixKitComments.restore_comment(deleted)
+    assert pings(ada) == 1
+  end
+
   describe "the link of a record whose path has a fragment" do
     setup do
       previous = PhoenixKit.ResourceLinks.get_resource_path_templates()

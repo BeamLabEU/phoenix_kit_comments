@@ -86,7 +86,7 @@ defmodule PhoenixKitComments.Test.HostLive do
       <div :if={@second_thread} id="second-thread">
         <.live_component
           module={CommentsComponent}
-          id="test-thread-2"
+          id="test-thread:2"
           resource_type="test_resource"
           resource_uuid={@second_thread}
           current_user={@current_user}
