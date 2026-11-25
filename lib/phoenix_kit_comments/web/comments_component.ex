@@ -2187,31 +2187,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # Indexes the comment's mentions and delivers its @ pings — on the
   # durable create, never on a draft keystroke. Wrapped so a mention
   # failure can never cost someone their comment.
-  defp sync_mentions(comment, actor_uuid) do
-    case PhoenixKit.Mentions.sync(
-           "comment",
-           comment.uuid,
-           comment.content,
-           field: "content",
-           actor_uuid: actor_uuid
-         ) do
-      {:ok, new} ->
-        PhoenixKit.Mentions.notify(
-          new,
-          source_type: comment.resource_type,
-          source_uuid: comment.resource_uuid,
-          preview: comment.content,
-          link: comment_link(comment)
-        )
-
-      _ ->
-        :ok
-    end
-  rescue
-    _ -> :ok
-  catch
-    :exit, _ -> :ok
-  end
+  defp sync_mentions(comment, actor_uuid),
+    do: PhoenixKitComments.sync_comment_mentions(comment, actor_uuid)
 
   @doc false
   # Where a notification about this comment takes its reader: the page of the
@@ -2224,8 +2201,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   def comment_link(%{resource_type: type, resource_uuid: uuid} = comment) do
     case PhoenixKit.ResourceLinks.resolve([comment]) do
       %{{^type, ^uuid} => %{path: path} = info} when is_binary(path) and path != "" ->
+        # The record's own fragment goes (Projects' task path ends in
+        # `#task-<uuid>`): a URL has ONE fragment, and the comment's anchor
+        # must be all of it for the JumpToComment hook to land on it.
         info
         |> PhoenixKit.ResourceLinks.url()
+        |> without_fragment()
         |> with_annotation(comment)
         |> Kernel.<>("#pk-comment-" <> comment.uuid)
 
@@ -2239,6 +2220,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   def comment_link(_comment), do: nil
+
+  defp without_fragment(url) when is_binary(url), do: url |> String.split("#", parts: 2) |> hd()
+  defp without_fragment(url), do: url
 
   @doc false
   # A file's comment is about one annotation on it: the page opens on it. Only
