@@ -2046,8 +2046,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         rest: %{}
       }
 
-      PhoenixKitWeb.Components.Core.UserInfo
-      |> apply(:person_chip, [chip_assigns])
+      # Through a variable: an older core has no person_chip to compile against.
+      user_info = PhoenixKitWeb.Components.Core.UserInfo
+
+      chip_assigns
+      |> user_info.person_chip()
       |> Safe.to_iodata()
       |> IO.iodata_to_binary()
     else

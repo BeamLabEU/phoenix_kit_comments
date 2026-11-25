@@ -117,6 +117,7 @@ defmodule PhoenixKitComments do
   alias PhoenixKitComments.CommentDislike
   alias PhoenixKitComments.CommentLike
   alias PhoenixKitComments.CommentMedia
+  alias PhoenixKitComments.Web.CommentsComponent
 
   # Single-sourced from mix.exs at compile time; the behaviour test asserts
   # `version/0 == Mix.Project.config()[:version]`.
@@ -2859,7 +2860,7 @@ defmodule PhoenixKitComments do
           source_type: comment.resource_type,
           source_uuid: comment.resource_uuid,
           preview: comment.content,
-          link: PhoenixKitComments.Web.CommentsComponent.comment_link(comment)
+          link: CommentsComponent.comment_link(comment)
         )
 
         :ok
@@ -2882,7 +2883,8 @@ defmodule PhoenixKitComments do
     mod = PhoenixKit.Mentions
 
     if Code.ensure_loaded?(mod) and function_exported?(mod, :forget_source, 2) do
-      apply(mod, :forget_source, ["comment", uuid])
+      # Through a variable: an older core has no such function to compile against.
+      mod.forget_source("comment", uuid)
     end
 
     :ok
