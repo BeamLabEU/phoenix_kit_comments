@@ -65,6 +65,39 @@ defmodule PhoenixKitComments.MentionModerationTest do
     assert mentions_of(ada) == []
   end
 
+  defp pings(user) do
+    Repo.all(
+      from(e in PhoenixKit.Activity.Entry,
+        where: e.action == "mention.created" and e.target_uuid == ^user.uuid,
+        select: e.uuid
+      )
+    )
+    |> length()
+  end
+
+  test "held, then hidden, then approved: its mentions ping once, at that first publication",
+       %{author: author, ada: ada, resource_uuid: r} do
+    comment = pending_mentioning(author, ada, r)
+    {:ok, hidden} = PhoenixKitComments.hide_comment(comment)
+    assert hidden.status == "hidden"
+    assert pings(ada) == 0
+
+    {:ok, approved} = PhoenixKitComments.approve_comment(hidden)
+    assert approved.status == "published"
+    assert pings(ada) == 1
+  end
+
+  test "published, hidden, approved again: nobody is told a second time",
+       %{author: author, ada: ada, resource_uuid: r} do
+    comment = pending_mentioning(author, ada, r)
+    {:ok, approved} = PhoenixKitComments.approve_comment(comment)
+    assert pings(ada) == 1
+
+    {:ok, hidden} = PhoenixKitComments.hide_comment(approved)
+    {:ok, _} = PhoenixKitComments.approve_comment(hidden)
+    assert pings(ada) == 1
+  end
+
   test "approving a comment twice pings once", %{author: author, ada: ada, resource_uuid: r} do
     comment = pending_mentioning(author, ada, r)
     {:ok, _} = PhoenixKitComments.approve_comment(comment)

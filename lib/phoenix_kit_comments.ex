@@ -1730,7 +1730,15 @@ defmodule PhoenixKitComments do
     sync_comment_mentions(approved, approved.user_uuid)
   end
 
-  defp notify_published(_approved, _previous_status), do: :ok
+  # From any other status (a comment held, then hidden, then approved): its
+  # mentions ping now if they never did. Whether a person was already told is
+  # what the mention rows say — a comment published before keeps rows whose
+  # ping was claimed, so they send nothing again; one never published has
+  # none yet, so its people are told once. The resource handler is told only
+  # on the pending path: a comment hidden after it was published already
+  # told its readers.
+  defp notify_published(approved, _previous_status),
+    do: sync_comment_mentions(approved, approved.user_uuid)
 
   @doc """
   Restores a soft-deleted comment.
