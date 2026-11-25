@@ -989,11 +989,18 @@ defmodule PhoenixKitComments do
     # for content edits because the caller may pass a bare struct from
     # `get_comment/1`.
     result =
-      comment
-      |> ensure_media_loaded()
-      |> Comment.update_changeset(attrs)
-      |> Comment.put_status(server_status(attrs))
-      |> repo().update()
+      repo().transaction(fn ->
+        comment
+        |> ensure_media_loaded()
+        |> with_stored_mark()
+        |> Comment.update_changeset(attrs)
+        |> Comment.put_status(server_status(attrs))
+        |> repo().update()
+        |> case do
+          {:ok, updated} -> updated
+          {:error, reason} -> repo().rollback(reason)
+        end
+      end)
       |> Activity.log_comment("comments.comment_updated", opts)
 
     # An edit — of the body or of the status (approve/hide/restore) —
@@ -1007,6 +1014,35 @@ defmodule PhoenixKitComments do
       {:ok, updated}
     end
   end
+
+  # The publication mark as the ROW holds it, under the row lock the status
+  # transitions take too: a caller holding a struct read before an approval
+  # wrote its stale mark back with any metadata edit, and a later hide and
+  # approve announced the comment a second time (kimi, 2026-11-25). The
+  # changeset keeps the mark of the data it is given, so the data carries
+  # the stored one.
+  defp with_stored_mark(%Comment{uuid: uuid, metadata: metadata} = comment)
+       when is_binary(uuid) do
+    key = Comment.published_key()
+
+    stored =
+      repo().one(
+        from(c in Comment,
+          where: c.uuid == ^uuid,
+          lock: "FOR UPDATE",
+          select: fragment("?->?", c.metadata, ^key)
+        )
+      )
+
+    metadata = metadata || %{}
+
+    case stored do
+      mark when is_boolean(mark) -> %{comment | metadata: Map.put(metadata, key, mark)}
+      _ -> %{comment | metadata: Map.delete(metadata, key)}
+    end
+  end
+
+  defp with_stored_mark(comment), do: comment
 
   # `:status` only as an atom key, which only server code writes.
   defp server_status(attrs), do: Map.get(attrs, :status)
@@ -1736,6 +1772,16 @@ defmodule PhoenixKitComments do
     sync_comment_mentions(approved, approved.user_uuid)
   end
 
+  # A restore that publishes is a publication like an approval (kimi, zai,
+  # 2026-11-25): a comment held, deleted, then restored once moderation was
+  # switched off reaches its readers only now. `notify_published/2` tells
+  # the handler on the first publication only; a restore back to `pending`
+  # tells nobody yet.
+  defp notify_restored(%Comment{status: "published"} = restored, previous),
+    do: notify_published(restored, previous)
+
+  defp notify_restored(_restored, _previous), do: :ok
+
   @doc """
   Restores a soft-deleted comment.
 
@@ -1756,7 +1802,7 @@ defmodule PhoenixKitComments do
     end
 
     with {:ok, result} <- transition_locked(uuid, decide) do
-      after_transition(result, "comments.comment_restored", opts)
+      after_transition(result, "comments.comment_restored", opts, &notify_restored/2)
     end
   end
 
