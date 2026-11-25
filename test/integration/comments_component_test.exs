@@ -257,6 +257,29 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       assert html =~ ~s(id="comment-paste-test-thread-top")
     end
 
+    test "a post leaves an empty box: the textarea is a new element", %{
+      conn: conn,
+      scope: scope,
+      resource_uuid: r
+    } do
+      # The plain textarea (the rich editor's own test is in leaf_mentions_test).
+      PhoenixKit.Settings.update_boolean_setting_with_module(
+        "comments_rich_text",
+        false,
+        "comments"
+      )
+
+      {:ok, view, html} = live(put_test_scope(conn, scope), "/en/test/thread/#{r}?open=1")
+      [_, before] = Regex.run(~r/<textarea[^>]*name="comment"[^>]*id="([^"]+)"/s, html)
+
+      view |> element("form[phx-submit='add_comment']") |> render_submit(%{"comment" => "first"})
+
+      html = render(view)
+      [_, after_id] = Regex.run(~r/<textarea[^>]*name="comment"[^>]*id="([^"]+)"/s, html)
+      assert before != after_id
+      assert html =~ ~r/<textarea[^>]*id="#{after_id}"[^>]*>\s*<\/textarea>/
+    end
+
     test "an always-open editor has no Hide button (it only emptied the box)",
          %{conn: conn, scope: scope, resource_uuid: r} do
       {:ok, _view, html} = live(put_test_scope(conn, scope), "/en/test/thread/#{r}?open=1")

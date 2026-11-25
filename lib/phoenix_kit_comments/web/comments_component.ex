@@ -357,6 +357,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # :bottom, or :both. Bottom is off by default.
       |> assign_new(:composer_position, fn -> :top end)
       |> assign_new(:composer_start_open, fn -> false end)
+      |> assign_new(:draft_seq, fn -> 0 end)
       # Which way the comments run: `:auto` (default) puts a new comment
       # next to the box it was written in — a box on top lists the newest
       # first, a box at the bottom the oldest first (a chat), a box at both
@@ -1238,8 +1239,14 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           {:ok, comment} ->
             sync_mentions(comment, socket.assigns.current_user.uuid)
 
-            # No reset of the Leaf editor here: closing the composer below
-            # unmounts it, and the next one opens on the cleared draft.
+            # The editor is emptied: an always-open composer
+            # (`composer_start_open`) is not unmounted by the close below,
+            # and Leaf keeps what it shows until told — Max, 2026-11-25:
+            # the posted text stayed in the box and Post could be pressed
+            # again. A textarea is re-keyed instead (`draft_seq`): LiveView
+            # does not overwrite a focused field's value.
+            clear_draft_editor(socket)
+
             send(
               self(),
               {:comments_updated,
@@ -1253,6 +1260,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             {:noreply,
              socket
              |> assign(:new_comment, "")
+             |> update(:draft_seq, &((&1 || 0) + 1))
              |> assign(:reply_to, nil)
              |> assign(:composer_open_at, nil)
              |> assign(:giphy_selected, nil)
@@ -3512,7 +3520,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           rows="1"
           phx-debounce="150"
           phx-hook={@ctx.mentions_on && "MentionInput"}
-          id={@ctx.mentions_on && "#{@ctx.id}-new-comment"}
+          id={"#{@ctx.id}-new-comment-#{@suffix}-#{@ctx[:draft_seq] || 0}"}
         ><%= @ctx.new_comment %></textarea>
         <p :if={@ctx.mentions_on} class="text-xs opacity-50">
           {gettext("Type @ to mention someone, # to link a record.")}
@@ -4052,6 +4060,27 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # composer_position: :both embed never mounts two Leaf editors under
   # the same DOM id. Only one position is open at a time, but the ids
   # still differ so morphdom can't confuse them.
+  # The Leaf editor of the box the comment was written in: the main box at
+  # its position, or a reply's (which closes anyway, but is cleared all the
+  # same so a re-opened reply never shows the old text).
+  defp clear_draft_editor(%{assigns: %{leaf_editor?: true} = assigns}) do
+    editor_id =
+      case assigns[:reply_to] do
+        uuid when is_binary(uuid) ->
+          reply_editor_id(assigns.id, uuid)
+
+        _ ->
+          position =
+            assigns[:composer_open_at] || primary_composer_position(assigns.composer_position)
+
+          draft_editor_id(assigns.id, position)
+      end
+
+    send_update(Leaf, id: editor_id, action: :set_content, content: "")
+  end
+
+  defp clear_draft_editor(_socket), do: :ok
+
   defp draft_editor_id(component_id, position),
     do: "pk-comments:#{component_id}:draft:#{position}"
 
