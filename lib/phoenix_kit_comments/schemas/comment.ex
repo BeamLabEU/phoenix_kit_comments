@@ -204,6 +204,7 @@ defmodule PhoenixKitComments.Comment do
     # back as `{:error, changeset}`.
     |> foreign_key_constraint(:user_uuid, name: :fk_comments_user_uuid)
     |> foreign_key_constraint(:parent_uuid, name: :fk_comments_parent)
+    |> mark_publication(nil)
   end
 
   @doc """
@@ -223,6 +224,59 @@ defmodule PhoenixKitComments.Comment do
     comment
     |> cast(attrs, [:content, :metadata])
     |> validate_common(opts)
+    |> keep_publication_mark()
+  end
+
+  # `metadata["published_once"]`: whether the comment has ever been
+  # published. Server-owned, like the status: the readers and the resource
+  # handler are told about a comment once, on its FIRST publication, whatever
+  # path it took (pending → published, pending → hidden → published), and
+  # never again when a moderator hides and re-approves it. A comment born
+  # before the key existed carries none (`first_publication?/1`).
+  @published_key "published_once"
+
+  @doc "The metadata key that records whether a comment was ever published."
+  @spec published_key() :: String.t()
+  def published_key, do: @published_key
+
+  @doc """
+  Is publishing `comment` (as stored, before the change) its first
+  publication? A comment carrying the mark answers by it; one from before the
+  mark existed counts as first only when it is still pending (the old rule).
+  """
+  @spec first_publication?(%__MODULE__{}) :: boolean()
+  def first_publication?(%__MODULE__{metadata: %{@published_key => true}}), do: false
+  def first_publication?(%__MODULE__{metadata: %{@published_key => false}}), do: true
+  def first_publication?(%__MODULE__{status: "pending"}), do: true
+  def first_publication?(%__MODULE__{}), do: false
+
+  # A client may send any `metadata`: the mark is put back as stored.
+  defp keep_publication_mark(%Ecto.Changeset{changes: %{metadata: new}, data: data} = cs)
+       when is_map(new) do
+    stored = Map.get(data.metadata || %{}, @published_key)
+
+    new =
+      if is_nil(stored),
+        do: Map.delete(new, @published_key),
+        else: Map.put(new, @published_key, stored)
+
+    put_change(cs, :metadata, new)
+  end
+
+  defp keep_publication_mark(cs), do: cs
+
+  # On insert the mark follows the status the row is born with; a later
+  # publication sets it (`put_status/2`), and nothing ever clears it.
+  defp mark_publication(%Ecto.Changeset{} = cs, status) do
+    status = status || get_field(cs, :status) || "published"
+    insert? = match?(%{__meta__: %{state: :built}}, cs.data)
+    metadata = get_field(cs, :metadata) || %{}
+
+    cond do
+      status == "published" -> put_change(cs, :metadata, Map.put(metadata, @published_key, true))
+      insert? -> put_change(cs, :metadata, Map.put(metadata, @published_key, false))
+      true -> cs
+    end
   end
 
   @statuses ["published", "hidden", "deleted", "pending"]
@@ -243,6 +297,7 @@ defmodule PhoenixKitComments.Comment do
     changeset
     |> put_change(:status, status)
     |> validate_inclusion(:status, @statuses)
+    |> mark_publication(status)
   end
 
   defp validate_common(changeset, opts) do

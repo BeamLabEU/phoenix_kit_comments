@@ -1074,12 +1074,12 @@ defmodule PhoenixKitComments do
 
   defp apply_transition(current, {:change, attrs}) do
     case update_comment(current, attrs, log: false, broadcast: false) do
-      {:ok, updated} -> {:changed, updated, current.status}
+      {:ok, updated} -> {:changed, updated, current}
       {:error, reason} -> repo().rollback(reason)
     end
   end
 
-  defp apply_transition(current, :unchanged), do: {:unchanged, current, current.status}
+  defp apply_transition(current, :unchanged), do: {:unchanged, current, current}
   defp apply_transition(_current, {:error, reason}), do: repo().rollback(reason)
 
   @doc """
@@ -1716,30 +1716,25 @@ defmodule PhoenixKitComments do
     end
   end
 
-  # Readers see a pending comment only now (`on_comment_published/3`), and
-  # so do the people it mentions: a pending comment pings nobody (its text
-  # would reach them before a moderator saw it), so its mentions are synced
-  # and notified at approval, as its author.
-  defp notify_published(approved, "pending") do
-    notify_resource_handler(
-      :on_comment_published,
-      approved.resource_type,
-      approved.resource_uuid,
-      approved
-    )
+  # Readers see the comment only now, so the resource handler is told
+  # (`on_comment_published/3`) and its mentions ping — on its FIRST
+  # publication only, whatever the path (pending → published, or held, then
+  # hidden, then approved). A comment hidden after it was published and
+  # approved again told its readers the first time (`Comment.first_publication?/1`,
+  # the mark `put_status/2` keeps). The mention rows are a second guard: a
+  # person already pinged is never pinged again.
+  defp notify_published(approved, %Comment{} = previous) do
+    if Comment.first_publication?(previous) do
+      notify_resource_handler(
+        :on_comment_published,
+        approved.resource_type,
+        approved.resource_uuid,
+        approved
+      )
+    end
 
     sync_comment_mentions(approved, approved.user_uuid)
   end
-
-  # From any other status (a comment held, then hidden, then approved): its
-  # mentions ping now if they never did. Whether a person was already told is
-  # what the mention rows say — a comment published before keeps rows whose
-  # ping was claimed, so they send nothing again; one never published has
-  # none yet, so its people are told once. The resource handler is told only
-  # on the pending path: a comment hidden after it was published already
-  # told its readers.
-  defp notify_published(approved, _previous_status),
-    do: sync_comment_mentions(approved, approved.user_uuid)
 
   @doc """
   Restores a soft-deleted comment.
