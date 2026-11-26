@@ -1591,6 +1591,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
          |> load_comments()
          |> put_notice({:comment, comment.uuid}, :info, gettext("Comment updated"))}
 
+      {:error, :not_found} ->
+        {:noreply,
+         socket
+         |> assign(:editing_uuid, nil)
+         |> assign(:editing_content, "")
+         |> load_comments()
+         |> load_reaction_state()
+         |> put_notice(:thread, :error, gettext("Comment not found"))}
+
       {:error, %Ecto.Changeset{} = changeset} ->
         message = changeset_error_message(changeset, gettext("Failed to update comment"))
         {:noreply, put_notice(socket, :edit, :error, message)}

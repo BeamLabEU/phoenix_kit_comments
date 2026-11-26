@@ -58,6 +58,7 @@ defmodule PhoenixKitComments.Integration.PublishedMarkTest do
     {:ok, edited} =
       PhoenixKitComments.update_comment(comment, %{"metadata" => %{"note" => "edited"}})
 
+    assert edited.status == "published"
     assert edited.metadata["note"] == "edited"
 
     assert edited.metadata[key] == true,
@@ -70,21 +71,44 @@ defmodule PhoenixKitComments.Integration.PublishedMarkTest do
     refute_received {:published, _, _, _}
   end
 
-  test "a stale edit then hide + approve announces the comment once only", %{author: author} do
-    {:ok, comment} =
+  test "an edit reports a comment removed since it was read", %{author: author} do
+    comment = comment_fixture(author)
+    Repo.delete!(comment)
+    assert {:error, :not_found} = PhoenixKitComments.update_comment(comment, %{content: "edited"})
+  end
+
+  test "a server-side edit that publishes calls the handler once", %{author: author} do
+    {:ok, held} =
       PhoenixKitComments.create_comment("mark_probe", Ecto.UUID.generate(), author.uuid, %{
-        "content" => "held for review",
+        content: "held",
         status: "pending"
       })
 
-    {:ok, _approved} = PhoenixKitComments.approve_comment(comment)
-    assert_received {:published, "mark_probe", _, _}
-
-    {:ok, _} = PhoenixKitComments.update_comment(comment, %{"metadata" => %{"note" => "x"}})
-    {:ok, hidden} = PhoenixKitComments.hide_comment(Repo.get!(Comment, comment.uuid))
-    {:ok, _} = PhoenixKitComments.approve_comment(hidden)
-
+    assert {:ok, published} = PhoenixKitComments.update_comment(held, %{status: "published"})
+    assert published.status == "published"
+    assert_received {:published, _, _, _}
+    assert {:ok, _} = PhoenixKitComments.update_comment(held, %{status: "published"})
     refute_received {:published, _, _, _}
+  end
+
+  test "metadata replacements and patches preserve publication history", %{author: author} do
+    comment = comment_fixture(author)
+    key = Comment.published_key()
+
+    assert {:ok, edited} = PhoenixKitComments.update_comment(comment, %{"metadata" => nil})
+    assert edited.metadata == %{key => true}
+
+    assert {:ok, patched} =
+             PhoenixKitComments.update_metadata(comment, %{published_once: false, slug: "old"})
+
+    assert patched.metadata == %{key => true, "slug" => "old"}
+
+    assert PhoenixKitComments.merge_metadata(comment.resource_type, %{"slug" => "old"}, %{
+             key => false,
+             "slug" => "new"
+           }) == 1
+
+    assert Repo.get!(Comment, comment.uuid).metadata == %{key => true, "slug" => "new"}
   end
 
   # Rows from before the mark existed carry none (zai, 2026-11-26): their

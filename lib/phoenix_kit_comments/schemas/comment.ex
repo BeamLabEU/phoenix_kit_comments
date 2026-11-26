@@ -239,6 +239,9 @@ defmodule PhoenixKitComments.Comment do
   @spec published_key() :: String.t()
   def published_key, do: @published_key
 
+  @doc false
+  def host_metadata(metadata), do: Map.drop(metadata, [@published_key, :published_once])
+
   @doc """
   Is publishing `comment` (as stored, before the change) its first
   publication? A comment carrying the mark answers by it; one from before the
@@ -252,14 +255,8 @@ defmodule PhoenixKitComments.Comment do
 
   # A client may send any `metadata`: the mark is put back as stored.
   defp keep_publication_mark(%Ecto.Changeset{changes: %{metadata: new}, data: data} = cs)
-       when is_map(new) do
-    stored = Map.get(data.metadata || %{}, @published_key)
-
-    new =
-      if is_nil(stored),
-        do: Map.delete(new, @published_key),
-        else: Map.put(new, @published_key, stored)
-
+       when is_map(new) or is_nil(new) do
+    new = Map.merge(host_metadata(new || %{}), Map.take(data.metadata || %{}, [@published_key]))
     put_change(cs, :metadata, new)
   end
 
@@ -271,6 +268,7 @@ defmodule PhoenixKitComments.Comment do
     status = status || get_field(cs, :status) || "published"
     insert? = match?(%{__meta__: %{state: :built}}, cs.data)
     metadata = get_field(cs, :metadata) || %{}
+    metadata = if insert?, do: host_metadata(metadata), else: metadata
 
     cond do
       status == "published" ->
