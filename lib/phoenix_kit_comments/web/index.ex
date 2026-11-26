@@ -663,10 +663,12 @@ defmodule PhoenixKitComments.Web.Index do
     "inline-flex items-center gap-1.5 max-w-[240px] py-0.5 pl-1 pr-2.5 rounded-full bg-base-200 hover:bg-base-300 transition-colors no-underline align-middle"
   end
 
-  # The chip's inner content. The thumbnail is a CSS background rather than an
-  # `<img onerror=…>`: inline JS is blocked by a strict `script-src` CSP (and
-  # AGENTS.md mandates hooks register on `window.PhoenixKitHooks`), and a missing
-  # background image simply falls back to the placeholder colour — no handler.
+  # The chip's inner content. The thumbnail is an `<img>` in a round frame,
+  # placed by the handler's `:thumb_style` (a person's avatar crop) or
+  # covering it; a picture that fails is removed by core's declarative
+  # `data-pk-img-error` listener (no inline handler, which a strict
+  # `script-src` CSP blocks), leaving the frame's placeholder colour. It was
+  # a CSS background, which no crop can place (Max, 2026-11-26).
   attr(:comment, :map, required: true)
   attr(:info, :map, required: true)
 
@@ -674,9 +676,14 @@ defmodule PhoenixKitComments.Web.Index do
     ~H"""
     <span
       :if={@info[:thumb_url]}
-      class="w-5 h-5 rounded-full bg-base-300 bg-cover bg-center shrink-0"
-      style={"background-image: url('#{@info.thumb_url}')"}
-    />
+      class="relative w-5 h-5 overflow-hidden rounded-full bg-base-300 shrink-0"
+    ><img
+        src={@info.thumb_url}
+        alt=""
+        style={@info[:thumb_style]}
+        class={unless @info[:thumb_style], do: "absolute inset-0 h-full w-full object-cover"}
+        data-pk-img-error="remove"
+      /></span>
     <span :if={!@info[:thumb_url]} class="badge badge-ghost badge-xs shrink-0">
       {humanize_resource_type(@comment.resource_type)}
     </span>

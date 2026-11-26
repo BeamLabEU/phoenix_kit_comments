@@ -53,7 +53,9 @@ defmodule PhoenixKitComments.Integration.MentionChipsTest do
     # No block element inside the chip: a <div> there closes the paragraph
     # and puts the chip on a line of its own.
     [_, chip] = Regex.run(~r/data-mention-user="[^"]*"(.*?)Anna Kask/s, html)
-    refute chip =~ "<img"
+    # The face follows the rule of every face (core `person_chip`, Max
+    # 2026-11-26): Anna has only an email, so Gravatar over her letters.
+    assert chip =~ "gravatar.com/avatar/"
     assert chip =~ "AK"
     refute chip =~ "<div"
   end
