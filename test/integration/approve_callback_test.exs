@@ -36,10 +36,14 @@ defmodule PhoenixKitComments.Integration.ApproveCallbackTest do
     %{author: user_fixture()}
   end
 
-  defp comment_with_status(author, resource_uuid, status) do
+  # Born `born` (as moderation would make it), then moved to `status` in the
+  # database. Whether a comment was ever published is part of what it is: a
+  # comment born pending and one born published differ at approval.
+  defp comment_with_status(author, resource_uuid, status, born \\ "pending") do
     {:ok, comment} =
       PhoenixKitComments.create_comment("approve_probe", resource_uuid, author.uuid, %{
-        content: "a comment"
+        content: "a comment",
+        status: born
       })
 
     {1, _} =
@@ -63,7 +67,8 @@ defmodule PhoenixKitComments.Integration.ApproveCallbackTest do
 
   test "bulk approval tells the handler for each pending comment", %{author: author} do
     a = comment_with_status(author, Ecto.UUID.generate(), "pending")
-    b = comment_with_status(author, Ecto.UUID.generate(), "hidden")
+    # Published once, hidden since: its readers were told the first time.
+    b = comment_with_status(author, Ecto.UUID.generate(), "hidden", "published")
 
     PhoenixKitComments.bulk_approve([a.uuid, b.uuid])
 
@@ -85,8 +90,8 @@ defmodule PhoenixKitComments.Integration.ApproveCallbackTest do
   test "approval uses the stored pending status even if the struct says published", %{
     author: author
   } do
-    comment = comment_with_status(author, Ecto.UUID.generate(), "published")
-    Repo.update_all(from(c in Comment, where: c.uuid == ^comment.uuid), set: [status: "pending"])
+    pending = comment_with_status(author, Ecto.UUID.generate(), "pending")
+    comment = %{pending | status: "published"}
 
     assert {:ok, approved} = PhoenixKitComments.approve_comment(comment)
     assert approved.status == "published"
@@ -129,5 +134,92 @@ defmodule PhoenixKitComments.Integration.ApproveCallbackTest do
     PhoenixKitComments.ActivityLogAssertions.refute_activity_logged("comments.comment_approved",
       resource_uuid: comment.uuid
     )
+  end
+
+  describe "the first publication, whatever the path" do
+    test "held, then hidden, then approved tells the handler once", %{author: author} do
+      comment = comment_with_status(author, Ecto.UUID.generate(), "pending")
+      {:ok, hidden} = PhoenixKitComments.hide_comment(comment)
+
+      {:ok, _} = PhoenixKitComments.approve_comment(hidden)
+      uuid = comment.uuid
+      assert_received {:published, _, _, ^uuid}
+
+      {:ok, again} = PhoenixKitComments.hide_comment(Repo.get!(Comment, uuid))
+      {:ok, _} = PhoenixKitComments.approve_comment(again)
+      refute_received {:published, _, _, _}
+    end
+
+    test "published, hidden, approved again is not news", %{author: author} do
+      comment = comment_with_status(author, Ecto.UUID.generate(), "published", "published")
+      {:ok, hidden} = PhoenixKitComments.hide_comment(comment)
+
+      {:ok, _} = PhoenixKitComments.approve_comment(hidden)
+      refute_received {:published, _, _, _}
+    end
+
+    test "a comment born published is never announced by an approval", %{author: author} do
+      comment = comment_with_status(author, Ecto.UUID.generate(), "pending", "published")
+
+      {:ok, _} = PhoenixKitComments.approve_comment(comment)
+      refute_received {:published, _, _, _}
+    end
+
+    test "the mark is the server's: a client's metadata cannot reset it", %{author: author} do
+      key = Comment.published_key()
+      comment = comment_with_status(author, Ecto.UUID.generate(), "published", "published")
+      assert comment.metadata[key] == true
+
+      {:ok, edited} =
+        PhoenixKitComments.update_comment(comment, %{"metadata" => %{key => false, "x" => "y"}})
+
+      assert edited.metadata[key] == true
+      assert edited.metadata["x"] == "y"
+
+      {:ok, forged} =
+        PhoenixKitComments.create_comment("approve_probe", Ecto.UUID.generate(), author.uuid, %{
+          "content" => "forged",
+          "metadata" => %{key => true}
+        })
+
+      # Born published (moderation off): true by the server's own reckoning;
+      # born pending, the forged `true` is replaced.
+      assert forged.metadata[key] == (forged.status == "published")
+
+      {:ok, held} =
+        PhoenixKitComments.create_comment("approve_probe", Ecto.UUID.generate(), author.uuid, %{
+          "content" => "held",
+          "metadata" => %{key => true},
+          status: "pending"
+        })
+
+      assert held.metadata[key] == false
+    end
+
+    test "a comment from before the mark: pending counts as first, hidden does not", %{
+      author: author
+    } do
+      key = Comment.published_key()
+
+      legacy = fn status ->
+        c = comment_with_status(author, Ecto.UUID.generate(), status, "pending")
+
+        {1, _} =
+          Repo.update_all(from(x in Comment, where: x.uuid == ^c.uuid),
+            set: [metadata: Map.delete(c.metadata, key)]
+          )
+
+        Repo.get!(Comment, c.uuid)
+      end
+
+      pending = legacy.("pending")
+      {:ok, _} = PhoenixKitComments.approve_comment(pending)
+      pending_uuid = pending.uuid
+      assert_received {:published, _, _, ^pending_uuid}
+
+      hidden = legacy.("hidden")
+      {:ok, _} = PhoenixKitComments.approve_comment(hidden)
+      refute_received {:published, _, _, _}
+    end
   end
 end

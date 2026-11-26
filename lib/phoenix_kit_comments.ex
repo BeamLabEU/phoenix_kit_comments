@@ -50,9 +50,8 @@ defmodule PhoenixKitComments do
 
   * `on_comment_created(resource_type, resource_uuid, comment)` — new comment
     (check `comment.parent_uuid` to distinguish a reply).
-  * `on_comment_published(resource_type, resource_uuid, comment)` — a `pending`
-    comment was approved and is now visible (fires once; a comment published on
-    creation fires `on_comment_created` instead).
+  * `on_comment_published(resource_type, resource_uuid, comment)` — a previously unpublished
+    comment became visible for the first time after creation.
   * `on_comment_deleted(resource_type, resource_uuid, comment)` — comment removed.
   * `on_comment_liked(resource_type, resource_uuid, %{comment: comment, liker_uuid: uuid})`
   * `on_comment_unliked(resource_type, resource_uuid, %{comment: comment, liker_uuid: uuid})`
@@ -980,42 +979,26 @@ defmodule PhoenixKitComments do
     `:log` and the actor keys are forwarded to the activity log.
   """
   @spec update_comment(Comment.t(), map(), keyword()) ::
-          {:ok, Comment.t()} | {:error, Ecto.Changeset.t()}
+          {:ok, Comment.t()} | {:error, :not_found | Ecto.Changeset.t()}
   def update_comment(%Comment{} = comment, attrs, opts \\ []) do
-    # Preload :media so the changeset can infer "has media" when content
-    # is being changed. Status-only updates skip the content-or-media
-    # check entirely (see `Comment.changeset/3`), so this is a no-op on
-    # moderation paths if `:media` is already loaded; but we ensure it
-    # for content edits because the caller may pass a bare struct from
-    # `get_comment/1`.
-    result =
-      comment
-      |> ensure_media_loaded()
-      |> Comment.update_changeset(attrs)
-      |> Comment.put_status(server_status(attrs))
-      |> repo().update()
-      |> Activity.log_comment("comments.comment_updated", opts)
+    with {:ok, {:changed, updated, previous}} <-
+           transition_locked(comment.uuid, fn _ -> {:change, attrs} end) do
+      preloads =
+        Enum.filter(
+          Comment.__schema__(:associations),
+          &Ecto.assoc_loaded?(Map.fetch!(comment, &1))
+        )
 
-    # An edit — of the body or of the status (approve/hide/restore) —
-    # changes what a subscriber shows just as much as a create or delete
-    # does; before this every other session, and any host preview, kept
-    # the old text until a reload.
-    with {:ok, updated} <- result do
-      if Keyword.get(opts, :broadcast, true),
-        do: broadcast_change(updated.resource_type, updated.resource_uuid, :updated)
+      updated = Map.merge(updated, Map.take(comment, preloads))
 
-      {:ok, updated}
+      after_transition(
+        {:changed, updated, previous},
+        "comments.comment_updated",
+        opts,
+        &notify_published/2
+      )
     end
   end
-
-  # `:status` only as an atom key, which only server code writes.
-  defp server_status(attrs), do: Map.get(attrs, :status)
-
-  defp ensure_media_loaded(%Comment{media: %Ecto.Association.NotLoaded{}} = comment) do
-    repo().preload(comment, :media)
-  end
-
-  defp ensure_media_loaded(%Comment{} = comment), do: comment
 
   @doc """
   Soft-deletes a comment by setting its status to "deleted".
@@ -1057,7 +1040,7 @@ defmodule PhoenixKitComments do
   # answers `{:change, attrs}`, `:unchanged` (already in the target state —
   # nothing to write, nothing to announce) or `{:error, reason}`.
   #
-  # Returns `{:ok, {:changed | :unchanged, comment, previous_status}}`. The
+  # Returns `{:ok, {:changed | :unchanged, comment, previous_comment}}`. The
   # caller runs the side effects (callbacks, broadcast, audit row) only for
   # `:changed`, after the transaction has released the lock.
   defp transition_locked(uuid, decide) do
@@ -1073,13 +1056,19 @@ defmodule PhoenixKitComments do
   end
 
   defp apply_transition(current, {:change, attrs}) do
-    case update_comment(current, attrs, log: false, broadcast: false) do
-      {:ok, updated} -> {:changed, updated, current.status}
+    changeset =
+      current
+      |> repo().preload(:media)
+      |> Comment.update_changeset(attrs)
+      |> Comment.put_status(Map.get(attrs, :status))
+
+    case repo().update(changeset) do
+      {:ok, updated} -> {:changed, updated, current}
       {:error, reason} -> repo().rollback(reason)
     end
   end
 
-  defp apply_transition(current, :unchanged), do: {:unchanged, current, current.status}
+  defp apply_transition(current, :unchanged), do: {:unchanged, current, current}
   defp apply_transition(_current, {:error, reason}), do: repo().rollback(reason)
 
   @doc """
@@ -1374,6 +1363,7 @@ defmodule PhoenixKitComments do
   end
 
   defp do_update_metadata(uuid, patch) do
+    patch = Comment.host_metadata(patch)
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     query =
@@ -1421,6 +1411,7 @@ defmodule PhoenixKitComments do
   end
 
   def merge_metadata(resource_type, %{} = match, %{} = patch) do
+    patch = Comment.host_metadata(patch)
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     query =
@@ -1716,8 +1707,11 @@ defmodule PhoenixKitComments do
     end
   end
 
-  defp notify_published(approved, previous_status) do
-    if previous_status == "pending" do
+  # The handler announces first publication. Mention sync runs on each
+  # transition to published so it can pick up edits made while hidden.
+  defp notify_published(%Comment{status: "published"} = approved, %Comment{} = previous)
+       when previous.status != "published" do
+    if Comment.first_publication?(previous) do
       notify_resource_handler(
         :on_comment_published,
         approved.resource_type,
@@ -1728,6 +1722,8 @@ defmodule PhoenixKitComments do
 
     sync_comment_mentions(approved, approved.user_uuid)
   end
+
+  defp notify_published(_updated, _previous), do: :ok
 
   @doc """
   Restores a soft-deleted comment.
@@ -1749,9 +1745,7 @@ defmodule PhoenixKitComments do
     end
 
     with {:ok, result} <- transition_locked(uuid, decide) do
-      after_transition(result, "comments.comment_restored", opts, fn restored, _previous ->
-        sync_comment_mentions(restored, restored.user_uuid)
-      end)
+      after_transition(result, "comments.comment_restored", opts, &notify_published/2)
     end
   end
 
@@ -1804,7 +1798,7 @@ defmodule PhoenixKitComments do
   refusals, callbacks and audit action:
 
     * `"published"` — `approve_comment/2` (refuses a deleted comment, fires
-      `on_comment_published/3` for a pending one, logs `comment_approved`)
+      `on_comment_published/3` on first publication, logs `comment_approved`)
     * `"hidden"` — `hide_comment/2`
     * `"deleted"` — `delete_comment/2`
     * `"pending"` — back to the moderation queue (refuses a deleted comment;

@@ -127,11 +127,9 @@ defmodule PhoenixKitComments.ResourceHandler do
   @callback on_comment_created(resource_type(), resource_uuid(), Comment.t()) :: any()
 
   @doc """
-  A comment held for moderation was approved, so its readers can now see it.
-  Fires once, when a `pending` comment becomes `published` (`approve_comment/2`,
-  `bulk_approve/2`); a comment published on creation fires
-  `on_comment_created/3` with status `"published"` instead, so a handler that
-  tells people about a comment reacts to both.
+  A previously unpublished comment became visible for the first time after
+  creation, through approval, restoration, or a server-side status update.
+  A comment published at creation is announced by `on_comment_created/3`.
   """
   @callback on_comment_published(resource_type(), resource_uuid(), Comment.t()) :: any()
 

@@ -85,8 +85,8 @@ defmodule PhoenixKitComments.MetadataTest do
       assert {:ok, updated} =
                PhoenixKitComments.update_metadata(comment.uuid, %{"slug" => "new"})
 
-      assert updated.metadata == %{"slug" => "new", "keep" => "me"}
-      assert Repo.get!(Comment, comment.uuid).metadata == %{"slug" => "new", "keep" => "me"}
+      assert host_keys(updated) == %{"slug" => "new", "keep" => "me"}
+      assert host_keys(Repo.get!(Comment, comment.uuid)) == %{"slug" => "new", "keep" => "me"}
     end
 
     test "a null metadata column still takes the patch", %{user: user} do
@@ -122,7 +122,7 @@ defmodule PhoenixKitComments.MetadataTest do
                %{"owner" => "new"}
              ) == 2
 
-      assert Repo.get!(Comment, untouched.uuid).metadata == %{"owner" => "other"}
+      assert host_keys(Repo.get!(Comment, untouched.uuid)) == %{"owner" => "other"}
     end
 
     test "is scoped to the resource type", %{user: user} do
@@ -137,8 +137,8 @@ defmodule PhoenixKitComments.MetadataTest do
                %{"owner" => "new"}
              ) == 1
 
-      assert Repo.get!(Comment, mine.uuid).metadata == %{"owner" => "new"}
-      assert Repo.get!(Comment, theirs.uuid).metadata == %{"owner" => "old"}
+      assert host_keys(Repo.get!(Comment, mine.uuid)) == %{"owner" => "new"}
+      assert host_keys(Repo.get!(Comment, theirs.uuid)) == %{"owner" => "old"}
     end
 
     test "refuses an empty match rather than rewriting the whole type", %{user: user} do
@@ -148,7 +148,11 @@ defmodule PhoenixKitComments.MetadataTest do
         PhoenixKitComments.merge_metadata("test_resource", %{}, %{"owner" => "new"})
       end
 
-      assert Repo.get!(Comment, comment.uuid).metadata == %{"owner" => "old"}
+      assert host_keys(Repo.get!(Comment, comment.uuid)) == %{"owner" => "old"}
     end
   end
+
+  # The comment's own mark (`Comment.published_key/0`, whether it was ever
+  # published) rides in the same map; these tests are about the host's keys.
+  defp host_keys(comment), do: Map.delete(comment.metadata, Comment.published_key())
 end
