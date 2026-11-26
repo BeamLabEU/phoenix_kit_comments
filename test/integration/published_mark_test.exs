@@ -87,6 +87,74 @@ defmodule PhoenixKitComments.Integration.PublishedMarkTest do
     refute_received {:published, _, _, _}
   end
 
+  # Rows from before the mark existed carry none (zai, 2026-11-26): their
+  # first status change records what that status says — leaving "published"
+  # means it was published, leaving "pending" means it was not — so the
+  # later publication goes by the mark, not by a guess from the status.
+  describe "a comment from before the mark" do
+    setup do
+      on_exit(fn -> PhoenixKit.Settings.update_boolean_setting("comments_moderation", false) end)
+      :ok
+    end
+
+    defp strip_mark(comment) do
+      import Ecto.Query
+      meta = Map.delete(comment.metadata || %{}, Comment.published_key())
+
+      Repo.update_all(from(c in Comment, where: c.uuid == ^comment.uuid), set: [metadata: meta])
+
+      Repo.get!(Comment, comment.uuid)
+    end
+
+    test "held, hidden, then approved: announced on that first publication", %{author: author} do
+      {:ok, comment} =
+        PhoenixKitComments.create_comment("mark_probe", Ecto.UUID.generate(), author.uuid, %{
+          "content" => "held before the upgrade",
+          status: "pending"
+        })
+
+      legacy = strip_mark(comment)
+      {:ok, hidden} = PhoenixKitComments.hide_comment(legacy)
+      {:ok, approved} = PhoenixKitComments.approve_comment(Repo.get!(Comment, hidden.uuid))
+
+      assert approved.status == "published"
+      assert_received {:published, "mark_probe", _, _}
+    end
+
+    test "held, deleted, then restored published: announced", %{author: author} do
+      PhoenixKit.Settings.update_boolean_setting("comments_moderation", true)
+
+      {:ok, comment} =
+        PhoenixKitComments.create_comment("mark_probe", Ecto.UUID.generate(), author.uuid, %{
+          "content" => "held before the upgrade"
+        })
+
+      legacy = strip_mark(comment)
+      {:ok, deleted} = PhoenixKitComments.delete_comment(legacy)
+      PhoenixKit.Settings.update_boolean_setting("comments_moderation", false)
+      {:ok, restored} = PhoenixKitComments.restore_comment(Repo.get!(Comment, deleted.uuid))
+
+      assert restored.status == "published"
+      assert_received {:published, "mark_probe", _, _}
+    end
+
+    test "published, re-queued, then approved: not announced again", %{author: author} do
+      {:ok, comment} =
+        PhoenixKitComments.create_comment("mark_probe", Ecto.UUID.generate(), author.uuid, %{
+          "content" => "published before the upgrade"
+        })
+
+      legacy = strip_mark(comment)
+      assert legacy.status == "published"
+      PhoenixKitComments.bulk_update_status([legacy.uuid], "pending")
+      requeued = Repo.get!(Comment, legacy.uuid)
+      assert requeued.status == "pending"
+      {:ok, _} = PhoenixKitComments.approve_comment(requeued)
+
+      refute_received {:published, _, _, _}
+    end
+  end
+
   describe "restore" do
     setup do
       on_exit(fn -> PhoenixKit.Settings.update_boolean_setting("comments_moderation", false) end)

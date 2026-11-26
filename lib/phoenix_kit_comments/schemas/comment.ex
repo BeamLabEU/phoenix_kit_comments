@@ -273,11 +273,32 @@ defmodule PhoenixKitComments.Comment do
     metadata = get_field(cs, :metadata) || %{}
 
     cond do
-      status == "published" -> put_change(cs, :metadata, Map.put(metadata, @published_key, true))
-      insert? -> put_change(cs, :metadata, Map.put(metadata, @published_key, false))
-      true -> cs
+      status == "published" ->
+        put_change(cs, :metadata, Map.put(metadata, @published_key, true))
+
+      insert? ->
+        put_change(cs, :metadata, Map.put(metadata, @published_key, false))
+
+      Map.has_key?(metadata, @published_key) ->
+        cs
+
+      true ->
+        mark_from_old_status(cs, metadata)
     end
   end
+
+  # A row from before the mark, changing status for the first time since:
+  # its old status is the last thing that still says whether it was ever
+  # published, so it is written down now (zai, 2026-11-26). Without it a
+  # published row re-queued and approved was announced again, and a held
+  # row hidden or deleted was never announced when it was published.
+  defp mark_from_old_status(%Ecto.Changeset{data: %{status: "published"}} = cs, metadata),
+    do: put_change(cs, :metadata, Map.put(metadata, @published_key, true))
+
+  defp mark_from_old_status(%Ecto.Changeset{data: %{status: "pending"}} = cs, metadata),
+    do: put_change(cs, :metadata, Map.put(metadata, @published_key, false))
+
+  defp mark_from_old_status(cs, _metadata), do: cs
 
   @statuses ["published", "hidden", "deleted", "pending"]
 
