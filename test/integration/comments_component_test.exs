@@ -280,7 +280,7 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       assert html =~ ~r/<textarea[^>]*id="#{after_id}"[^>]*>\s*<\/textarea>/
     end
 
-    test "an always-open editor has no Hide button (it only emptied the box)",
+    test "an always-open editor has no Cancel button (it only emptied the box)",
          %{conn: conn, scope: scope, resource_uuid: r} do
       {:ok, _view, html} = live(put_test_scope(conn, scope), "/en/test/thread/#{r}?open=1")
       refute html =~ ~s(phx-click="cancel_new_comment")
@@ -289,6 +289,9 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(r))
       html = view |> element("button[phx-click='open_composer']") |> render_click()
       assert html =~ ~s(phx-click="cancel_new_comment")
+      # It discards the text: "Cancel", not "Hide" (Max, 2026-11-26).
+      assert view |> element("button[phx-click='cancel_new_comment']") |> render() =~ "Cancel"
+      refute view |> element("button[phx-click='cancel_new_comment']") |> render() =~ "Hide"
     end
 
     test "without it, the box opens on a click as before", %{

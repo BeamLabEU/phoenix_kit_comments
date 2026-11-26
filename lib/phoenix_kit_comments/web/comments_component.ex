@@ -3871,9 +3871,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         </div>
 
         <div class="flex items-center gap-2">
-          <%!-- No Hide on an editor that is always open (composer_start_open):
+          <%!-- No Cancel on an editor that is always open (composer_start_open):
                it only emptied the box, which came straight back. A reply
-               box keeps it. --%>
+               box keeps it. "Cancel", not "Hide" (Max, 2026-11-26): the
+               button throws the typed text away and closes the box, and
+               "Hide" read as tucking it away with the text kept. --%>
           <button
             :if={not (@ctx[:composer_start_open] == true and is_nil(@ctx[:reply_to]))}
             type="button"
@@ -3881,7 +3883,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             phx-target={@ctx.myself}
             class="btn btn-ghost btn-xs"
           >
-            {gettext("Hide")}
+            {gettext("Cancel")}
           </button>
           <%!-- Without this a double-click on a slow link posted the same
                comment twice: two events queue, both carry the same text,
