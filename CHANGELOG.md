@@ -2,6 +2,15 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- **The comment thread and the admin pages work under a nonce-based `Content-Security-Policy`** (`script-src 'self' 'nonce-…'`, no `'unsafe-inline'`; see core's `guides/content-security-policy.md`). No core floor change: everything below works on core 3.5.0 too.
+  - The comment's action menu (Edit, Delete) closed after a choice with an inline `onclick`, and the GIF search field ignored Enter with an inline `onkeydown`. No nonce can cover an attribute, so both are now attributes (`data-pkc-blur`, `data-pkc-no-enter`) handled by two delegated listeners in `phoenix_kit_comments.js`, the module's own bundle. A host must serve the regenerated `phoenix_kit_modules.js` (a recompile does it).
+  - The two inline `<style>` blocks (the component's, and `comment_markdown_styles/1`) carry the host's style nonce through the new `PhoenixKitComments.Web.CSP.nonce/1`, which asks core's `PhoenixKitWeb.CSP` when the installed core has it and renders no attribute otherwise.
+- New `test/csp_inline_tags_test.exs` fails on an inline handler or an inline `<script>`/`<style>` without the nonce in `lib/`, and on handler markup, an unstamped `<style>`/`<script>` or `eval` in the bundle.
+
 ## 0.7.0 - 2026-11-23
 
 No migration, no core floor change (still `>= 3.5.0 and < 4.0.0`). Hosts using the rich (Leaf) editor get the mentions popup best on Leaf 0.11+ (`notify`).

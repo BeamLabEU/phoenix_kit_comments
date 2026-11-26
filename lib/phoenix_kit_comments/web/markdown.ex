@@ -76,7 +76,7 @@ defmodule PhoenixKitComments.Web.Markdown do
   """
   def comment_markdown_styles(assigns) do
     ~H"""
-    <style>
+    <style nonce={PhoenixKitComments.Web.CSP.nonce(:style)}>
       .pk-comment-md p { margin: 0.5rem 0; }
       .pk-comment-md p:first-child { margin-top: 0; }
       .pk-comment-md p:last-child { margin-bottom: 0; }

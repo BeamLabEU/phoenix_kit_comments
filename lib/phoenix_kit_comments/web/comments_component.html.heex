@@ -3,7 +3,7 @@
        moderation page so both render identically and there's one source of
        truth for the CSS. --%>
   <.comment_markdown_styles />
-  <style>
+  <style nonce={PhoenixKitComments.Web.CSP.nonce(:style)}>
     /* A success toast leaves by itself. */
     @keyframes pk-comments-toast-out {
       0%, 80% { opacity: 1; visibility: visible; }

@@ -408,4 +408,45 @@
       }
     };
   })();
+
+  // ---------------------------------------------------------------------------
+  // DECLARATIVE HANDLERS
+  // ---------------------------------------------------------------------------
+  //
+  // What the component's markup used to do with inline handlers
+  // (`onclick="…"`, `onkeydown="…"`). A Content-Security-Policy without
+  // 'unsafe-inline' blocks those and no nonce can be put on an attribute, so
+  // the markup names what it wants and one listener per event, on the
+  // document, does it. Delegated, not a hook: nothing to mount, and it works
+  // on any core (core's own `data-pk-*` listeners are newer than this
+  // module's core floor).
+  //
+  //   data-pkc-blur       a click inside drops the focus (closes the comment's
+  //                       daisyUI action menu once Edit or Delete is chosen)
+  //   data-pkc-no-enter   Enter in this field does nothing (the GIF search)
+  //
+  // Capture phase, so they run before LiveView's own click handling (the
+  // data-confirm dialog included), as the inline handlers did.
+  // ---------------------------------------------------------------------------
+  (function() {
+    if (typeof document === "undefined" || !document.addEventListener) return;
+    // The bundle may be evaluated twice (folded into the modules file and
+    // imported by a host): install the listeners once.
+    if (window.__pkCommentsDeclared) return;
+    window.__pkCommentsDeclared = true;
+
+    function closest(target, selector) {
+      return target && typeof target.closest === "function" ? target.closest(selector) : null;
+    }
+
+    document.addEventListener("click", function(e) {
+      if (!closest(e.target, "[data-pkc-blur]")) return;
+      var active = document.activeElement;
+      if (active && typeof active.blur === "function") active.blur();
+    }, true);
+
+    document.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && closest(e.target, "[data-pkc-no-enter]")) e.preventDefault();
+    }, true);
+  })();
 })();

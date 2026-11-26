@@ -2495,13 +2495,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 <%!-- or Delete removes the card, the menu would just stay     --%>
                 <%!-- open. Blurring on click closes it the moment an action   --%>
                 <%!-- is chosen (before the data-confirm dialog, which is      --%>
-                <%!-- fine either way the user answers).                       --%>
+                <%!-- fine either way the user answers). `data-pkc-blur` is    --%>
+                <%!-- handled by one listener in phoenix_kit_comments.js: an   --%>
+                <%!-- inline `onclick` is blocked by a nonce-based CSP.        --%>
                 <li :if={may_edit}>
                   <button
                     phx-click="edit_comment"
                     phx-value-id={@comment.uuid}
                     phx-target={@myself}
-                    onclick="document.activeElement && document.activeElement.blur()"
+                    data-pkc-blur
                   >
                     <.icon name="hero-pencil-square" class="w-4 h-4" /> {gettext("Edit")}
                   </button>
@@ -2514,7 +2516,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                     phx-target={@myself}
                     class="text-error"
                     data-confirm={gettext("Are you sure you want to delete this comment?")}
-                    onclick="document.activeElement && document.activeElement.blur()"
+                    data-pkc-blur
                   >
                     <.icon name="hero-trash" class="w-4 h-4" /> {gettext("Delete")}
                   </button>
@@ -3818,7 +3820,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                         phx-keyup="giphy_search"
                         phx-target={@ctx.myself}
                         phx-debounce="300"
-                        onkeydown="if(event.key === 'Enter') event.preventDefault()"
+                        data-pkc-no-enter
                         autocomplete="off"
                       />
 

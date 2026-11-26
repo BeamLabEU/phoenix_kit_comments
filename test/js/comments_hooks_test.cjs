@@ -338,3 +338,49 @@ test("any other hash is left to the browser", () => {
     assert.deepEqual(asked, [], hash);
   }
 });
+
+// The delegated listeners that replaced the inline handlers (`data-pkc-*`).
+function declared() {
+  const listeners = [];
+  const active = { blurred: 0, blur() { this.blurred += 1; } };
+  const document = {
+    activeElement: active,
+    addEventListener(type, fn, capture) { listeners.push({ type, fn, capture }); }
+  };
+  const window = {};
+  const context = { window, document, navigator: {}, File, Blob };
+  vm.runInNewContext(bundle, context);
+  const inside = (attribute) => ({ closest: (selector) => (selector === "[" + attribute + "]" ? {} : null) });
+  const fire = (type, target, data = {}) => {
+    const event = { target, prevented: false, preventDefault() { this.prevented = true; }, ...data };
+    listeners.filter((l) => l.type === type).forEach((l) => l.fn(event));
+    return event;
+  };
+  return { listeners, active, inside, fire, context };
+}
+
+test("a click inside data-pkc-blur drops the focus; any other click does not", () => {
+  const page = declared();
+  page.fire("click", page.inside("data-pkc-other"));
+  page.fire("click", null);
+  page.fire("click", {});
+  assert.equal(page.active.blurred, 0);
+  page.fire("click", page.inside("data-pkc-blur"));
+  assert.equal(page.active.blurred, 1);
+});
+
+test("Enter in a data-pkc-no-enter field does nothing; other keys and fields are left alone", () => {
+  const page = declared();
+  const field = page.inside("data-pkc-no-enter");
+  assert.ok(page.fire("keydown", field, { key: "Enter" }).prevented);
+  assert.ok(!page.fire("keydown", field, { key: "a" }).prevented);
+  assert.ok(!page.fire("keydown", page.inside("data-pkc-blur"), { key: "Enter" }).prevented);
+});
+
+test("the delegated listeners run in the capture phase and are installed once", () => {
+  const page = declared();
+  assert.deepEqual(page.listeners.map((l) => [l.type, l.capture]), [["click", true], ["keydown", true]]);
+  // The bundle evaluated a second time on the same page.
+  vm.runInNewContext(bundle, page.context);
+  assert.equal(page.listeners.length, 2);
+});
