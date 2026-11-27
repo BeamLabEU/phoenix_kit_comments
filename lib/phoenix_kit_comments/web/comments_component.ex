@@ -226,12 +226,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:max_attachments, max_entries)
      |> assign(:max_attachment_size_mb, max_size_mb)
      |> allow_upload(:attachment,
-       accept: ~w(
-         image/*
-         video/*
-         audio/*
-         .pdf .doc .docx .txt .md
-       ),
+       accept: PhoenixKitComments.Attachments.accept(),
        max_entries: max_entries,
        max_file_size: max_size_mb * @bytes_per_mb
      )}
@@ -451,6 +446,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       else: socket
   end
 
+  defp cancel_staged_files(socket) do
+    Enum.reduce(socket.assigns.uploads.attachment.entries, socket, fn entry, acc ->
+      cancel_upload(acc, :attachment, entry.ref)
+    end)
+  end
+
   # A host that keeps the component id and points it at another record
   # (`reload_comments?/1` supports exactly that) must not carry the open
   # reply box, edit form, draft, GIF or staged files over to it: they were
@@ -460,8 +461,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     if changed?(socket, :resource_uuid) or changed?(socket, :resource_type) do
       clear_draft_editor(socket)
 
-      socket.assigns.uploads.attachment.entries
-      |> Enum.reduce(socket, &cancel_upload(&2, :attachment, &1.ref))
+      socket
+      |> cancel_staged_files()
       |> update(:draft_seq, &(&1 + 1))
       |> assign(
         reply_to: nil,
@@ -508,7 +509,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # map holds only what a comment reads, so typing in the top or bottom box
   # leaves it equal and the list untouched. While a reply box is open it is
   # the full assigns: that box lives inside the list and must follow the
-  # draft, the staged files and the GIF picker.
+  # draft and the GIF picker. The template supplies the live uploads because
+  # LiveView updates their progress outside the component event handlers.
   @thread_ctx_keys [
     :id,
     :myself,
@@ -528,7 +530,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp put_thread_ctx(socket) do
     ctx =
       if socket.assigns[:reply_to],
-        do: Map.drop(socket.assigns, [:thread_ctx, :__changed__]),
+        do: Map.drop(socket.assigns, [:thread_ctx, :__changed__, :uploads]),
         else: Map.take(socket.assigns, @thread_ctx_keys)
 
     assign(socket, :thread_ctx, ctx)
@@ -682,6 +684,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp handle("cancel_new_comment", _params, socket) do
     {:noreply,
      socket
+     |> cancel_staged_files()
      |> assign(:new_comment, "")
      |> assign(:reply_to, nil)
      |> assign(:composer_open_at, nil)
@@ -1808,14 +1811,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp uploads_done?(entries), do: Enum.all?(entries, & &1.done?)
 
   defp store_entry(meta, entry, user_uuid, folder_uuid) do
-    # `client_*` is exactly that: what the browser SAID. The size is
-    # measured here rather than taken from it (a declared size became the
-    # recorded one). The type is passed as declared: core's
-    # `Storage.store_file/2` checks it against the bytes
-    # (`Storage.content_mime_type/3`), and its file controller serves with
-    # `nosniff`, inline only what a browser cannot run (raster images, PDF,
-    # plain text, video, audio) — an SVG or HTML file downloads. The name is
-    # only cleaned (`safe_filename/1`), never trusted for the type.
+    # Measure the bytes we actually received. Storage reconciles the MIME
+    # claim with its image sniffer before persisting the file.
     stat_size =
       case File.stat(meta.path) do
         {:ok, %{size: size}} -> size
@@ -1824,7 +1821,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
     opts = [
       filename: safe_filename(entry.client_name),
-      content_type: entry.client_type,
+      content_type:
+        PhoenixKitComments.Attachments.content_type(entry.client_type, entry.client_name),
       size_bytes: stat_size,
       user_uuid: user_uuid
     ]
@@ -3769,7 +3767,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                             )
                           }
                         >
-                          <.icon name="hero-photo" class="w-4 h-4" /> {gettext("Image")}
+                          <.icon name="hero-paper-clip" class="w-4 h-4" /> {gettext("Upload a file")}
                         </label>
                       </li>
 
@@ -3783,7 +3781,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                           }
                           class="flex items-center gap-2"
                         >
-                          <.icon name="hero-microphone" class="w-4 h-4" /> {gettext("Record")}
+                          <.icon name="hero-microphone" class="w-4 h-4" /> {gettext("Record audio")}
                         </button>
                       </li>
                     <% end %>
@@ -3871,9 +3869,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         </div>
 
         <div class="flex items-center gap-2">
-          <%!-- No Hide on an editor that is always open (composer_start_open):
-               it only emptied the box, which came straight back. A reply
-               box keeps it. --%>
+          <%!-- An always-open top-level composer cannot be dismissed. --%>
           <button
             :if={not (@ctx[:composer_start_open] == true and is_nil(@ctx[:reply_to]))}
             type="button"
@@ -3881,7 +3877,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             phx-target={@ctx.myself}
             class="btn btn-ghost btn-xs"
           >
-            {gettext("Hide")}
+            {gettext("Cancel")}
           </button>
           <%!-- Without this a double-click on a slow link posted the same
                comment twice: two events queue, both carry the same text,

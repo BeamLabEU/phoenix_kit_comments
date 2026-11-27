@@ -42,35 +42,35 @@ msgstr "全部状态"
 msgid "All Types"
 msgstr "全部类型"
 
-#: lib/phoenix_kit_comments/web/index.ex:847
+#: lib/phoenix_kit_comments/web/index.ex:855
 #: lib/phoenix_kit_comments/web/index.html.heex:209
 #, elixir-autogen, elixir-format
 msgid "Approve"
 msgstr "批准"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2248
+#: lib/phoenix_kit_comments/web/comments_component.ex:2516
 #, elixir-autogen, elixir-format
 msgid "Are you sure you want to delete this comment?"
 msgstr "确定要删除这条评论吗？"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3444
-#: lib/phoenix_kit_comments/web/comments_component.ex:3445
+#: lib/phoenix_kit_comments/web/comments_component.ex:3718
+#: lib/phoenix_kit_comments/web/comments_component.ex:3719
 #, elixir-autogen, elixir-format
 msgid "Attach media"
 msgstr "添加媒体"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3461
+#: lib/phoenix_kit_comments/web/comments_component.ex:3735
 #, elixir-autogen, elixir-format
 msgid "Attach media options"
 msgstr "添加媒体选项"
 
-#: lib/phoenix_kit_comments/web/index.ex:824
+#: lib/phoenix_kit_comments/web/index.ex:832
 #, elixir-autogen, elixir-format
 msgid "Attachment"
 msgstr "附件"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1418
-#: lib/phoenix_kit_comments/web/comments_component.ex:3251
+#: lib/phoenix_kit_comments/web/comments_component.ex:1443
+#: lib/phoenix_kit_comments/web/comments_component.ex:3525
 #, elixir-autogen, elixir-format
 msgid "Attachments are disabled"
 msgstr "附件功能已禁用"
@@ -81,14 +81,15 @@ msgstr "附件功能已禁用"
 msgid "Author"
 msgstr "作者"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2423
+#: lib/phoenix_kit_comments/web/comments_component.ex:2691
+#: lib/phoenix_kit_comments/web/comments_component.ex:3880
 #: lib/phoenix_kit_comments/web/settings.html.heex:427
 #: lib/phoenix_kit_comments/web/settings.html.heex:551
 #, elixir-autogen, elixir-format
 msgid "Cancel"
 msgstr "取消"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1158
+#: lib/phoenix_kit_comments/web/comments_component.ex:1176
 #, elixir-autogen, elixir-format
 msgid "Cannot react to a deleted comment"
 msgstr "无法对已删除的评论做出反应"
@@ -105,7 +106,7 @@ msgstr "清除"
 msgid "Clear search"
 msgstr "清除搜索"
 
-#: lib/phoenix_kit_comments/web/index.ex:765
+#: lib/phoenix_kit_comments/web/index.ex:773
 #, elixir-autogen, elixir-format
 msgid "Click to read the full comment"
 msgstr "点击查看完整评论"
@@ -121,13 +122,13 @@ msgstr "关闭"
 msgid "Comment"
 msgstr "评论"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2217
-#: lib/phoenix_kit_comments/web/index.ex:840
+#: lib/phoenix_kit_comments/web/comments_component.ex:2483
+#: lib/phoenix_kit_comments/web/index.ex:848
 #, elixir-autogen, elixir-format
 msgid "Comment actions"
 msgstr "评论操作"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1211
+#: lib/phoenix_kit_comments/web/comments_component.ex:1229
 #, elixir-autogen, elixir-format
 msgid "Comment added"
 msgstr "评论已添加"
@@ -137,14 +138,14 @@ msgstr "评论已添加"
 msgid "Comment approved"
 msgstr "评论已批准"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1417
-#: lib/phoenix_kit_comments/web/comments_component.ex:1512
-#: lib/phoenix_kit_comments/web/comments_component.ex:2781
+#: lib/phoenix_kit_comments/web/comments_component.ex:1442
+#: lib/phoenix_kit_comments/web/comments_component.ex:1537
+#: lib/phoenix_kit_comments/web/comments_component.ex:3049
 #, elixir-autogen, elixir-format
 msgid "Comment can't be empty"
 msgstr "评论不能为空"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1597
+#: lib/phoenix_kit_comments/web/comments_component.ex:1631
 #: lib/phoenix_kit_comments/web/index.ex:190
 #, elixir-autogen, elixir-format
 msgid "Comment deleted"
@@ -155,11 +156,12 @@ msgstr "评论已删除"
 msgid "Comment hidden"
 msgstr "评论已隐藏"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:808
-#: lib/phoenix_kit_comments/web/comments_component.ex:881
-#: lib/phoenix_kit_comments/web/comments_component.ex:956
-#: lib/phoenix_kit_comments/web/comments_component.ex:1149
-#: lib/phoenix_kit_comments/web/comments_component.ex:1608
+#: lib/phoenix_kit_comments/web/comments_component.ex:826
+#: lib/phoenix_kit_comments/web/comments_component.ex:899
+#: lib/phoenix_kit_comments/web/comments_component.ex:974
+#: lib/phoenix_kit_comments/web/comments_component.ex:1167
+#: lib/phoenix_kit_comments/web/comments_component.ex:1604
+#: lib/phoenix_kit_comments/web/comments_component.ex:1642
 #: lib/phoenix_kit_comments/web/index.ex:310
 #, elixir-autogen, elixir-format
 msgid "Comment not found"
@@ -170,7 +172,7 @@ msgstr "找不到该评论"
 msgid "Comment restored"
 msgstr "评论已恢复"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1570
+#: lib/phoenix_kit_comments/web/comments_component.ex:1595
 #, elixir-autogen, elixir-format
 msgid "Comment updated"
 msgstr "评论已更新"
@@ -178,7 +180,7 @@ msgstr "评论已更新"
 #: lib/phoenix_kit_comments.ex:492
 #: lib/phoenix_kit_comments.ex:621
 #: lib/phoenix_kit_comments.ex:641
-#: lib/phoenix_kit_comments/web/comments_component.ex:300
+#: lib/phoenix_kit_comments/web/comments_component.ex:305
 #: lib/phoenix_kit_comments/web/index.ex:67
 #: lib/phoenix_kit_comments/web/settings.ex:58
 #, elixir-autogen, elixir-format
@@ -201,8 +203,8 @@ msgstr "内容"
 msgid "Date"
 msgstr "日期"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2251
-#: lib/phoenix_kit_comments/web/index.ex:876
+#: lib/phoenix_kit_comments/web/comments_component.ex:2519
+#: lib/phoenix_kit_comments/web/index.ex:884
 #: lib/phoenix_kit_comments/web/index.html.heex:220
 #, elixir-autogen, elixir-format
 msgid "Delete"
@@ -213,12 +215,12 @@ msgstr "删除"
 msgid "Delete selected comments?"
 msgstr "删除所选评论？"
 
-#: lib/phoenix_kit_comments/web/index.ex:874
+#: lib/phoenix_kit_comments/web/index.ex:882
 #, elixir-autogen, elixir-format
 msgid "Delete this comment?"
 msgstr "删除这条评论？"
 
-#: lib/phoenix_kit_comments/web/index.ex:901
+#: lib/phoenix_kit_comments/web/index.ex:905
 #: lib/phoenix_kit_comments/web/index.html.heex:26
 #: lib/phoenix_kit_comments/web/index.html.heex:100
 #: lib/phoenix_kit_comments/web/index.html.heex:168
@@ -233,71 +235,71 @@ msgstr "已删除"
 msgid "Deleted user"
 msgstr "已删除的用户"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2192
+#: lib/phoenix_kit_comments/web/comments_component.ex:2458
 #, elixir-autogen, elixir-format
 msgid "Dislike"
 msgstr "点踩"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2394
+#: lib/phoenix_kit_comments/web/comments_component.ex:2662
 #, elixir-autogen, elixir-format
 msgid "Edit your comment..."
 msgstr "编辑您的评论..."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1256
-#: lib/phoenix_kit_comments/web/comments_component.ex:1444
+#: lib/phoenix_kit_comments/web/comments_component.ex:1281
+#: lib/phoenix_kit_comments/web/comments_component.ex:1469
 #, elixir-autogen, elixir-format
 msgid "Failed to add comment"
 msgstr "添加评论失败"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1612
+#: lib/phoenix_kit_comments/web/comments_component.ex:1646
 #, elixir-autogen, elixir-format
 msgid "Failed to delete comment"
 msgstr "删除评论失败"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1573
+#: lib/phoenix_kit_comments/web/comments_component.ex:1607
 #, elixir-autogen, elixir-format
 msgid "Failed to update comment"
 msgstr "更新评论失败"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1178
+#: lib/phoenix_kit_comments/web/comments_component.ex:1196
 #, elixir-autogen, elixir-format
 msgid "Failed to update reaction"
 msgstr "更新反应失败"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2795
+#: lib/phoenix_kit_comments/web/comments_component.ex:3063
 #, elixir-autogen, elixir-format
 msgid "File too large"
 msgstr "文件过大"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2797
+#: lib/phoenix_kit_comments/web/comments_component.ex:3065
 #, elixir-autogen, elixir-format
 msgid "File type not allowed"
 msgstr "不允许的文件类型"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2468
-#: lib/phoenix_kit_comments/web/comments_component.ex:3381
-#: lib/phoenix_kit_comments/web/comments_component.ex:3473
-#: lib/phoenix_kit_comments/web/index.ex:824
+#: lib/phoenix_kit_comments/web/comments_component.ex:2736
+#: lib/phoenix_kit_comments/web/comments_component.ex:3655
+#: lib/phoenix_kit_comments/web/comments_component.ex:3747
+#: lib/phoenix_kit_comments/web/index.ex:832
 #, elixir-autogen, elixir-format
 msgid "GIF"
 msgstr "GIF"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3557
+#: lib/phoenix_kit_comments/web/comments_component.ex:3831
 #, elixir-autogen, elixir-format
 msgid "GIF results"
 msgstr "GIF 搜索结果"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3530
+#: lib/phoenix_kit_comments/web/comments_component.ex:3804
 #, elixir-autogen, elixir-format
 msgid "Giphy picker"
 msgstr "Giphy 选择器"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1664
+#: lib/phoenix_kit_comments/web/comments_component.ex:1698
 #, elixir-autogen, elixir-format
 msgid "Giphy search failed. Check the API key in settings."
 msgstr "Giphy 搜索失败。请在设置中检查 API 密钥。"
 
-#: lib/phoenix_kit_comments/web/index.ex:900
+#: lib/phoenix_kit_comments/web/index.ex:904
 #: lib/phoenix_kit_comments/web/index.html.heex:22
 #: lib/phoenix_kit_comments/web/index.html.heex:97
 #: lib/phoenix_kit_comments/web/index.html.heex:165
@@ -305,36 +307,30 @@ msgstr "Giphy 搜索失败。请在设置中检查 API 密钥。"
 msgid "Hidden"
 msgstr "已隐藏"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3604
-#: lib/phoenix_kit_comments/web/index.ex:856
+#: lib/phoenix_kit_comments/web/index.ex:864
 #: lib/phoenix_kit_comments/web/index.html.heex:212
 #, elixir-autogen, elixir-format
 msgid "Hide"
 msgstr "隐藏"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3496
-#, elixir-autogen, elixir-format
-msgid "Image"
-msgstr "图片"
-
-#: lib/phoenix_kit_comments/web/comments_component.ex:1440
-#: lib/phoenix_kit_comments/web/comments_component.ex:1464
-#: lib/phoenix_kit_comments/web/comments_component.ex:1688
+#: lib/phoenix_kit_comments/web/comments_component.ex:1465
+#: lib/phoenix_kit_comments/web/comments_component.ex:1489
+#: lib/phoenix_kit_comments/web/comments_component.ex:1722
 #, elixir-autogen, elixir-format
 msgid "Invalid comment for this resource"
 msgstr "该评论不属于当前资源"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1437
+#: lib/phoenix_kit_comments/web/comments_component.ex:1462
 #, elixir-autogen, elixir-format
 msgid "Invalid file attachment"
 msgstr "无效的附件"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1436
+#: lib/phoenix_kit_comments/web/comments_component.ex:1461
 #, elixir-autogen, elixir-format
 msgid "Invalid user"
 msgstr "无效的用户"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2182
+#: lib/phoenix_kit_comments/web/comments_component.ex:2448
 #, elixir-autogen, elixir-format
 msgid "Like"
 msgstr "点赞"
@@ -355,7 +351,7 @@ msgstr "未找到任何评论"
 msgid "No comments selected"
 msgstr "未选择任何评论"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3586
+#: lib/phoenix_kit_comments/web/comments_component.ex:3860
 #, elixir-autogen, elixir-format
 msgid "No results."
 msgstr "没有结果。"
@@ -368,7 +364,7 @@ msgid "Not authorized"
 msgstr "没有权限"
 
 #: lib/phoenix_kit_comments.ex:183
-#: lib/phoenix_kit_comments/web/index.ex:899
+#: lib/phoenix_kit_comments/web/index.ex:903
 #: lib/phoenix_kit_comments/web/index.html.heex:18
 #: lib/phoenix_kit_comments/web/index.html.heex:94
 #: lib/phoenix_kit_comments/web/index.html.heex:162
@@ -376,18 +372,18 @@ msgstr "没有权限"
 msgid "Pending"
 msgstr "待审核"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3653
+#: lib/phoenix_kit_comments/web/comments_component.ex:3929
 #, elixir-autogen, elixir-format
 msgid "Post Comment"
 msgstr "发表评论"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2530
+#: lib/phoenix_kit_comments/web/comments_component.ex:2798
 #, elixir-autogen, elixir-format
 msgid "Post Reply"
 msgstr "发表回复"
 
 #: lib/phoenix_kit_comments.ex:182
-#: lib/phoenix_kit_comments/web/index.ex:898
+#: lib/phoenix_kit_comments/web/index.ex:902
 #: lib/phoenix_kit_comments/web/index.html.heex:14
 #: lib/phoenix_kit_comments/web/index.html.heex:91
 #: lib/phoenix_kit_comments/web/index.html.heex:159
@@ -395,45 +391,40 @@ msgstr "发表回复"
 msgid "Published"
 msgstr "已发布"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2456
-#: lib/phoenix_kit_comments/web/index.ex:792
+#: lib/phoenix_kit_comments/web/comments_component.ex:2724
+#: lib/phoenix_kit_comments/web/index.ex:800
 #, elixir-autogen, elixir-format
 msgid "Read more"
 msgstr "查看全文"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3510
-#, elixir-autogen, elixir-format
-msgid "Record"
-msgstr "录音"
-
-#: lib/phoenix_kit_comments/web/comments_component.ex:3415
+#: lib/phoenix_kit_comments/web/comments_component.ex:3689
 #, elixir-autogen, elixir-format
 msgid "Remove %{name}"
 msgstr "移除 %{name}"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3387
+#: lib/phoenix_kit_comments/web/comments_component.ex:3661
 #, elixir-autogen, elixir-format
 msgid "Remove GIF"
 msgstr "移除 GIF"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2172
-#: lib/phoenix_kit_comments/web/comments_component.ex:2173
-#: lib/phoenix_kit_comments/web/index.ex:727
+#: lib/phoenix_kit_comments/web/comments_component.ex:2438
+#: lib/phoenix_kit_comments/web/comments_component.ex:2439
+#: lib/phoenix_kit_comments/web/index.ex:735
 #, elixir-autogen, elixir-format
 msgid "Reply"
 msgstr "回复"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1431
+#: lib/phoenix_kit_comments/web/comments_component.ex:1456
 #, elixir-autogen, elixir-format
 msgid "Reply nesting is too deep"
 msgstr "回复嵌套层级过深"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2520
+#: lib/phoenix_kit_comments/web/comments_component.ex:2788
 #, elixir-autogen, elixir-format
 msgid "Replying here"
 msgstr "回复此评论"
 
-#: lib/phoenix_kit_comments/web/index.ex:713
+#: lib/phoenix_kit_comments/web/index.ex:721
 #: lib/phoenix_kit_comments/web/index.html.heex:281
 #, elixir-autogen, elixir-format
 msgid "Resource"
@@ -447,12 +438,12 @@ msgstr "资源"
 msgid "Resource Type"
 msgstr "资源类型"
 
-#: lib/phoenix_kit_comments/web/index.ex:865
+#: lib/phoenix_kit_comments/web/index.ex:873
 #, elixir-autogen, elixir-format
 msgid "Restore"
 msgstr "恢复"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2430
+#: lib/phoenix_kit_comments/web/comments_component.ex:2698
 #: lib/phoenix_kit_comments/web/settings.html.heex:431
 #: lib/phoenix_kit_comments/web/settings.html.heex:555
 #, elixir-autogen, elixir-format
@@ -465,13 +456,13 @@ msgstr "保存"
 msgid "Search"
 msgstr "搜索"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3534
-#: lib/phoenix_kit_comments/web/comments_component.ex:3542
+#: lib/phoenix_kit_comments/web/comments_component.ex:3808
+#: lib/phoenix_kit_comments/web/comments_component.ex:3816
 #, elixir-autogen, elixir-format
 msgid "Search GIFs"
 msgstr "搜索 GIF"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3541
+#: lib/phoenix_kit_comments/web/comments_component.ex:3815
 #, elixir-autogen, elixir-format
 msgid "Search GIFs..."
 msgstr "搜索 GIF..."
@@ -482,7 +473,7 @@ msgstr "搜索 GIF..."
 msgid "Search comment content..."
 msgstr "搜索评论内容..."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3564
+#: lib/phoenix_kit_comments/web/comments_component.ex:3838
 #, elixir-autogen, elixir-format
 msgid "Select GIF %{id}"
 msgstr "选择 GIF %{id}"
@@ -493,27 +484,27 @@ msgstr "选择 GIF %{id}"
 msgid "Settings"
 msgstr "设置"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2456
+#: lib/phoenix_kit_comments/web/comments_component.ex:2724
 #, elixir-autogen, elixir-format
 msgid "Show less"
 msgstr "收起"
 
-#: lib/phoenix_kit_comments/web/index.ex:734
+#: lib/phoenix_kit_comments/web/index.ex:742
 #, elixir-autogen, elixir-format
 msgid "Show the original comment"
 msgstr "显示原评论"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:576
+#: lib/phoenix_kit_comments/web/comments_component.ex:593
 #, elixir-autogen, elixir-format
 msgid "Sign in to post a comment"
 msgstr "登录后即可发表评论"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3643
+#: lib/phoenix_kit_comments/web/comments_component.ex:3919
 #, elixir-autogen, elixir-format
 msgid "Sign in to post a comment."
 msgstr "登录后即可发表评论。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1143
+#: lib/phoenix_kit_comments/web/comments_component.ex:1161
 #, elixir-autogen, elixir-format
 msgid "Sign in to react to comments"
 msgstr "登录后即可对评论做出反应"
@@ -526,12 +517,12 @@ msgstr "登录后即可对评论做出反应"
 msgid "Status"
 msgstr "状态"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2363
+#: lib/phoenix_kit_comments/web/comments_component.ex:2631
 #, elixir-autogen, elixir-format
 msgid "Title"
 msgstr "标题"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2796
+#: lib/phoenix_kit_comments/web/comments_component.ex:3064
 #, elixir-autogen, elixir-format
 msgid "Too many files"
 msgstr "文件过多"
@@ -542,69 +533,69 @@ msgstr "文件过多"
 msgid "Total"
 msgstr "总计"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3582
+#: lib/phoenix_kit_comments/web/comments_component.ex:3856
 #, elixir-autogen, elixir-format
 msgid "Type a search term to find GIFs."
 msgstr "输入关键词以搜索 GIF。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2148
-#: lib/phoenix_kit_comments/web/comments_component.ex:3743
+#: lib/phoenix_kit_comments/web/comments_component.ex:2414
+#: lib/phoenix_kit_comments/web/comments_component.ex:4027
 #, elixir-autogen, elixir-format
 msgid "Unknown"
 msgstr "未知用户"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2800
+#: lib/phoenix_kit_comments/web/comments_component.ex:3068
 #, elixir-autogen, elixir-format
 msgid "Upload error: %{reason}"
 msgstr "上传出错：%{reason}"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3652
+#: lib/phoenix_kit_comments/web/comments_component.ex:3928
 #, elixir-autogen, elixir-format
 msgid "Write a comment..."
 msgstr "写下评论..."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2529
+#: lib/phoenix_kit_comments/web/comments_component.ex:2797
 #, elixir-autogen, elixir-format
 msgid "Write a reply..."
 msgstr "写下回复..."
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3667
+#: lib/phoenix_kit_comments/web/comments_component.ex:3943
 #, elixir-autogen, elixir-format
 msgid "Write comment"
 msgstr "写评论"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1472
+#: lib/phoenix_kit_comments/web/comments_component.ex:1497
 #, elixir-autogen, elixir-format
 msgid "You don't have permission to delete this comment"
 msgstr "您没有权限删除这条评论"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:840
-#: lib/phoenix_kit_comments/web/comments_component.ex:1523
+#: lib/phoenix_kit_comments/web/comments_component.ex:858
+#: lib/phoenix_kit_comments/web/comments_component.ex:1548
 #, elixir-autogen, elixir-format
 msgid "You don't have permission to edit this comment"
 msgstr "您没有权限编辑这条评论"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2645
+#: lib/phoenix_kit_comments/web/comments_component.ex:2913
 #, elixir-autogen, elixir-format
 msgid "Your browser does not support audio playback."
 msgstr "您的浏览器不支持音频播放。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2634
+#: lib/phoenix_kit_comments/web/comments_component.ex:2902
 #, elixir-autogen, elixir-format
 msgid "Your browser does not support video playback."
 msgstr "您的浏览器不支持视频播放。"
 
-#: lib/phoenix_kit_comments/web/index.ex:748
+#: lib/phoenix_kit_comments/web/index.ex:756
 #, elixir-autogen, elixir-format
 msgid "[no text]"
 msgstr "[无文字]"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2136
+#: lib/phoenix_kit_comments/web/comments_component.ex:2402
 #, elixir-autogen, elixir-format
 msgid "[removed]"
 msgstr "[已删除]"
 
-#: lib/phoenix_kit_comments/web/index.ex:736
+#: lib/phoenix_kit_comments/web/index.ex:744
 #, elixir-autogen, elixir-format
 msgid "— Re: %{snippet}"
 msgstr "— Re: %{snippet}"
@@ -921,34 +912,34 @@ msgstr "例如 shoes"
 msgid "or add manually"
 msgstr "或手动添加"
 
-#: lib/phoenix_kit_comments/web/index.ex:844
+#: lib/phoenix_kit_comments/web/index.ex:852
 #, elixir-autogen, elixir-format
 msgid "Approving…"
 msgstr "正在批准…"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:565
+#: lib/phoenix_kit_comments/web/comments_component.ex:582
 #, elixir-autogen, elixir-format
 msgid "Comments are turned off here."
 msgstr "此处已关闭评论。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2244
-#: lib/phoenix_kit_comments/web/index.ex:873
+#: lib/phoenix_kit_comments/web/comments_component.ex:2512
+#: lib/phoenix_kit_comments/web/index.ex:881
 #, elixir-autogen, elixir-format
 msgid "Deleting…"
 msgstr "正在删除…"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1661
+#: lib/phoenix_kit_comments/web/comments_component.ex:1695
 #, elixir-autogen, elixir-format
 msgid "GIFs are turned off here."
 msgstr "此处已关闭 GIF。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1658
-#: lib/phoenix_kit_comments/web/comments_component.ex:1666
+#: lib/phoenix_kit_comments/web/comments_component.ex:1692
+#: lib/phoenix_kit_comments/web/comments_component.ex:1700
 #, elixir-autogen, elixir-format
 msgid "Giphy search failed. Please try again."
 msgstr "Giphy 搜索失败，请重试。"
 
-#: lib/phoenix_kit_comments/web/index.ex:853
+#: lib/phoenix_kit_comments/web/index.ex:861
 #, elixir-autogen, elixir-format
 msgid "Hiding…"
 msgstr "正在隐藏…"
@@ -973,12 +964,12 @@ msgstr "路径模板必须包含 :uuid 或 :metadata.KEY 占位符"
 msgid "Path template must start with / or :prefix"
 msgstr "路径模板必须以 / 或 :prefix 开头"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3342
+#: lib/phoenix_kit_comments/web/comments_component.ex:3616
 #, elixir-autogen, elixir-format
 msgid "Post as %{project}"
 msgstr "以 %{project} 的名义发表"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3612
+#: lib/phoenix_kit_comments/web/comments_component.ex:3888
 #, elixir-autogen, elixir-format
 msgid "Posting…"
 msgstr "正在发表…"
@@ -988,13 +979,13 @@ msgstr "正在发表…"
 msgid "Resource type is required"
 msgstr "资源类型为必填项"
 
-#: lib/phoenix_kit_comments/web/index.ex:862
+#: lib/phoenix_kit_comments/web/index.ex:870
 #, elixir-autogen, elixir-format
 msgid "Restoring…"
 msgstr "正在恢复…"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2299
-#: lib/phoenix_kit_comments/web/comments_component.ex:2427
+#: lib/phoenix_kit_comments/web/comments_component.ex:2567
+#: lib/phoenix_kit_comments/web/comments_component.ex:2695
 #: lib/phoenix_kit_comments/web/settings.html.heex:295
 #: lib/phoenix_kit_comments/web/settings.html.heex:430
 #: lib/phoenix_kit_comments/web/settings.html.heex:554
@@ -1009,23 +1000,23 @@ msgstr "正在保存…"
 msgid "Select all comments"
 msgstr "全选评论"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3281
-#: lib/phoenix_kit_comments/web/comments_component.ex:3294
+#: lib/phoenix_kit_comments/web/comments_component.ex:3555
+#: lib/phoenix_kit_comments/web/comments_component.ex:3568
 #, elixir-autogen, elixir-format
 msgid "Type @ to mention someone, # to link a record."
 msgstr "输入 @ 提及他人，输入 # 链接记录。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1822
+#: lib/phoenix_kit_comments/web/comments_component.ex:1851
 #, elixir-autogen, elixir-format
 msgid "Upload failed. Please try again."
 msgstr "上传失败，请重试。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1364
+#: lib/phoenix_kit_comments/web/comments_component.ex:1389
 #, elixir-autogen, elixir-format
 msgid "Wait for uploads to finish."
 msgstr "请等待上传完成。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1698
+#: lib/phoenix_kit_comments/web/comments_component.ex:1732
 #, elixir-autogen, elixir-format
 msgid "You cannot edit this comment"
 msgstr "您无法编辑这条评论"
@@ -1055,7 +1046,7 @@ msgstr "示例：%{simple} 或 %{prefixed}"
 msgid "Use %{uuid} for the resource ID, %{metadata} for values from comment metadata, and %{prefix} to include the site URL prefix."
 msgstr "用 %{uuid} 表示资源 ID，用 %{metadata} 引用评论元数据中的值，用 %{prefix} 加入站点 URL 前缀。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2238
+#: lib/phoenix_kit_comments/web/comments_component.ex:2506
 #, elixir-autogen, elixir-format
 msgid "Edit"
 msgstr "编辑"
@@ -1090,32 +1081,32 @@ msgstr "审核您所管理记录下的评论"
 msgid "This page shows comments on records you manage."
 msgstr "此页面显示您所管理记录下的评论。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1397
+#: lib/phoenix_kit_comments/web/comments_component.ex:1422
 #, elixir-autogen, elixir-format
 msgid "Files can't be added while editing a comment. Add them to a new comment."
 msgstr "编辑评论时无法添加文件。请在新评论中添加。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1403
+#: lib/phoenix_kit_comments/web/comments_component.ex:1428
 #, elixir-autogen, elixir-format
 msgid "Files can't be attached to comments here."
 msgstr "此处无法为评论添加附件。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1415
+#: lib/phoenix_kit_comments/web/comments_component.ex:1440
 #, elixir-autogen, elixir-format
 msgid "Images can't be pasted into the text. Paste the image again to attach it."
 msgstr "图片无法粘贴到正文中。再次粘贴该图片即可将其添加为附件。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1400
+#: lib/phoenix_kit_comments/web/comments_component.ex:1425
 #, elixir-autogen, elixir-format
 msgid "The pasted file could not be attached. Try the attach button."
 msgstr "粘贴的文件无法添加为附件。请尝试使用附件按钮。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3166
+#: lib/phoenix_kit_comments/web/comments_component.ex:3434
 #, elixir-autogen, elixir-format
 msgid "Dismiss"
 msgstr "关闭"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3250
+#: lib/phoenix_kit_comments/web/comments_component.ex:3524
 #, elixir-autogen, elixir-format
 msgid "Drop files to attach"
 msgstr "拖放文件以添加附件"
@@ -1181,7 +1172,7 @@ msgstr "已删除 %{ok} 条，%{failed} 条失败"
 msgid "%{ok} hidden, %{failed} failed"
 msgstr "已隐藏 %{ok} 条，%{failed} 条失败"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:2666
+#: lib/phoenix_kit_comments/web/comments_component.ex:2934
 #, elixir-autogen, elixir-format
 msgid "%{size} KB"
 msgstr "%{size} KB"
@@ -1191,7 +1182,7 @@ msgstr "%{size} KB"
 msgid "Change the comments settings"
 msgstr "更改评论设置"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1452
+#: lib/phoenix_kit_comments/web/comments_component.ex:1477
 #, elixir-autogen, elixir-format
 msgid "Comment exceeds maximum length of %{count} character"
 msgid_plural "Comment exceeds maximum length of %{count} characters"
@@ -1213,44 +1204,44 @@ msgstr "正在移除…"
 msgid "Resetting…"
 msgstr "正在重置…"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1423
+#: lib/phoenix_kit_comments/web/comments_component.ex:1448
 #, elixir-autogen, elixir-format
 msgid "Up to %{count} attachment per comment"
 msgid_plural "Up to %{count} attachments per comment"
 msgstr[0] "每条评论最多 %{count} 个附件"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3487
+#: lib/phoenix_kit_comments/web/comments_component.ex:3761
 #, elixir-autogen, elixir-format
 msgid "Up to %{count} file, max %{size} MB"
 msgid_plural "Up to %{count} files, max %{size} MB each"
 msgstr[0] "最多 %{count} 个文件，单个文件不超过 %{size} MB"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1277
+#: lib/phoenix_kit_comments/web/comments_component.ex:1302
 #, elixir-autogen, elixir-format
 msgid "Remove the files that can't be attached, then post again."
 msgstr "请移除无法添加为附件的文件，然后重新发表。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1289
+#: lib/phoenix_kit_comments/web/comments_component.ex:1314
 #, elixir-autogen, elixir-format
 msgid "The comment you were replying to is no longer available."
 msgstr "您回复的评论已不可用。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1447
+#: lib/phoenix_kit_comments/web/comments_component.ex:1472
 #, elixir-autogen, elixir-format
 msgid "The text contains a character that can't be saved. Remove it and try again."
 msgstr "文本中包含无法保存的字符。请删除该字符后重试。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1493
+#: lib/phoenix_kit_comments/web/comments_component.ex:1518
 #, elixir-autogen, elixir-format
 msgid "This comment had already been deleted."
 msgstr "该评论已被删除。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1715
+#: lib/phoenix_kit_comments/web/comments_component.ex:1749
 #, elixir-autogen, elixir-format
 msgid "This comment is no longer available."
 msgstr "该评论已不可用。"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:1210
+#: lib/phoenix_kit_comments/web/comments_component.ex:1228
 #, elixir-autogen, elixir-format
 msgid "Your comment is awaiting approval."
 msgstr "您的评论正在等待审核。"
@@ -1260,14 +1251,24 @@ msgstr "您的评论正在等待审核。"
 msgid "e.g. %{path}"
 msgstr "例如 %{path}"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3019
+#: lib/phoenix_kit_comments/web/comments_component.ex:3287
 #, elixir-autogen, elixir-format
 msgctxt "mentions"
 msgid "People"
 msgstr "人员"
 
-#: lib/phoenix_kit_comments/web/comments_component.ex:3029
+#: lib/phoenix_kit_comments/web/comments_component.ex:3297
 #, elixir-autogen, elixir-format
 msgctxt "mentions"
 msgid "Records"
 msgstr "记录"
+
+#: lib/phoenix_kit_comments/web/comments_component.ex:3784
+#, elixir-autogen, elixir-format
+msgid "Record audio"
+msgstr "录制音频"
+
+#: lib/phoenix_kit_comments/web/comments_component.ex:3770
+#, elixir-autogen, elixir-format
+msgid "Upload a file"
+msgstr "上传文件"

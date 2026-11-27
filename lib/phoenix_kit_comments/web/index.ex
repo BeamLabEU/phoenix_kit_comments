@@ -663,17 +663,25 @@ defmodule PhoenixKitComments.Web.Index do
     "inline-flex items-center gap-1.5 max-w-[240px] py-0.5 pl-1 pr-2.5 rounded-full bg-base-200 hover:bg-base-300 transition-colors no-underline align-middle"
   end
 
-  # The chip's inner content. The thumbnail is a CSS background rather than an
-  # `<img onerror=…>`: inline JS is blocked by a strict `script-src` CSP (and
-  # AGENTS.md mandates hooks register on `window.PhoenixKitHooks`), and a missing
-  # background image simply falls back to the placeholder colour — no handler.
+  # The chip's inner content. An uncropped thumbnail is a CSS background,
+  # which needs no handler: a picture that fails simply leaves the
+  # placeholder colour (an `<img onerror=…>` is blocked by a strict
+  # `script-src` CSP, and core's declarative `data-pk-img-error` listener is
+  # newer than this module's core floor). A cropped one (`:thumb_style`, a
+  # person's avatar crop; Max, 2026-11-26) is an `<img>` placed in a round
+  # frame, since no background can follow the crop's geometry; that one
+  # loses its broken-image glyph only on a core with the listener.
   attr(:comment, :map, required: true)
   attr(:info, :map, required: true)
 
   defp resource_chip_body(assigns) do
     ~H"""
     <span
-      :if={@info[:thumb_url]}
+      :if={@info[:thumb_url] && @info[:thumb_style]}
+      class="relative w-5 h-5 overflow-hidden rounded-full bg-base-300 shrink-0"
+    ><img src={@info.thumb_url} alt="" style={@info.thumb_style} data-pk-img-error="remove" /></span>
+    <span
+      :if={@info[:thumb_url] && !@info[:thumb_style]}
       class="w-5 h-5 rounded-full bg-base-300 bg-cover bg-center shrink-0"
       style={"background-image: url('#{@info.thumb_url}')"}
     />

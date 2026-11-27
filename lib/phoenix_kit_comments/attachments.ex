@@ -21,7 +21,23 @@ defmodule PhoenixKitComments.Attachments do
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.ResourceFolders
 
+  @extensions ~w(.webm .oga .opus .mp3 .wav .mp4 .mov .pdf .doc .docx .odt .rtf .txt .md
+                 .xls .xlsx .ods .csv .ppt .pptx .odp .zip)
   @kind :comment_attachment
+
+  @doc false
+  def accept, do: ~w(image/* video/* audio/*) ++ @extensions
+
+  @doc false
+  def content_type(type, filename) when type in [nil, "", "application/octet-stream"] do
+    extension = filename |> Path.extname() |> String.downcase(:ascii)
+
+    if extension in @extensions,
+      do: MIME.from_path("file" <> extension),
+      else: "application/octet-stream"
+  end
+
+  def content_type(type, _filename), do: type
 
   @doc """
   Asks the host hook where attachments for `resource_type`/`resource_uuid`

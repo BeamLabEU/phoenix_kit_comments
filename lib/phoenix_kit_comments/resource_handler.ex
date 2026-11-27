@@ -91,8 +91,11 @@ defmodule PhoenixKitComments.ResourceHandler do
   Titles and RAW deep-links for the given uuids.
 
   Returns `%{uuid => %{title: String.t(), path: String.t()}}`. May also
-  carry `:full_title` (tooltip) and `:thumb_url` (chip thumbnail); a uuid
-  the handler does not recognise is simply absent from the map.
+  carry `:full_title` (tooltip), `:thumb_url` (chip thumbnail) and
+  `:thumb_style` (the thumbnail's placement in its round frame: an inline
+  style for an absolutely positioned `<img>`, e.g. a person's stored avatar
+  crop; absent means cover); a uuid the handler does not recognise is
+  simply absent from the map.
   """
   @callback resolve_comment_resources([resource_uuid()]) :: %{
               optional(resource_uuid()) => map()

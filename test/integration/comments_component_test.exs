@@ -280,7 +280,7 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       assert html =~ ~r/<textarea[^>]*id="#{after_id}"[^>]*>\s*<\/textarea>/
     end
 
-    test "an always-open editor has no Hide button (it only emptied the box)",
+    test "an always-open editor has no Cancel button (it only emptied the box)",
          %{conn: conn, scope: scope, resource_uuid: r} do
       {:ok, _view, html} = live(put_test_scope(conn, scope), "/en/test/thread/#{r}?open=1")
       refute html =~ ~s(phx-click="cancel_new_comment")
@@ -289,6 +289,9 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       {:ok, view, _html} = live(put_test_scope(conn, scope), host_path(r))
       html = view |> element("button[phx-click='open_composer']") |> render_click()
       assert html =~ ~s(phx-click="cancel_new_comment")
+      # It discards the text: "Cancel", not "Hide" (Max, 2026-11-26).
+      assert view |> element("button[phx-click='cancel_new_comment']") |> render() =~ "Cancel"
+      refute view |> element("button[phx-click='cancel_new_comment']") |> render() =~ "Hide"
     end
 
     test "without it, the box opens on a click as before", %{
@@ -698,6 +701,27 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       assert comments_for(resource_uuid) == []
     end
 
+    test "cancelling a reply discards its staged files before the next composer opens",
+         %{conn: conn, scope: scope, user: user, resource_uuid: resource_uuid} do
+      set_attachments(true)
+
+      {:ok, parent} =
+        PhoenixKitComments.create_comment("test_resource", resource_uuid, user.uuid, %{
+          content: "parent"
+        })
+
+      {:ok, view, _} = live(put_test_scope(conn, scope), host_path(resource_uuid))
+
+      view
+      |> element("button[phx-click='reply_to'][phx-value-id='#{parent.uuid}']")
+      |> render_click()
+
+      assert upload_pasted(view, [pasted("private.pdf", "application/pdf", 100)]) =~ "private.pdf"
+      view |> element("button[phx-click='cancel_new_comment']", "Cancel") |> render_click()
+      view |> element("button[phx-click='open_composer']") |> render_click()
+      refute render(view) =~ "private.pdf"
+    end
+
     test "several pasted files are staged together",
          %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
       set_attachments(true)
@@ -725,6 +749,23 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
         ])
 
       assert {:error, [[_ref, :not_accepted]]} = render_upload(input, "setup.exe")
+    end
+
+    # Max, 2026-11-27: "recording-….webm: File type not allowed". A clip a
+    # browser sends with no type is judged by its name; office files too.
+    test "an untyped recording and an office file are taken",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      set_attachments(true)
+      view = open_composer(conn, scope, resource_uuid)
+
+      input =
+        file_input(view, "form[phx-submit='add_comment']", :attachment, [
+          pasted("recording-2026-11-27-014127.webm", "", 100),
+          pasted("budget.xlsx", "", 100)
+        ])
+
+      refute match?({:error, _}, render_upload(input, "recording-2026-11-27-014127.webm"))
+      refute match?({:error, _}, render_upload(input, "budget.xlsx"))
     end
 
     test "more pasted files than the cap are refused",

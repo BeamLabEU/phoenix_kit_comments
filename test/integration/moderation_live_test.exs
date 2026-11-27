@@ -64,6 +64,46 @@ defmodule PhoenixKitComments.Web.ModerationLiveTest do
 
   defp status_of(comment), do: Repo.get!(Comment, comment.uuid).status
 
+  defmodule ThumbnailHandler do
+    @moduledoc false
+    def resolve_comment_resources(uuids) do
+      Map.new(uuids, fn uuid ->
+        info = %{title: uuid, path: "/record/#{uuid}", thumb_url: "/thumb/#{uuid}"}
+
+        if uuid == "00000000-0000-4000-8000-000000000001",
+          do: {uuid, Map.put(info, :thumb_style, "position:absolute;left:-10%")},
+          else: {uuid, info}
+      end)
+    end
+  end
+
+  test "resource chips apply the handler's crop and preserve uncropped thumbnails",
+       %{conn: conn, scope: scope, author: author} do
+    previous = Application.get_env(:phoenix_kit, :comment_resource_handlers)
+
+    Application.put_env(:phoenix_kit, :comment_resource_handlers, %{
+      "thumbnail" => ThumbnailHandler
+    })
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:phoenix_kit, :comment_resource_handlers, previous),
+        else: Application.delete_env(:phoenix_kit, :comment_resource_handlers)
+    end)
+
+    cropped = "00000000-0000-4000-8000-000000000001"
+    plain = Ecto.UUID.generate()
+
+    for uuid <- [cropped, plain] do
+      {:ok, _} =
+        PhoenixKitComments.create_comment("thumbnail", uuid, author.uuid, %{content: "image"})
+    end
+
+    {:ok, view, _} = live(put_test_scope(conn, scope), @path)
+    assert has_element?(view, "img[src='/thumb/#{cropped}'][style='position:absolute;left:-10%']")
+    assert has_element?(view, "span.bg-cover[style*='/thumb/#{plain}']")
+  end
+
   describe "approve" do
     test "publishes a pending comment and logs the approval against the moderator",
          %{conn: conn, scope: scope, moderator: moderator, author: author} do

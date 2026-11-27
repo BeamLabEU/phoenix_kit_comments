@@ -5,6 +5,16 @@ defmodule PhoenixKitComments.AttachmentsTest do
   alias PhoenixKit.Modules.Storage
   alias PhoenixKitComments.Attachments
 
+  test "storage receives a MIME type for extension-only uploads" do
+    assert Attachments.content_type("", "clip.WEBM") == "video/webm"
+
+    assert Attachments.content_type("application/octet-stream", "sheet.xlsx") ==
+             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    assert Attachments.content_type("audio/webm", "clip.webm") == "audio/webm"
+    assert Attachments.content_type("", "page.html") == "application/octet-stream"
+  end
+
   defmodule Hook do
     @moduledoc false
     def parent(:comment_attachment, _actor, %{resource_type: "order", resource_uuid: uuid}) do

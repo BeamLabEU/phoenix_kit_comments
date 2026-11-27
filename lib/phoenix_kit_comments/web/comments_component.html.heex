@@ -126,7 +126,7 @@
                   liked_comment_uuids={@liked_comment_uuids}
                   disliked_comment_uuids={@disliked_comment_uuids}
                   reply_to={@reply_to}
-                  ctx={@thread_ctx}
+                  ctx={if @reply_to, do: Map.put(@thread_ctx, :uploads, @uploads), else: @thread_ctx}
                 />
               <% end %>
             </div>
