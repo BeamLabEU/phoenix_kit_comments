@@ -225,12 +225,21 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:expanded_comments, MapSet.new())
      |> assign(:max_attachments, max_entries)
      |> assign(:max_attachment_size_mb, max_size_mb)
+     # A file is judged by its type, else by its name: audio and video are
+     # named by extension too, so a clip a browser sends with no type is not
+     # refused ("recording-….webm: File type not allowed", Max 2026-11-27).
+     # Office documents beside the PDF and text files; nothing a browser
+     # runs when opened (no .html, .svg).
      |> allow_upload(:attachment,
        accept: ~w(
          image/*
          video/*
          audio/*
-         .pdf .doc .docx .txt .md
+         .webm .oga .opus .mp3 .wav .mp4 .mov
+         .pdf .doc .docx .odt .rtf .txt .md
+         .xls .xlsx .ods .csv
+         .ppt .pptx .odp
+         .zip
        ),
        max_entries: max_entries,
        max_file_size: max_size_mb * @bytes_per_mb
@@ -3769,7 +3778,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                             )
                           }
                         >
-                          <.icon name="hero-photo" class="w-4 h-4" /> {gettext("Image")}
+                          <%!-- It always took files of every kind, not only
+                               images (Max, 2026-11-27: "the only options
+                               are image or record audio"). --%>
+                          <.icon name="hero-paper-clip" class="w-4 h-4" /> {gettext("Upload a file")}
                         </label>
                       </li>
 
@@ -3783,7 +3795,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                           }
                           class="flex items-center gap-2"
                         >
-                          <.icon name="hero-microphone" class="w-4 h-4" /> {gettext("Record")}
+                          <.icon name="hero-microphone" class="w-4 h-4" /> {gettext("Record audio")}
                         </button>
                       </li>
                     <% end %>

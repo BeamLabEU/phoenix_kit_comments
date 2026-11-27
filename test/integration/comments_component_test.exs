@@ -730,6 +730,23 @@ defmodule PhoenixKitComments.Web.CommentsComponentTest do
       assert {:error, [[_ref, :not_accepted]]} = render_upload(input, "setup.exe")
     end
 
+    # Max, 2026-11-27: "recording-….webm: File type not allowed". A clip a
+    # browser sends with no type is judged by its name; office files too.
+    test "an untyped recording and an office file are taken",
+         %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
+      set_attachments(true)
+      view = open_composer(conn, scope, resource_uuid)
+
+      input =
+        file_input(view, "form[phx-submit='add_comment']", :attachment, [
+          pasted("recording-2026-11-27-014127.webm", "", 100),
+          pasted("budget.xlsx", "", 100)
+        ])
+
+      refute match?({:error, _}, render_upload(input, "recording-2026-11-27-014127.webm"))
+      refute match?({:error, _}, render_upload(input, "budget.xlsx"))
+    end
+
     test "more pasted files than the cap are refused",
          %{conn: conn, scope: scope, resource_uuid: resource_uuid} do
       set_attachments(true)
